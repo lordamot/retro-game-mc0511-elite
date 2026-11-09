@@ -1,0 +1,31 @@
+# Local IDE and Python state.
+.idea/
+__pycache__/
+*.pyc
+
+# Generated programs, disk images, scratch work and persistent player data.
+/build/
+/tmp/
+/output/
+/saves/
+*.dsk
+*.DSK
+
+# Third-party tools, firmware and optional reference checkouts.
+/bin/
+/external/
+/zesarux_*.idx
+
+# Original game/reference files and RT-11 inputs are supplied locally.
+# Keep only setup/provenance documentation in this tree.
+/orig/*
+!/orig/README.md
+!/orig/rt11/
+/orig/rt11/*
+!/orig/rt11/README.md
+
+# Generated player documentation is distributed as release assets.
+/manual.pdf
+/control.pdf
+/controls-pc.pdf
+/presentation.pdf
