@@ -1,0 +1,911 @@
+; =========================================================================
+; ovl_carrier.mac - the carrier market: Elite Legend's Delivery menu
+; (orig/legend/.../INCLUDE/Menu/Delivery.a80), its contracts made by
+; Galaxy/genContracts.a80 and closed by Menu/Missions.a80's
+; TestFinishContract, laid out for eighty columns.  AN OVERLAY
+; (src/ovl.list), called through its first word with R0 = 0 to draw
+; and R0 = 1 for its keys.  Screen 9 in СТОП's cycle, after the access
+; menu.  The offers themselves are made, and the pilot's contracts
+; settled at a docking, by the second overlay of the pair,
+; src/ovl_ctgen.mac, which the resident calls (CT_MAKE and CT_DOCK in
+; src/contract.mac); the two did not fit the window together.
+;
+; Two lists, ВВОД switching between them where both are allowed
+; (Legend presses "5" again): the planet's twelve offers - cargo to
+; carry against a deposit, passengers for the cabins, parcels - in
+; three groups with a heading each, and the pilot's log of the six he
+; may hold, with the hours left on each.  The offers are made at the
+; main station only; anywhere else the screen opens on the log.  A row
+; is marked Р when the pilot's delivery rating is too low for it and !
+; when he lacks the cabin, the hold or the deposit (Legend colours the
+; row blue and yellow); in the log ! is a contract past its time.
+; ФИКС on a row opens it: what is to go where within how long, what
+; the trip takes, what it pays, and two lines - take it (or in the log
+; tear it up) and go back - with the cursor on the second.
+;
+; Names: a passenger's is two words of Legend's Russian syllable pairs
+; and a parcel's is one of sixteen, or a prefix and a second word
+; (GenPackageName's tables).  Legend seeds the syllables from the
+; addresses its text happens to sit at; this seeds them from the
+; contract itself, so a name stays with its contract.
+;
+; Left out: Legend shows the galaxy chart with the destination marked
+; on the detail page - another overlay's business here, so the page
+; prints the distance instead.
+; =========================================================================
+
+		JMP	OVLK_ENTRY		; the overlay's entry, at OVL_BASE
+
+; the layout
+CT_YTITLE = 2
+CT_YHDR	= 20.			; cabins, hold, rating, purse
+CT_Y0	= 32.			; the list's first row
+CT_STEP	= 12.
+CT_YMSG	= 256.
+CT_YHINT = 270.
+CX_MARK	= 1
+CX_NAME	= 3
+CX_GNAME = 10.			; a good's name, after its quantity
+CX_DEST	= 29.
+CX_TIME	= 39.
+CX_ADV	= 47.
+CX_FEE	= 59.
+CT_YD0	= 32.			; the detail page's lines
+CT_YOPT	= 100.
+
+; state
+CT_PAGE:	.WORD	0		; bit 0: the detail page; bit 1: the log
+CT_SEL:		.WORD	0		; the row the cursor is on
+CT_N:		.WORD	0		; rows in the list
+CT_OPT:		.WORD	0		; on the detail page: 0 act, 1 go back
+CT_UMSG:	.WORD	0		; the message line, or 0 for the hint
+CT_ROWS:	.BLKB	NPLANET_CT	; the contract index of each row
+		.EVEN
+CT_FREE:	.WORD	0		; the pilot's free slot (AdrFreeContract)
+CT_KIND:	.WORD	0		; the kind of the row before
+CT_I:		.WORD	0
+CT_T:		.WORD	0
+CT_Y:		.WORD	0
+CT_MARK:	.WORD	0
+CT_DIST:	.WORD	0		; the detail page's trip
+CT_SEED:	.WORD	0		; a name's seed
+CT_NAME:	.BLKB	30.		; a passenger's or a parcel's name
+		.EVEN
+
+OVLK_ENTRY:	TST	R0
+		BNE	1$
+		CLR	CT_UMSG			; entered: the offers where they
+		CLR	CT_SEL			;   are made, else the log
+		CLR	CT_OPT
+		MOV	#2,CT_PAGE
+		CALL	CT_OPEN
+		BCS	2$
+		CLR	CT_PAGE
+2$:		JMP	CT_DRAW
+1$:		JMP	OVLK_KEYS
+
+; CT_OPEN - C clear where the planet's offers are on the table: docked,
+; at the main station (Cmd_5_Delivery's Docking = 1).
+CT_OPEN:	TST	DOCKED
+		BEQ	9$
+		TST	DOCKED_AT
+		BNE	9$
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; The keys (UpContracts, DownContracts, LeftContracts, RightContracts,
+; SelectContract, and the "5" that toggles the lists), tested in
+; KEYS_EDGE where it lies.
+; =========================================================================
+OVLK_KEYS:	BIT	#K_ENTER,KEYS_EDGE	; the other list
+		BEQ	1$
+		CALL	CT_OPEN
+		BCS	1$
+		MOV	#2,R0
+		XOR	R0,CT_PAGE
+		BIC	#1,CT_PAGE
+		CLR	CT_SEL
+		CLR	CT_UMSG
+1$:		BIT	#1,CT_PAGE
+		BNE	5$
+		BIT	#K_UP,KEYS_EDGE		; the list
+		BEQ	2$
+		TST	CT_SEL
+		BEQ	2$
+		DEC	CT_SEL
+2$:		BIT	#K_DOWN,KEYS_EDGE
+		BEQ	3$
+		MOV	CT_SEL,R0
+		INC	R0
+		CMP	R0,CT_N
+		BGE	3$
+		MOV	R0,CT_SEL
+3$:		BIT	#K_LEFT,KEYS_EDGE	; the first row
+		BEQ	4$
+		CLR	CT_SEL
+4$:		BIT	#K_RIGHT,KEYS_EDGE	; and the last
+		BEQ	41$
+		MOV	CT_N,R0
+		BEQ	41$
+		DEC	R0
+		MOV	R0,CT_SEL
+41$:		BIT	#K_FIRE,KEYS_EDGE	; open the row
+		BEQ	8$
+		TST	CT_N
+		BEQ	8$
+		BIS	#1,CT_PAGE
+		MOV	#1,CT_OPT
+		CLR	CT_UMSG
+		BR	8$
+
+5$:		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN,KEYS_EDGE
+		BEQ	6$			; the detail page: the other line
+		MOV	#1,R0
+		XOR	R0,CT_OPT
+6$:		BIT	#K_FIRE,KEYS_EDGE
+		BEQ	8$
+		TST	CT_OPT
+		BNE	7$			; back to the list
+		CALL	CT_CUR			; R5 = the contract
+		BIT	#2,CT_PAGE
+		BEQ	61$
+		CALL	CT_REFUSE		; the log: torn up
+		MOV	#S_C_REFUSED,CT_UMSG
+		BR	62$
+61$:		CALL	CT_ACCEPT		; the offers: taken, if it can be
+		BCS	63$
+		MOV	#S_C_TAKEN,CT_UMSG
+62$:		MOV	#FX_OPTION,R0
+		CALL	SFX_PLAY
+7$:		BIC	#1,CT_PAGE
+		BR	8$
+63$:		MOV	#FX_KEY,R0		; refused: the reason is on the
+		CALL	SFX_PLAY		;   message line, the page stays
+8$:		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN!K_FIRE!K_ENTER,KEYS_EDGE
+		BEQ	9$
+		JMP	CT_DRAW
+9$:		RETURN
+
+; CT_CUR - R5 = the contract under the cursor.
+CT_CUR:		MOV	CT_SEL,R0
+		MOVB	CT_ROWS(R0),R0
+		; fall into CT_ENTRY
+
+; CT_ENTRY - R5 = contract R0 of the list this page shows.
+CT_ENTRY:	MOV	R0,R5
+		MUL	#C.SIZE,R5		; R5 odd - low 16 bits
+		BIT	#2,CT_PAGE
+		BNE	1$
+		ADD	#PLANET_CT,R5
+		RETURN
+1$:		ADD	#P_CONTRACT,R5
+		RETURN
+
+; CT_COUNT - R0 = the slots the list this page shows has.
+CT_COUNT:	MOV	#NPLANET_CT,R0
+		BIT	#2,CT_PAGE
+		BEQ	1$
+		MOV	#NCONTRACTS,R0
+1$:		RETURN
+
+; =========================================================================
+; CT_LISTUP - the rows: the contracts this page shows that exist, cargo
+; first, then passengers, then parcels (PrnAllContracts' walk), their
+; indices into CT_ROWS, the count into CT_N.
+; =========================================================================
+CT_LISTUP:	CLR	CT_N
+		CLR	CT_KIND
+1$:		CLR	CT_I
+2$:		MOV	CT_I,R0
+		CALL	CT_ENTRY
+		CMPB	C.RATE(R5),#CT_NONE
+		BEQ	3$
+		MOVB	C.TYPE(R5),R0
+		BIC	#177477,R0		; the kind bits
+		CMP	R0,CT_KIND
+		BNE	3$
+		MOV	CT_N,R1
+		MOVB	CT_I,CT_ROWS(R1)
+		INC	CT_N
+3$:		INC	CT_I
+		CALL	CT_COUNT
+		CMP	CT_I,R0
+		BLO	2$
+		ADD	#100,CT_KIND
+		CMP	CT_KIND,#300
+		BLO	1$
+		RETURN
+
+; =========================================================================
+; CT_DRAW - the whole screen.
+; =========================================================================
+CT_DRAW:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#CT_YTITLE,TY
+		MOV	#S_C_TITLE,R1
+		BIT	#1,CT_PAGE
+		BEQ	1$
+		MOV	#S_C_DETAIL,R1
+		BR	2$
+1$:		BIT	#2,CT_PAGE
+		BEQ	2$
+		MOV	#S_C_LOG,R1
+2$:		CALL	PUTS2
+		BIT	#1,CT_PAGE
+		BEQ	3$
+		JMP	CT_DRAWDET
+
+3$:		CALL	CT_HEADER		; the cabins, the hold, the rating,
+		CALL	CT_LISTUP		;   the purse; then the rows
+		MOV	#CX_NAME,TX
+		MOV	#CT_Y0,TY
+		TST	CT_N
+		BNE	4$
+		MOV	#S_C_NONE,R1
+		BIT	#2,CT_PAGE
+		BEQ	31$
+		MOV	#S_C_NOLOG,R1
+31$:		CALL	PUTS
+		BR	80$
+4$:		CMP	CT_SEL,CT_N
+		BLO	5$
+		MOV	CT_N,CT_SEL
+		DEC	CT_SEL
+5$:		CLR	CT_I
+		MOV	#CT_Y0,CT_Y
+		MOV	#-1,CT_KIND		; no group yet
+10$:		MOV	CT_I,R0
+		MOVB	CT_ROWS(R0),R0
+		CALL	CT_ENTRY
+		MOVB	C.TYPE(R5),R0
+		BIC	#177477,R0
+		CMP	R0,CT_KIND		; a new group: its heading, after
+		BEQ	12$			;   a blank row unless it is the first
+		TST	CT_KIND
+		BMI	11$
+		ADD	#CT_STEP,CT_Y
+11$:		MOV	R0,CT_KIND
+		CALL	CT_HEADING
+		ADD	#CT_STEP,CT_Y
+12$:		CALL	CT_ROW
+		ADD	#CT_STEP,CT_Y
+		INC	CT_I
+		CMP	CT_I,CT_N
+		BLO	10$
+		MOV	SYS_INDEX,R0		; SYS_* back on this system
+		CALL	SYS_SELECT
+
+80$:		MOV	CT_UMSG,R1		; the message line, or the marks
+		BNE	81$
+		MOV	#S_C_MARKS,R1
+		BIT	#2,CT_PAGE
+		BEQ	81$
+		MOV	#S_C_MARKS2,R1
+81$:		MOV	#2,TX
+		MOV	#CT_YMSG,TY
+		CALL	PUTS
+		MOV	#2,TX			; the hint
+		MOV	#CT_YHINT,TY
+		MOV	#S_C_HINT,R1
+		CALL	CT_OPEN
+		BCC	82$
+		MOV	#S_C_CLOSED,R1
+82$:		JMP	PUTS
+
+; CT_HEADER - PrnHeaderMenuCarrier's line: the free cabins, the free
+; hold, the rating as a bar (PrnDeliveryRating: a pixel per 456, and a
+; minus sign for a rating below nought where Legend paints it red), and
+; the purse.
+CT_HEADER:	MOV	#2,TX
+		MOV	#CT_YHDR,TY
+		MOV	#S_C_CABINS,R1
+		CALL	PUTS
+		CALL	CT_CABINS
+		BCC	1$
+		CLR	R0
+1$:		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_C_HOLD,R1
+		CALL	PUTS
+		MOV	P_FREECARGO,R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_U_T,R1
+		CALL	PUTS
+		MOV	#S_C_REP,R1
+		CALL	PUTS
+		MOV	P_DELIV,R0
+		BPL	2$
+		MOV	R0,-(SP)
+		MOV	#55,R0			; "-"
+		CALL	PUTC
+		MOV	(SP)+,R0
+2$:		BIC	#100000,R0
+		MOV	R0,R1
+		CLR	R0
+		DIV	#456.,R0		; pixels, less one
+		ADD	#8.,R0			; whole characters of them, up
+		ASH	#-3,R0			;   from one
+		MOV	R0,CT_T
+3$:		MOV	#52,R0			; "*"
+		CALL	PUTC
+		DEC	CT_T
+		BGT	3$
+		MOV	#S_C_CASH,R1
+		CALL	PUTS
+		CALL	PUTCASH
+		MOV	#S_C_CR,R1
+		JMP	PUTS
+
+; CT_HEADING - the heading of group CT_KIND on row CT_Y.
+CT_HEADING:	MOV	CT_Y,TY
+		MOV	#CX_GNAME,TX
+		MOV	#S_C_H_GOODS,R1
+		MOV	#S_C_H_DEPOSIT,R2
+		TST	CT_KIND
+		BEQ	1$
+		MOV	#CX_NAME,TX
+		MOV	#S_C_H_PASS,R1
+		MOV	#S_C_H_ADV,R2
+		CMP	CT_KIND,#CTK_PASS
+		BEQ	1$
+		MOV	#S_C_H_PARCEL,R1
+		CLR	R2
+1$:		MOV	R2,CT_T
+		CALL	PUTS
+		MOV	#CX_DEST,TX
+		MOV	#S_C_H_DEST,R1
+		CALL	PUTS
+		MOV	#CX_TIME,TX
+		MOV	#S_C_H_TIME,R1
+		CALL	PUTS
+		MOV	CT_T,R1
+		BEQ	2$
+		MOV	#CX_ADV,TX
+		CALL	PUTS
+2$:		MOV	#CX_FEE,TX
+		MOV	#S_C_H_FEE,R1
+		JMP	PUTS
+
+; CT_ROW - the contract at R5, row CT_I of the list, on row CT_Y: the
+; cursor, the mark, what it is, where to, the time, the sums.
+CT_ROW:		MOV	R5,-(SP)
+		MOV	CT_Y,TY
+		CLR	TX
+		MOV	#40,R0
+		CMP	CT_I,CT_SEL
+		BNE	1$
+		MOV	#76,R0			; ">"
+1$:		CALL	PUTC
+		MOV	(SP),R5
+		CALL	CT_MARKOF		; R0 = the mark
+		CALL	PUTC
+		MOV	(SP),R5
+		MOV	#CX_NAME,TX
+		MOVB	C.TYPE(R5),R0
+		BMI	3$
+		BIT	#CTK_PASS,R0
+		BNE	2$
+		MOV	C.NUM(R5),R0		; cargo: so much of the good
+		MOV	#4,R1
+		CALL	PUTDEC
+		MOV	(SP),R5
+		MOVB	C.TYPE(R5),R0
+		BIC	#177400,R0
+		CALL	CT_UNITOF
+		CALL	PUTS
+		MOV	(SP),R5
+		MOV	#CX_GNAME,TX
+		MOVB	C.TYPE(R5),R0
+		BIC	#177400,R0
+		ASL	R0
+		MOV	GOODNAMES(R0),R1
+		CALL	PUTS
+		BR	4$
+2$:		CALL	CT_PASSNAME		; a passenger, by name
+		BR	31$
+3$:		CALL	CT_PKGNAME		; a parcel
+31$:		MOV	#CT_NAME,R1
+		CALL	PUTS
+4$:		MOV	(SP),R5
+		MOV	#CX_DEST,TX
+		CALL	CT_DESTSYS		; SYS_* = where to
+		MOV	#SYS_NAME,R1
+		CALL	PUTS
+		MOV	(SP),R5
+		MOV	#CX_TIME,TX
+		MOV	C.TIME(R5),R0
+		MOV	#4,R1
+		CALL	PUT_TENTHSW
+		MOV	#136,R0			; "Ч"
+		CALL	PUTC
+		MOV	(SP),R5
+		TSTB	C.TYPE(R5)
+		BMI	5$			; a parcel pays nothing in advance
+		MOV	#CX_ADV,TX
+		CALL	CT_GETADV
+		CALL	PUT_CR32
+		MOV	(SP),R5
+5$:		MOV	#CX_FEE,TX
+		CALL	CT_GETFEE
+		CALL	PUT_CR32
+		MOV	(SP)+,R5
+		RETURN
+
+; CT_MARKOF - R0 = the mark for the contract at R5: on the offers Р
+; where the rating is short and ! where something else is
+; (CheckContractAccept's two colours), in the log ! past its time.
+CT_MARKOF:	BIT	#2,CT_PAGE
+		BNE	1$
+		MOV	CT_UMSG,-(SP)		; CT_CANTAKE names its reason there
+		CALL	CT_CANTAKE
+		MOV	#40,R0
+		BCC	2$
+		MOV	#41,R0			; "!"
+		CMP	CT_UMSG,#S_C_NORATE
+		BNE	2$
+		MOV	#122,R0			; "Р"
+2$:		MOV	(SP)+,CT_UMSG
+		RETURN
+1$:		MOV	#40,R0
+		TST	C.TIME(R5)
+		BNE	9$
+		MOV	#41,R0
+9$:		RETURN
+
+; CT_UNITOF - R0 = a good; returns R1 = its unit's string.  Clobbers R0.
+CT_UNITOF:	CALL	GOOD_UNIT
+		MOV	#S_U_T,R1
+		TST	R0
+		BEQ	9$
+		MOV	#S_U_KG,R1
+		CMP	R0,#1
+		BEQ	9$
+		MOV	#S_U_G,R1
+9$:		RETURN
+
+; CT_DESTSYS - SYS_* = the destination of the contract at R5, in the
+; galaxy it was taken in when that is not this one (a contract in the
+; log outlives a galactic jump).  Clobbers R0..R5.
+CT_DESTSYS:	MOVB	C.PLANET(R5),R1
+		BIC	#177400,R1
+		BIT	#2,CT_PAGE
+		BEQ	1$
+		MOVB	C.GAL(R5),R0
+		BIC	#177400,R0
+		CMP	R0,P_GALAXY
+		BEQ	1$
+		MOV	R1,-(SP)
+		MOV	P_GALAXY,-(SP)
+		MOV	R0,P_GALAXY
+		CALL	GAL_SEEDOF
+		MOV	2(SP),R0
+		CALL	SYS_SELECT
+		MOV	(SP)+,P_GALAXY
+		CALL	GAL_SEEDOF
+		TST	(SP)+
+		RETURN
+1$:		MOV	R1,R0
+		JMP	SYS_SELECT
+
+; =========================================================================
+; CT_DRAWDET - the detail page for the contract under the cursor
+; (SelectContract's Msg_InfoGoods, Msg_InfoPassng, Msg_InfoPackage):
+; what goes where within how long, what the trip takes, what it pays;
+; then the two lines.
+; =========================================================================
+CT_DRAWDET:	CALL	CT_CUR
+		MOV	R5,CT_T
+		MOV	#CX_NAME,TX
+		MOV	#CT_YD0,TY
+		MOVB	C.TYPE(R5),R0
+		BMI	3$
+		BIT	#CTK_PASS,R0
+		BNE	2$
+		MOV	#S_C_D_CARGO,R1		; cargo: the good and how much
+		CALL	PUTS
+		MOV	CT_T,R5
+		MOVB	C.TYPE(R5),R0
+		BIC	#177400,R0
+		ASL	R0
+		MOV	GOODNAMES(R0),R1
+		CALL	PUTS
+		MOV	#40,R0
+		CALL	PUTC
+		MOV	#50,R0			; "("
+		CALL	PUTC
+		MOV	CT_T,R5
+		MOV	C.NUM(R5),R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	CT_T,R5
+		MOVB	C.TYPE(R5),R0
+		BIC	#177400,R0
+		CALL	CT_UNITOF
+		CALL	PUTS
+		MOV	#51,R0			; ")"
+		CALL	PUTC
+		BR	4$
+2$:		MOV	#S_C_D_PASS,R1		; a passenger, by name
+		CALL	PUTS
+		MOV	CT_T,R5
+		CALL	CT_PASSNAME
+		BR	31$
+3$:		MOV	#S_C_D_PARCEL,R1	; a parcel
+		CALL	PUTS
+		MOV	CT_T,R5
+		CALL	CT_PKGNAME
+31$:		MOV	#CT_NAME,R1
+		CALL	PUTS
+
+4$:		MOV	#CX_NAME,TX		; where, within how long
+		MOV	#CT_YD0+12.,TY
+		MOV	#S_C_D_TO,R1
+		CALL	PUTS
+		MOV	CT_T,R5
+		CALL	CT_DESTSYS
+		MOV	#SYS_NAME,R1
+		CALL	PUTS
+		MOV	#S_C_D_WITHIN,R1
+		CALL	PUTS
+		MOV	CT_T,R5
+		MOV	C.TIME(R5),R0
+		MOV	#1,R1
+		CALL	PUT_TENTHSW
+		MOV	#S_C_D_H,R1
+		CALL	PUTS
+
+		MOV	#CX_NAME,TX		; the trip from here: SYS_* are
+		MOV	#CT_YD0+24.,TY		;   still the destination's
+		MOV	#S_C_D_TRAVEL,R1
+		CALL	PUTS
+		CALL	SYS_DISTANCE
+		MOV	R0,CT_DIST
+		CALL	CT_TRAVEL
+		MOV	#1,R1
+		CALL	PUT_TENTHSW
+		MOV	#S_C_D_H,R1
+		CALL	PUTS
+		MOV	#S_C_D_DIST,R1
+		CALL	PUTS
+		MOV	CT_DIST,R0
+		MOV	#1,R1
+		CALL	PUT_TENTHSW
+		MOV	#S_C_D_LY,R1
+		CALL	PUTS
+		MOV	SYS_INDEX,R0
+		CALL	SYS_SELECT
+
+		MOV	#CX_NAME,TX		; what it pays
+		MOV	#CT_YD0+36.,TY
+		MOV	#S_C_D_FEE,R1
+		CALL	PUTS
+		MOV	CT_T,R5
+		CALL	CT_GETFEE
+		CALL	PUT_CR32
+		MOV	#S_C_D_AFTER,R1
+		CALL	PUTS
+		MOV	CT_T,R5
+		MOVB	C.TYPE(R5),R0
+		BMI	6$
+		MOV	#S_C_D_DEPOSIT,R1
+		BIT	#CTK_PASS,R0
+		BEQ	5$
+		MOV	#S_C_D_ADVANCE,R1
+5$:		CALL	PUTS
+		MOV	CT_T,R5
+		CALL	CT_GETADV
+		CALL	PUT_CR32
+		MOV	#S_C_CR,R1
+		CALL	PUTS
+		MOV	CT_T,R5
+		MOVB	C.TYPE(R5),R0
+		BMI	6$
+		BIT	#CTK_PASS,R0
+		BNE	6$
+		MOV	#CX_NAME,TX
+		MOV	#CT_YD0+48.,TY
+		MOV	#S_C_D_RETDEP,R1
+		CALL	PUTS
+
+6$:		CLR	TX			; the two lines
+		MOV	#CT_YOPT,TY
+		MOV	#76,R0
+		TST	CT_OPT
+		BEQ	61$
+		MOV	#40,R0
+61$:		CALL	PUTC
+		MOV	#CX_NAME,TX
+		MOV	#S_C_ACCEPT,R1
+		BIT	#2,CT_PAGE
+		BEQ	62$
+		MOV	#S_C_REFUSE,R1
+62$:		CALL	PUTS
+		CLR	TX
+		MOV	#CT_YOPT+12.,TY
+		MOV	#40,R0
+		TST	CT_OPT
+		BEQ	63$
+		MOV	#76,R0
+63$:		CALL	PUTC
+		MOV	#CX_NAME,TX
+		MOV	#S_C_BACK,R1
+		CALL	PUTS
+
+		MOV	CT_UMSG,R1		; the message line and the hint
+		BEQ	7$
+		MOV	#2,TX
+		MOV	#CT_YMSG,TY
+		CALL	PUTS
+7$:		MOV	#2,TX
+		MOV	#CT_YHINT,TY
+		MOV	#S_C_HINT2,R1
+		JMP	PUTS
+
+; =========================================================================
+; Taking and settling.
+; =========================================================================
+
+; CT_CABINS - GetFreeCabins: R0 = the cabins no passenger is in; C set
+; and R0 = 0 when there is none.  Clobbers R1..R3.
+CT_CABINS:	MOV	#P_CONTRACT,R1
+		MOV	#NCONTRACTS,R2
+		CLR	R3
+1$:		CMPB	C.GAL(R1),#CT_NONE
+		BEQ	2$
+		MOVB	C.TYPE(R1),R0
+		BMI	2$
+		BIT	#CTK_PASS,R0
+		BEQ	2$
+		INC	R3
+2$:		ADD	#C.SIZE,R1
+		SOB	R2,1$
+		MOVB	P_CABINS,R0
+		BIC	#177400,R0
+		SUB	R3,R0
+		BLE	3$
+		CLC
+		RETURN
+3$:		CLR	R0
+		SEC
+		RETURN
+
+; CT_CANTAKE - CheckContractAccept: C clear when the offer at R5 can
+; be taken - the rating reaches it, a slot is free (CT_FREE), a
+; passenger has a cabin, cargo has the hold (tonnes only: kilogrammes
+; and grammes take no room) and the deposit is in the purse.  C set
+; with the reason in CT_UMSG otherwise.  Clobbers R0..R3.
+CT_CANTAKE:	MOVB	C.RATE(R5),R0
+		BIC	#177400,R0
+		BEQ	1$
+		MOV	#S_C_NORATE,CT_UMSG
+		MOVB	P_DELIV+1,R1
+		BIC	#177400,R1
+		BIT	#200,R1			; a rating below nought takes
+		BNE	9$			;   nothing that asks for one
+		CMP	R1,R0
+		BLO	9$
+1$:		MOV	#S_C_NOSLOT,CT_UMSG
+		MOV	#P_CONTRACT,R1
+		MOV	#NCONTRACTS,R2
+2$:		CMPB	C.GAL(R1),#CT_NONE
+		BEQ	3$
+		ADD	#C.SIZE,R1
+		SOB	R2,2$
+		BR	9$
+3$:		MOV	R1,CT_FREE
+		MOVB	C.TYPE(R5),R0
+		BMI	8$			; a parcel asks nothing more
+		BIT	#CTK_PASS,R0
+		BEQ	4$
+		MOV	#S_C_NOCABIN,CT_UMSG
+		CALL	CT_CABINS
+		BCS	9$
+		BR	8$
+4$:		BIC	#177400,R0
+		CALL	GOOD_UNIT
+		TST	R0
+		BNE	5$
+		MOV	#S_C_NOROOM,CT_UMSG
+		CMP	P_FREECARGO,C.NUM(R5)
+		BLO	9$
+5$:		MOV	#S_C_NOCASH,CT_UMSG
+		CALL	CT_GETADV
+		CALL	CASH_CAN32
+		BCS	9$
+8$:		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; CT_ACCEPT - SelectContract's taking of the offer at R5: a passenger
+; pays the advance, cargo takes the deposit and comes aboard, and the
+; offer moves into the pilot's free slot with this galaxy's number on
+; it, its bit goes out of P_CONTRACTS (ResPlanetContract) and the
+; planet's slot empties.  C set and nothing done where CT_CANTAKE says
+; no.  Clobbers R0..R4.
+CT_ACCEPT:	CALL	CT_CANTAKE
+		BCS	9$
+		MOVB	C.TYPE(R5),R0
+		BMI	5$
+		BIT	#CTK_PASS,R0
+		BEQ	2$
+		CALL	CT_GETADV		; the advance in
+		CALL	CASH_ADD32
+		BR	5$
+2$:		CALL	CT_GETADV		; the deposit out, the goods in
+		CALL	CASH_SUB32
+		MOVB	C.TYPE(R5),R0
+		BIC	#177400,R0
+		MOV	R0,R2
+		ASL	R2
+		ADD	C.NUM(R5),P_CARGO(R2)
+		CALL	GOOD_UNIT
+		TST	R0
+		BNE	5$
+		SUB	C.NUM(R5),P_FREECARGO
+5$:		MOV	CT_FREE,R4
+		MOVB	P_GALAXY,C.GAL(R4)
+		MOV	R5,R0
+		MOV	R4,R1
+		INC	R0
+		INC	R1
+		MOV	#C.SIZE-1,R2
+6$:		MOVB	(R0)+,(R1)+
+		SOB	R2,6$
+		MOVB	#CT_NONE,C.RATE(R5)
+		MOV	R5,R1			; which offer: its bit
+		SUB	#PLANET_CT,R1
+		CLR	R0
+		DIV	#C.SIZE,R0
+		MOV	#1,R1
+		ASH	R0,R1
+		BIC	R1,P_CONTRACTS
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; CT_TRAVEL - CalcTravelTime: R0 = the time in tenths of an hour of a
+; trip of R0 tenths of a light year - the fuel squared over ten within
+; the tank's reach, six times the fuel beyond it with a navigation
+; array, and nothing at all beyond it without one.  Clobbers R1.
+CT_TRAVEL:	CMP	R0,PFUEL
+		BHI	1$
+		MOV	R0,R1
+		MUL	R0,R1			; R1 odd: the low word, 4900 fits
+		CLR	R0
+		DIV	#10.,R0
+		RETURN
+1$:		BITB	#DEV_OFF,P_ADVNAV
+		BNE	2$
+		MOV	R0,R1
+		ASL	R0
+		ADD	R1,R0
+		ASL	R0
+		RETURN
+2$:		CLR	R0
+		RETURN
+
+; =========================================================================
+; Names.
+; =========================================================================
+
+; CT_PKGNAME - GenPackageName: the parcel of the contract at R5, into
+; CT_NAME.  Clobbers R0..R4.
+CT_PKGNAME:	MOVB	C.TYPE(R5),R0
+		BIC	#177700,R0
+		MOV	#CT_NAME,R4
+		CMP	R0,#16.
+		BHIS	1$
+		ASL	R0			; one of the sixteen
+		MOV	CT_PK1(R0),R1
+		CALL	CT_COPY
+		RETURN
+1$:		MOV	R0,R3
+		ASH	#-3,R0
+		BIC	#177770,R0
+		SUB	#2,R0			; the prefix, 0..5
+		MOV	R0,R2
+		ASL	R0
+		MOV	CT_PKP(R0),R1
+		CALL	CT_COPY
+		CMP	R2,#5
+		BNE	2$
+		MOV	R3,R0			; a name, from the contract
+		MUL	#37.,R0			; R0 even: the low word is R1
+		MOVB	C.PLANET(R5),R0
+		BIC	#177400,R0
+		ADD	R0,R1
+		BIC	#177400,R1
+		MOV	R1,CT_SEED
+		BIC	#177776,R1
+		ADD	#2,R1			; two or three syllables
+		MOV	R1,R0
+		JMP	CT_SYLL
+2$:		BIC	#177770,R3		; the second word
+		ASL	R3
+		ASL	R2
+		ADD	CT_PK2ND(R2),R3
+		MOV	(R3),R1
+		CALL	CT_COPY
+		RETURN
+
+; CT_PASSNAME - GenPassengerName: the passenger of the contract at R5,
+; two words of syllables, into CT_NAME.  Clobbers R0..R4.
+CT_PASSNAME:	MOVB	C.TYPE(R5),R0
+		BIC	#177700,R0
+		MOV	R0,CT_SEED			; the seed
+		MOV	#CT_NAME,R4
+		MOV	R0,R1
+		BIC	#177774,R1		; one to three syllables
+		MOV	R1,R0
+		ASR	R0
+		BIC	#177776,R1
+		ADD	R1,R0
+		INC	R0
+		MOV	R0,-(SP)
+		CALL	CT_SYLL
+		MOVB	#40,(R4)+
+		MOV	(SP)+,R0
+		INC	R0			; two to four
+		CALL	CT_SYLL
+		RETURN
+
+; CT_SYLL - R0 syllables from the pairs, seeded by CT_SEED, appended at
+; R4 with a nul after.  Clobbers R0..R3.
+CT_SYLL:	MOV	R0,R3
+1$:		MOV	CT_SEED,R1
+		MOV	R1,R2
+		BIC	#177740,R1
+		BIT	#40,R2
+		BEQ	2$
+		INC	R1
+2$:		ASL	R1
+		ADD	#S_C_PAIRS,R1
+		MOVB	(R1)+,(R4)+
+		MOVB	(R1),R0
+		CMPB	R0,#77			; "?": a pair of one letter
+		BEQ	3$
+		MOVB	R0,(R4)+
+3$:		MOV	CT_SEED,R0			; the seed moves on
+		ASH	#3,R0
+		MOV	CT_SEED,R1
+		ASH	#-5,R1
+		BIC	#177770,R1
+		BIS	R1,R0
+		ADD	#31.,R0
+		ADD	P_GALAXY,R0
+		ADD	R3,R0
+		BIC	#177400,R0
+		MOV	R0,CT_SEED
+		SOB	R3,1$
+		CLRB	(R4)
+		RETURN
+
+; CT_COPY - the string at R1 appended at R4, the nul with it, R4 left
+; on the nul.
+CT_COPY:	MOVB	(R1)+,(R4)+
+		BNE	CT_COPY
+		DEC	R4
+		RETURN
+
+CT_PK1:		.WORD	S_C_PK1_00, S_C_PK1_01, S_C_PK1_02, S_C_PK1_03
+		.WORD	S_C_PK1_04, S_C_PK1_05, S_C_PK1_06, S_C_PK1_07
+		.WORD	S_C_PK1_08, S_C_PK1_09, S_C_PK1_10, S_C_PK1_11
+		.WORD	S_C_PK1_12, S_C_PK1_13, S_C_PK1_14, S_C_PK1_15
+CT_PKP:		.WORD	S_C_PKP_0, S_C_PKP_1, S_C_PKP_2, S_C_PKP_3
+		.WORD	S_C_PKP_4, S_C_PKP_5
+CT_SPORT:	.WORD	S_C_SPORT_0, S_C_SPORT_1, S_C_SPORT_2, S_C_SPORT_3
+		.WORD	S_C_SPORT_4, S_C_SPORT_5, S_C_SPORT_6, S_C_SPORT_7
+CT_FOOD:	.WORD	S_C_FOOD_0, S_C_FOOD_1, S_C_FOOD_2, S_C_FOOD_3
+		.WORD	S_C_FOOD_4, S_C_FOOD_5, S_C_FOOD_6, S_C_FOOD_7
+CT_PK2:		.WORD	S_C_PK2_0, S_C_PK2_1, S_C_PK2_2, S_C_PK2_3
+		.WORD	S_C_PK2_4, S_C_PK2_5, S_C_PK2_6, S_C_PK2_7
+CT_PK3:		.WORD	S_C_PK3_0, S_C_PK3_1, S_C_PK3_2, S_C_PK3_3
+		.WORD	S_C_PK3_4, S_C_PK3_5, S_C_PK3_6, S_C_PK3_7
+; the second word's table by prefix (AdrNamePackage)
+CT_PK2ND:	.WORD	CT_SPORT, CT_FOOD, CT_PK2, CT_SPORT, CT_PK3

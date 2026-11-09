@@ -1,0 +1,22 @@
+# d_PythonHp - extracted from orig/legend by tools/legend_ships.py;
+# object 45 of AdrDataShips, hull d_Python.
+# `make extract` overwrites it.
+name PYTHONHP
+index 45
+class 3
+speed 20
+energy 250
+bounty 200
+laser 150
+collide 80
+cargo 1
+launch 42
+dot 40
+rating 896
+flags 140
+flags2 0
+laservert 0
+type 10
+objflags 240
+shipnum 15
+geometry PYTHONHT

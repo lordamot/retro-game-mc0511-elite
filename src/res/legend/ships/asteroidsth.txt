@@ -1,0 +1,84 @@
+# d_AsteroidStH - extracted from orig/legend by tools/legend_ships.py;
+# object 4 of AdrDataShips, hull d_AsteroidSt.
+# `make extract` overwrites it.
+name ASTEROIDSTH
+index 4
+class 0
+speed 0
+energy 240
+bounty 0
+laser 0
+collide 160
+cargo 0
+launch 46
+dot 120
+rating 0
+flags 0
+flags2 0
+laservert 0
+type 7
+objflags 4
+shipnum 0
+radius 254
+vertex   -26   254    37
+vertex   -26  -254    37
+vertex   138   158   132
+vertex    92    94  -169
+vertex    -2   105   179
+vertex    -2  -105   179
+vertex    99   108   179
+vertex  -247     0   166
+vertex  -217     0   179
+vertex   166  -127   148
+vertex   130   -98   179
+vertex    68  -159  -127
+vertex  -247   -32   -89
+vertex   -63    27   179
+vertex    63    27   179
+vertex    63   -27   179
+vertex   -63   -27   179
+edge 0 2 31 1 0
+edge 2 3 31 7 0
+edge 3 0 31 10 0
+edge 0 4 31 2 1
+edge 4 6 31 6 1
+edge 6 2 31 5 1
+edge 7 8 31 3 2
+edge 8 4 31 6 2
+edge 0 7 31 11 2
+edge 1 5 31 4 3
+edge 5 8 31 6 3
+edge 7 1 31 12 3
+edge 9 10 31 5 4
+edge 10 5 31 6 4
+edge 1 9 31 14 4
+edge 6 10 31 6 5
+edge 9 2 31 7 5
+edge 9 3 31 8 7
+edge 11 3 31 9 8
+edge 9 11 31 14 8
+edge 12 3 31 10 9
+edge 11 12 31 13 9
+edge 12 0 31 11 10
+edge 12 7 31 12 11
+edge 12 1 31 13 12
+edge 11 1 31 14 13
+edge 13 14 31 6 6
+edge 14 15 31 6 6
+edge 15 16 31 6 6
+edge 16 13 31 6 6
+normal   75   98  -32
+normal   -2   88   92
+normal  -39   80   90
+normal  -39  -80   90
+normal    6  -88   91
+normal   90   13   88
+normal    0    0  128
+normal  125   11  -21
+normal  120  -18  -40
+normal  -23  -18 -124
+normal  -50   77  -88
+normal  -98   80  -10
+normal  -93  -86   10
+normal  -45  -90  -78
+normal   75 -102  -15

@@ -1,0 +1,196 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/Messages/MsgDescPlanetRus.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+AdrDescrMsg+0|{dw msgDescr_60}{dw msgDescr_61}{dw msgDescr_62}{dw msgDescr_63}{dw msgDescr_64}{dw msgDescr_65}{dw msgDescr_66}{dw msgDescr_67}{dw msgDescr_68}{dw msgDescr_69}{dw msgDescr_6A}{dw msgDescr_6B}{dw msgDescr_6C}{dw msgDescr_6D}{dw msgDescr_6E}{dw msgDescr_6F}{dw msgDescr_70}{dw msgDescr_71}{dw msgDescr_72}{dw msgDescr_73}{dw msgDescr_74}{dw msgDescr_75}{dw msgDescr_76}{dw msgDescr_77}{dw msgDescr_78}{dw msgDescr_79}{dw msgDescr_7A}{dw msgDescr_7B}{dw msgDescr_7C}{dw msgDescr_7D}{dw msgDescr_7E}{dw msgDescr_7F}{dw msgDescr_A0}{dw msgDescr_A1}{dw msgDescr_A2}{dw msgDescr_A3}{dw msgCarrier_A4}{dw msgCarrier_A5}{dw msgCarrier_A6}{dw msgCarrier_A7}{dw msgCarrier_A8}{dw msgCarrier_A9}{dw msgCarrier_AA}{dw msgCarrier_AB}
+msgDescr_60+0|{nPlanetDest}
+msgDescr_60+1|ПЛАНЕТА {nPlanetDest}
+msgDescr_60+2|{nPlanetDest}- ПЛАНЕТА
+msgDescr_60+3|ЭТА ПЛАНЕТА
+msgDescr_60+4|ДАННАЯ ПЛАНЕТА
+msgDescr_61+0|b c d
+msgDescr_61+1|b c d И d
+msgDescr_61+2| {#A0}
+msgDescr_61+3|b c d, НО  {#A0}
+msgDescr_61+4| {#A2} {#A3}
+msgDescr_62+0|ОЧЕНЬ
+msgDescr_62+1|НЕМНОГО
+msgDescr_62+2|СИЛЬНО
+msgDescr_62+3|ДОВОЛЬНО
+msgDescr_63+0|ЛЕГЕНДАРНА
+msgDescr_63+1|ПРИМЕЧАТЕЛЬНА
+msgDescr_63+2|ПОПУЛЯРНА
+msgDescr_63+3|ИЗВЕСТНА
+msgDescr_63+4|ЗНАМЕНИТА
+msgDescr_64+0|СВОИМИ eМИ g
+msgDescr_64+1|m n
+msgDescr_64+2|ЕГО ОБИТАТЕЛИ t u
+msgDescr_64+3|ПРОЗВОДСТВОМ {nFlgPrn0xx}x{nFlgPrn_2xx}
+msgDescr_64+4||ЫМ ТВОРЕНИЕМ w
+msgDescr_65+0|ДРЕВНИ
+msgDescr_65+1|f
+msgDescr_65+2|ВЕЛИКИ
+msgDescr_65+3|ГИГАНТСКИ
+msgDescr_65+4|РОЗОВЫ
+msgDescr_66+0|ЗАБАВНЫ
+msgDescr_66+1|ЧУДНЫ
+msgDescr_66+2|НЕОБЫЧНЫ
+msgDescr_66+3|СТРАННЫ
+msgDescr_66+4|СВОЕОБРАЗНЫ
+msgDescr_67+0|{nFlgPrn0xx}h {nFlgPrn_2xx}ПЛАНТАЦИЯМИ j
+msgDescr_67+1|ГОРАМИ
+msgDescr_67+2|kАМИ
+msgDescr_67+3|lМИ ЛЕСАМИ
+msgDescr_67+4|ОКЕАНАМИ
+msgDescr_68+0|lМИ
+msgDescr_68+1||ЫМИ
+msgDescr_68+2|i
+msgDescr_68+3|МЕСТНЫМИ
+msgDescr_69+0|УБИЙСТВЕННЫМИ
+msgDescr_69+1|СМЕРТОНОСНЫМИ
+msgDescr_69+2|ДЬЯВОЛЬСКИМИ
+msgDescr_69+3|СМЕРТЕЛЬНЫМИ
+msgDescr_69+4|УЖАСНЫМИ
+msgDescr_6A+0|РАСТЕНИЙ
+msgDescr_6A+1|ТЮЛЬПАНОВ
+msgDescr_6A+2|БАНАНОВ
+msgDescr_6A+3|КУКУРУЗЫ
+msgDescr_6A+4|КОНОПЛИ
+msgDescr_6B+0|ВЕТР
+msgDescr_6B+1|ПЫЛЕВЫМИ ОБЛАК
+msgDescr_6B+2|АЙСБЕРГ
+msgDescr_6B+3|СКАЛ
+msgDescr_6B+4|ВУКАН
+msgDescr_6C+0|ТРОПИЧЕСКИ
+msgDescr_6C+1|НЕПРОХОДИМЫ
+msgDescr_6C+2|ДОЖДЛИВЫ
+msgDescr_6C+3|БЕСКОНЕЧНЫ
+msgDescr_6C+4|БУЙНЫ
+msgDescr_6D+0|i
+msgDescr_6D+1|ГОРНЫМИ
+msgDescr_6D+2|УМНЫМИ
+msgDescr_6D+3|ДРЕВЕСНЫМИ
+msgDescr_6D+4|ПЯТНИСТЫМИ
+msgDescr_6E+0|o
+msgDescr_6E+1|pАМИ
+msgDescr_6E+2|qИДАМИ
+msgDescr_6E+3|rАМИ
+msgDescr_6E+4|sМИ
+msgDescr_6F+0|ЗЕМЛЕРОЙКАМИ
+msgDescr_6F+1|ЖИВОТНЫМИ
+msgDescr_6F+2|БИЗОНАМИ
+msgDescr_6F+3|ЗМЕЯМИ
+msgDescr_6F+4|ВОЛКАМИ
+msgDescr_70+0|ЛЕОПАРД
+msgDescr_70+1|ОНДАТР
+msgDescr_70+2|ТИГР
+msgDescr_70+3|БУЙВОЛ
+msgDescr_70+4|СУСЛИК
+msgDescr_71+0|БРОДЯЩИМИ ДРЕВО
+msgDescr_71+1|КРАБО
+msgDescr_71+2|МЫШО
+msgDescr_71+3|ЛОБСТО
+msgDescr_71+4|ТИГРО
+msgDescr_72+0|ПОЭТ
+msgDescr_72+1|АСТРОФИЗИК
+msgDescr_72+2|ТРЕПАЧ
+msgDescr_72+3|УЛИТК
+msgDescr_72+4|СЛИЗНЯК
+msgDescr_73+0|ОСА
+msgDescr_73+1|МОТЫЛЬКА
+msgDescr_73+2|БОРОДАВОЧНИКА
+msgDescr_73+3|МУРАВЬЯ
+msgDescr_73+4|МУСТАНГА
+msgDescr_74+0|ДРЕВНИЕ
+msgDescr_74+1|ИСКЛЮЧИТЕЛЬНЫЕ
+msgDescr_74+2|ЭКСЦЕНТРИЧНЫЕ
+msgDescr_74+3|ЗАКОРЕНЕЛЫЕ
+msgDescr_74+4|fЕ
+msgDescr_75+0|ДОМОСЕДЫ
+msgDescr_75+1|ГЛУПЦЫ
+msgDescr_75+2|КОНСЕРВАТОРЫ
+msgDescr_75+3|НЕНАВИСТНИКИ v
+msgDescr_75+4|ЛЮБИТЕЛИ v
+msgDescr_76+0|КУХОННИХ БЛЕНДЕРОВ
+msgDescr_76+1|ТУРИСТОВ
+msgDescr_76+2|ПОЭЗЗИИ
+msgDescr_76+3|ДИСКОТЕК
+msgDescr_76+4|w
+msgDescr_77+0|КУЛИНАРИИ
+msgDescr_77+1|НОЧНОЙ ЖИЗНИ
+msgDescr_77+2|КАЗИНО
+msgDescr_77+3|КОМЕДИИ
+msgDescr_77+4|{nFlgPrn0xx}x{nFlgPrn_2xx}
+msgDescr_78+0|z
+msgDescr_78+1|{
+msgDescr_78+2||ЫХ pОВЫХ {
+msgDescr_78+3|} ~
+msgDescr_78+4|~
+msgDescr_7A+0|СОКА
+msgDescr_7A+1|БРЕНДИ
+msgDescr_7A+2|ВОДЫ
+msgDescr_7A+3|КОЛОНН
+msgDescr_7A+4|БЛАСТЕРОВ
+msgDescr_7B+0|ПЕЛЬМЕНЕЙ
+msgDescr_7B+1|КОТЛЕТ
+msgDescr_7B+2|СТЕЙКОВ
+msgDescr_7B+3|ПИРОЖКОВ
+msgDescr_7B+4|СУПОВ
+msgDescr_7B+5|САЛАТОВ
+msgDescr_7B+6|БЛИНОВ
+msgDescr_7B+7|ТОРТОВ
+msgDescr_7C+0|ВОЛШЕБН
+msgDescr_7C+1|СКАЗОЧН
+msgDescr_7C+2|СОВРЕМЕНН
+msgDescr_7C+3|НЕОБЫЧН
+msgDescr_7C+4|УНИКАЛЬН
+msgDescr_7D+0|ЛЕДЯНОГО
+msgDescr_7D+1|ГРЯЗЕВОГО
+msgDescr_7D+2|НОЛЬ-{nFlgPrn_xx1}Г
+msgDescr_7D+3|ВАКУУМНОГО
+msgDescr_7D+4|ГОРНОГО
+msgDescr_7E+0|ХОККЕЯ
+msgDescr_7E+1|КРИКЕТА
+msgDescr_7E+2|КАРАТЕ
+msgDescr_7E+3|ПОЛО
+msgDescr_7E+4|ТЕННИСА
+msgDescr_7E+5|ФУТБОЛА
+msgDescr_7E+6|ГОЛЬФА
+msgDescr_7E+7|БОКСА
+msgDescr_7F+0|ИЗМОЖДЕНА
+msgDescr_7F+1|ИЗМУЧЕНА
+msgDescr_7F+2|РАЗОРЕНА
+msgDescr_7F+3|ОБЕССИЛЕНА
+msgDescr_7F+4|ОПУСТОШЕНА
+msgDescr_A0+0|{#A1} ГРАЖДАНСКИМИ ВОЙНАМИ
+msgDescr_A0+1|i m n
+msgDescr_A0+2|i БОЛЕЗНЯМИ
+msgDescr_A0+3|{#A1} ЗЕМЛЯТРЕСЕНИЯМИ
+msgDescr_A0+4|{#A1} СОЛНЕЧНЫМИ АКТИВНОСТЯМИ
+msgDescr_A1+0|ЧАСТЫМИ
+msgDescr_A1+1|ПЕРИОДИЧЕСКИМИ
+msgDescr_A1+2|СМЕРТОНОСНЫМИ
+msgDescr_A1+3|ЧУДОВИЩНЫМИ
+msgDescr_A1+4|БЕСПОЩАДНЫМИ
+msgDescr_A2+0|НИЧЕМ НЕ ПРИМЕЧАТЕЛЬНЫЙ
+msgDescr_A2+1|СКУЧНЫЙ
+msgDescr_A2+2|УНЫЛЫЙ
+msgDescr_A2+3|ТОСКЛИВЫЙ
+msgDescr_A2+4|ОМЕРЗИТЕЛЬНЫЙ
+msgDescr_A3+0|ПУСТЫННЫЙ МИР
+msgDescr_A3+1|МИР
+msgDescr_A3+2|ЗАБРОШЕННЫЙ МИР
+msgDescr_A3+3|МАЛЕНЬКИЙ МИРОК
+msgDescr_A3+4|МИРОК
+Msg_DescrPlanet+0|{nFlgPrn_2xx}{nClearDescrMsg}{nFlgPrn_xx1}` a.{nCloseDescrMsg}
+Msg_PlanetResis+0|{nFlgPrn_1xx}{nPlanetDest} ПРОТИВОСТОИТ ВТОРЖЕНИЮ ТАРГОНОВ!
+Msg_PlanetOccup+0|{nFlgPrn_1xx}{nPlanetDest} ЗАХВАЧЕНА ТАРГОНАМИ!
+Msg_PlanetRetr+0|{nFlgPrn_1xx}ВЛАДЕНИЯ ТАРГОНОВ!
+msgCarrier_A4+0|ОПЛАТА 
+msgCarrier_A5+0|АДРЕСАТ
+msgCarrier_A6+0|ВРЕМЯ
+msgCarrier_A7+0|ДОСТАВИТЬ 
+msgCarrier_A8+0|ПЕРЕЛЕТ ЗАЙМЕТ ПРИМЕРНО {nTravelTime}Ч. {nFlgPrn_xx1}
+msgCarrier_A9+0| НА ПЛАНЕТУ {nDest} В ТЕЧЕНИЕ {nWithin}Ч. {nFlgPrn_xx1}
+msgCarrier_AA+0|{nSetCrdXY,31,177}{nFlgPrn_xx1}ВОЗВРАТ К ВЫБОРУ
+msgCarrier_AB+0|{nFee}{nFlgPrn_xx1} КР ПОСЛЕ УСПЕШНОЙ ДОСТАВКИ

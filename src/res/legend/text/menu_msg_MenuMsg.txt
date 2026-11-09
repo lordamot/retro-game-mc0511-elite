@@ -1,0 +1,6 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/Messages/MenuMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_Docked+0|{nSetCrdXY,15,7}{nFlgPrn_1xx}{nSetZnkCrd}П Р И С Т Ы К О В А Н
+Msg_Launch+0|{nSetCrdXY,7,7}{nFlgPrn_1xx}{nSetZnkCrd}Н А Ч А Т Ь   Р А С С Т Ы К О В К У ?{nSetCrdXY,11,9}{nFlgPrn_xx1}{nFlgPrn0xx}Y (ДА) / N (НЕТ) / A (ВСЕГДА)

@@ -1,0 +1,90 @@
+# d_TargonIntH - extracted from orig/legend by tools/legend_ships.py;
+# object 59 of AdrDataShips, hull d_TargonInt.
+# `make extract` overwrites it.
+name TARGONINTH
+index 59
+class 3
+speed 39
+energy 254
+bounty 5500
+laser 240
+collide 160
+cargo 6
+launch 39
+dot 104
+rating 16384
+flags 13
+flags2 0
+laservert 6
+type 20
+objflags 199
+shipnum 65
+radius 240
+vertex    46   -87    50
+vertex    46   -87   -50
+vertex    46    87   -50
+vertex    46    87    50
+vertex    46     0   100
+vertex    46     0  -100
+vertex   -46  -120   208
+vertex   -46  -120  -208
+vertex   -46   120  -208
+vertex   -46   120   208
+vertex   -46  -240     0
+vertex   -46   240     0
+vertex   -46     0  -139
+vertex   -46   -40   -70
+vertex   -46    40   -70
+vertex   -46   -40    70
+vertex   -46    40    70
+vertex   -46   -80     0
+vertex   -46    80     0
+vertex   -46  -120    70
+vertex   -46   120    70
+edge 0 6 31 1 0
+edge 6 10 31 5 0
+edge 10 0 31 3 0
+edge 0 4 31 2 1
+edge 4 6 31 10 1
+edge 0 1 31 3 2
+edge 1 5 31 13 2
+edge 5 2 31 11 2
+edge 2 3 31 7 2
+edge 3 4 31 9 2
+edge 10 1 31 4 3
+edge 10 7 31 5 4
+edge 7 1 31 13 4
+edge 11 8 31 6 5
+edge 8 7 31 12 5
+edge 6 9 31 10 5
+edge 9 11 31 8 5
+edge 11 2 31 7 6
+edge 2 8 31 11 6
+edge 11 3 31 8 7
+edge 9 3 31 9 8
+edge 9 4 31 10 9
+edge 5 8 31 12 11
+edge 5 7 31 13 12
+edge 12 13 30 5 5
+edge 13 14 30 5 5
+edge 14 12 30 5 5
+edge 15 17 30 5 5
+edge 17 19 30 5 5
+edge 19 15 30 5 5
+edge 16 18 30 5 5
+edge 18 20 30 5 5
+edge 20 16 30 5 5
+normal   97  -72   41
+normal  109  -33   57
+normal   64    0    0
+normal  109  -66    0
+normal   97  -72  -41
+normal  -48    0    0
+normal   97   72  -41
+normal  109   66    0
+normal   97   72   41
+normal  109   33   57
+normal   97    0   83
+normal  109   33  -57
+normal   97    0  -83
+normal  109  -33  -57

@@ -1,0 +1,67 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/MissionsMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+AdrMsgMissions+0|{dw Msg_Pirates}{dw Msg_Targons}{dw msgMission_B2}{dw msgMission_B3}{dw msgMission_B4}{dw msgMission_B5}{dw msgMission_B6}{dw msgMission_B7}{dw msgMission_B8}{dw msgMission_B9}{dw msgMission_BA}{dw msgMission_BB}
+Msg_Pirates+0|ПИРАТАМИ!
+Msg_Targons+0|ТАРГОНАМИ!
+Msg_ShipBoard+0|{nSetCrdXY,12,7}{nFlgPrn0xx}КОРАБЛЬ ЗАХВАЧЕН {nFlgPrn_1xx}
+Msg_ShipBoardn+0|{#B0}{nPause24I}{nPause24I}{nSetCrdXY,11,11}{nFlgPrn0xx}НЕ ЖДИТЕ ОТ НИХ МИЛОСЕРДИЯ...
+Msg_EndMission3+0|{nSetCrdXY,3,5}{nFlgPrn_2xx}{nFlgPrn_xx1}В ЗНАК ПРИЗНАТЕЛЬНОСТИ ЗА ВАШЕ ИСКЛЮЧИТЕЛЬНОЕ{nSetCrdXY,3,7}МУЖЕСТВО ЖИТЕЛИ {nFlgPrn_xx1}{nPlanetOccup} НАГРАЖДАЮТ ВАС СВОЕЙ{nSetCrdXY,3,9}ВЫСШЕЙ НАГРАДОЙ.
+msgMission_B2+0|РАЗЫСКИВАЕТСЯ ГАЛ-КОРП'ОМ:
+msgMission_B3+0|БЕССТРАШНЫЙ ПИЛОТ
+msgMission_B4+0|ДЛЯ ВЫПОЛНЕНИЯ СПЕЦИАЛЬНОГО ЗАДАНИЯ
+msgMission_B5+0|ВЫ ЗАИНТЕРЕСОВАНЫ {nFlgPrn_1xx} (Y/N)?
+msgMission_B6+0|ВАША ЗАДАЧА:
+msgMission_B7+0|УДАЧИ!
+msgMission_B8+0|{nSetCrdXY,3,3}{nFlgPrn_2xx}{nFlgPrn_xx1}ВАМ ПРИСВОЕНО ЗВАНИЕ {nSetCrdXY,3,6}{nFlgPrn_1xx}{#B6}{nSetCrdXY,5,13}{#B7}{nSetCrdXY,5,8}
+msgMission_B9+0|ВЫ СПАСЕТЕ НАШИ ЖИЗНИ {nFlgPrn_1xx} (Y/N)?
+msgMission_BA+0|ШТУРМОВОЙ ОТРЯД ОЖИДАЕТ ВЫЛЕТА!
+msgMission_BB+0|{nSetCrdXY,5,10}УНИЧТОЖИТЬ КАК МОЖНО БОЛЬШЕ ЗАХВАТЧИКОВ!{nSetCrdXY,24,3}{nFlgPrn_2xx}{nFlgPrn_xx1}
+Msg_GiveMiss3+0|{nSetCrdXY,12,4}{nFlgPrn_1xx}{#B2}{nSetCrdXY,17,7}{#B3}{nSetCrdXY,8,9}{#B4}{nFlgPrn0xx}{nSetCrdXY,13,13}{nFlgPrn_2xx}{nFlgPrn_xx1}{#B5}
+Msg_GiveWar+0|{nSetCrdXY,12,4}{nFlgPrn_1xx}{#B2}{nSetCrdXY,17,7}{#B3}{nSetCrdXY,2,9}ДЛЯ УЧАСТИЯ В БОЕВЫХ ДЕЙСТВИЯХ ПРОТИВ ВТОРЖЕНИЯ{nSetCrdXY,2,10}ТАРГОНОВ.{nFlgPrn0xx}{nSetCrdXY,13,14}{nFlgPrn_2xx}{nFlgPrn_xx1}{#B5}
+Msg_War1+0|{#B8}ЭВАКУИРОВАТЬ БЕЖЕНЦЕВ С ПОДВЕГАЮЩИХСЯ{nSetCrdXY,3,9}АТАКАМ ТАРГОНОВ ПЛАНЕТ.{#BB}СЕРЖАНТ.
+Msg_War2+0|{#B8}ОБЕСПЕЧИТЬ СОПРОТИВЛЯЮЩИЕСЯ ПЛАНЕТЫ ВОДОЙ,{nSetCrdXY,3,9}ПРОДОВОЛЬСТВИЕМ И МЕДИКАМЕНТАМИ.{#BB}ЛЕЙТЕНАНТ.
+Msg_War3+0|{#B8}ОБЕСПЕЧИТЬ СОПРОТИВЛЯЮЩИЕСЯ ПЛАНЕТЫ ОРУЖИЕМ,{nSetCrdXY,3,9}ТОПЛИВОМ И БЕСПИЛОТНИКАМИ.{#BB}КАПИТАН.
+Msg_War4+0|{#B8}УНИЧТОЖИТЬ СТАНЦИИ, У ОККУПИРОВАННЫХ{nSetCrdXY,3,9}ТАРГОНАМИ ПЛАНЕТ.{#BB}МАЙОР.
+Msg_War5+0|{#B8}ДОСТАВИТЬ ШТУРМОВЫЕ ОТРЯДЫ НА ОККУПИРОВАННЫЕ{nSetCrdXY,3,9}ПЛАНЕТЫ.{#BB}ПОДПОЛКОВНИК.
+Msg_War6+0|{#B8}НАЙТИ И УНИЧТОЖИТЬ КОМАНДНУЮ БАЗУ ТАРГОНОВ,{nSetCrdXY,3,9}РАСПОЛОЖЕННУЮ НЕДАЛЕКО ОТ ПЛАНЕТЫ {nPlanetOccup}.{#BB}ПОЛКОВНИК.
+Msg_War7+0|{#B8}УНИЧТОЖАЙТЕ КОРАБЛИ ТАРГОНОВ, ПОКА ОНИ{nSetCrdXY,3,9} НЕ ПОКИНУТ ПРЕДЕЛЫ ГАЛАКТИКИ.{nSetCrdXY,24,3}{nFlgPrn_2xx}{nFlgPrn_xx1}ГЕНЕРАЛ.
+Msg_WarEnd+0|{nSetCrdXY,5,3}{nFlgPrn_2xx}ВЫ ДЕМОБИЛИЗОВАНЫ.{nFlgPrn_xx1}{nSetCrdXY,5,5}ВТОРЖЕНИЕ {nFlgPrn_xx1}ТАРГОНОВ ОСТАНОВЛЕНО,{nSetCrdXY,2,6}НО КАК ДОЛГО ПРОДЛИТСЯ ЭТОТ МИР?..
+Msg_InfoMiss3+0|{nSetCrdXY,5,3}{nFlgPrn_2xx}{nFlgPrn_xx1}ТАРГОНЫ ИСПОЛЬЗУЮТ КОСМИЧЕСКУЮ СТАНЦИЮ{nSetCrdXY,5,4}У {nFlgPrn_xx1}{nPlanetOccup} ДЛЯ АТАКИ ПЛАНЕТЫ.{nSetCrdXY,5,7}{nFlgPrn_1xx}{#B6}{nSetCrdXY,7,8}{nFlgPrn_2xx}{nFlgPrn_xx1}УНИЧТОЖИТЬ КОСМИЧЕСКУЮ СТАНЦИЮ{nSetCrdXY,7,9}НА ОРБИТЕ {nFlgPrn_xx1}{nPlanetOccup}.{nSetCrdXY,5,12}{nFlgPrn_1xx}{#B7}
+Msg_GiveMiss1+0|{nSetCrdXY,5,2}СОЛНЦЕ СКОРО СТАНЕТ СВЕРХНОВОЙ ЗВЕЗДОЙ!{nSetCrdXY,5,4}{#B9}
+Msg_WarRefugees+0|{nSetCrdXY,5,2}ТАРГОНЫ АТАКУЮТ ПЛАНЕТУ!{nSetCrdXY,5,4}{#B9}
+Msg_WarDescent+0|{nSetCrdXY,5,2}{#BA}{nSetCrdXY,5,4}ВЫ ГОТОВЫ ВЗЯТЬ ЕГО НА БОРТ {nFlgPrn_1xx} (Y/N)?
+Msg_WarDescSml+0|{nSetCrdXY,5,2}{#BA}{nSetCrdXY,5,4}НО ДЛЯ ТРАНСПОРТИРОВКИ ДЕСАНТА ВАШ КОРАБЛЬ {nSetCrdXY,5,5}СЛИШКОМ МАЛ.
+Msg_SaveRef+0|{nSetCrdXY,5,5}ВЫ СПАСЛИ НАШИ ЖИЗНИ!{nSetCrdXY,5,7}{nPause24I}{nPause24I}ПРИМИТЕ НАШУ БЛАГОДАРНОСТЬ!
+Msg_GiveGenShip+0|{nSetCrdXY,5,2}МЫ УСТАЛИ ОТ ЭТОГО БЕСКОНЕЧНОГО ПУТЕШЕСТВИЯ.{nSetCrdXY,3,3}ОТВЕЗИ НАС  В ЛЮБОЙ ИЗ ОБИТАЕМЫХ МИРОВ,  И МЫ{nSetCrdXY,3,4}ВОЗНАГРАДИМ ТЕБЯ!{nFlgPrn0xx}{nSetCrdXY,8,7}{nFlgPrn_2xx}{nFlgPrn_xx1}{#B5}
+Msg_RewardGen+0|{nSetCrdXY,5,2}БЛАГОДАРИМ ТЕБЯ, {#B3}!{nSetCrdXY,5,5}{nPause24I}ПОЛУЧИ СВОЕ ВОЗНАГРАЖДЕНИЕ.
+Msg_FailDeliv+0|{nSetCrdXY,5,5}ВЫ НЕ ИСПОЛНИЛИ СВОИ ОБЯЗАТЕЛЬСТВА.{nSetCrdXY,5,6}Я АННУЛИРУЮ КОНТРАКТ.{nSetCrdXY,5,8}{nPause24I}НАДЕЮСЬ, ЧТО БОЛЬШЕ НИКТО НЕ ВОСПОЛЬЗУЕТСЯ{nSetCrdXY,5,9}ВАШИМИ УСЛУГАМИ.
+Msg_NoTimeDeliv+0|{nSetCrdXY,4,5}НЕСМОТРЯ НА ТО, ЧТО СРОК ИСПОЛНЕНИЯ КОНТРАКТА{nSetCrdXY,4,6}ИСТЕК, Я ЗАПЛАЧУ ВАМ.{nSetCrdXY,4,8}{nPause24I}НО НЕ ЖДИТЕ ОТ МЕНЯ РЕКОМЕНДАЦИЙ.
+Msg_GoodDeliv+0|{nSetCrdXY,5,5}БЛАГОДАРЮ ЗА СВОЕВРЕМЕННУЮ ДОСТАВКУ.{nSetCrdXY,5,6}ПРИМИТЕ ОБЕЩАННУЮ ПЛАТУ.{nSetCrdXY,5,8}{nPause24I}{#B7}
+Msg_InfoMiss40+0|{nSetCrdXY,7,5}{nFlgPrn_2xx}{nFlgPrn_xx1}С ПЛАНЕТЫ {nFlgPrn_xx1}{nPlanetOccup} БЫЛ УГНАН КОРАБЛЬ{nSetCrdXY,4,6}С СЕКРЕТНЫМ ОБОРУДОВАНИЕМ.{nSetCrdXY,4,8}{nFlgPrn_1xx}{#B6}{nFlgPrn_2xx}{nFlgPrn_xx1} ВЫСЛЕДИТЬ И УНИЧТОЖИТЬ УГОНЩИКА.{nSetCrdXY,5,11}{nFlgPrn_1xx}{#B7}
+Msg_InfoMiss41+0|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}КОРАБЛЬ, КОТОРЫЙ ТЕБЯ ИНТЕРЕСУЕТ, НАПРАВИЛСЯ{nSetCrdXY,4,7}В СИСТЕМУ {nFlgPrn_xx1}{nPlanetOccup}.
+Msg_InfoMiss41+1|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}УГНАННЫЙ КОРАБЛЬ БЫЛ ЗАМЕЧЕН ВБЛИЗИ ПЛАНЕТЫ{nSetCrdXY,4,7}{nFlgPrn_xx1}{nPlanetOccup}.
+Msg_InfoMiss41+2|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ОН БЫЛ ЗДЕСЬ НЕДАВНО. {nFlgPrn_xx1}ЗАПРАВИЛСЯ И ТЕПЕРЬ{nSetCrdXY,4,7}ДЕРЖИТ ПУТЬ НА {nFlgPrn_xx1}{nPlanetOccup}.
+Msg_InfoMiss42+0|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ОН ПРИОБРЕЛ ГИПЕРДВИГАТЕЛЬ НА ЧЕРНОМ РЫНКЕ.{nSetCrdXY,4,7}{nFlgPrn_xx1}ВЫВОДЫ ДЕЛАЙ САМ.
+Msg_EndMission4+0|{nSetCrdXY,4,5}{nFlgPrn_2xx}{nFlgPrn_xx1}БЛАГОДАРЮ.{nSetCrdXY,4,6}{nFlgPrn_xx1}ВЫ ИЗБАВИЛИ НАС ОТ БОЛЬШИХ НЕПРИЯТНОСТЕЙ.{nSetCrdXY,4,8}{nFlgPrn_xx1}ДУМАЮ ХОРОШИЙ ЛАЗЕР БУДЕТ ДОСТОЙНОЙ НАГРАДОЙ.{nSetCrdXY,4,11}{nFlgPrn_1xx}{#B7}
+Msg_InfoMiss50+0|{nSetCrdXY,4,5}{nFlgPrn_2xx}{nFlgPrn_xx1}НАШЕМУ АГЕНТУ УДАЛОСЬ ПОЛУЧИТЬ ПЛАНЫ ОБОРОНЫ{nSetCrdXY,4,6}УЛЬЯ ТАРГОИДОВ.  {nFlgPrn_xx1}НО, К СОЖАЛЕНИЮ, ПЕРЕДАВАТЬ{nSetCrdXY,4,7}ЭТИ ДАННЫЕ  ПО ОБЫЧНЫМ КАНАЛАМ СВЯЗИ СЛИШКОМ{nSetCrdXY,4,8}РИСКОВАННО.{nSetCrdXY,4,10}{nFlgPrn_1xx}{#B6}{nSetCrdXY,7,11}{nFlgPrn_2xx}{nFlgPrn_xx1}ДОСТАВИТЬ ИНФОРМАЦИЮ В ШТАБКВАРТИРУ НА{nSetCrdXY,7,12}СТАНЦИИ {nFlgPrn_xx1}{nPlanetOccup}.{nSetCrdXY,4,15}{nFlgPrn_1xx}{#B7}
+Msg_EndMission5+0|{nSetCrdXY,4,5}{nFlgPrn_2xx}{nFlgPrn_xx1}БЛАГОДАРЮ ВАС!{nSetCrdXY,4,6}{nFlgPrn_xx1}БЛАГОДАРЯ  ЭТИМ  ДАННЫМ  МЫ НАКОНЕЦ СМОЖЕМ{nSetCrdXY,4,7}СОВЕРШИТЬ РЕЙД  К ДОМАШНИМ МИРАМ ТАРГОНОВ.{nSetCrdXY,4,8}{nFlgPrn_xx1}В  НАГРАДУ  ЗА ДОСТАВКУ  СЕКРЕТНЫХ  ДАННЫХ{nSetCrdXY,4,9}ПРИМИТЕ АРМЕЙСКИЙ ЭНЕРГЕТИЧЕСКИЙ ГЕНЕРАТОР.{nSetCrdXY,4,12}{nFlgPrn_1xx}{#B7}
+Msg_FindRaxxla+0|{nSetCrdXY,8,4}{nFlgPrn_2xx}{nFlgPrn_xx1}{'ДОБРО ПОЖАЛОВАТЬ В ЛИГУ "'}{nFlgPrn_xx1}{'ТЕМНОЕ КОЛЕСО"!'}{nSetCrdXY,7,6}{nFlgPrn_xx1}ТЫ ПРОШЕЛ ЧЕРЕЗ  МНОГИЕ  ИСПЫТАНИЯ.  {nFlgPrn_xx1}МНОГО{nSetCrdXY,4,7}ПАРСЕКОВ  ОСТАЛОСЬ ЗА  КОРМОЙ ТВОЕГО КОРАБЛЯ.{nSetCrdXY,4,8}{nFlgPrn_xx1}МЫ ПРИСТАЛЬНО СЛЕДИЛИ  ЗА  ТВОИМИ  УСПЕХАМИ И{nSetCrdXY,4,9}НЕУДАЧАМИ.  {nFlgPrn_xx1}И ТЕПЕРЬ, КОГДА  ТЫ СТАЛ ОТЛИЧНЫМ{nSetCrdXY,4,10}ПИЛОТОМ, МЫ РАДЫ ВИДЕТЬ ТЕБЯ В СВОИХ РЯДАХ.{nSetCrdXY,7,11}{nFlgPrn_xx1}ВСЕ НАШИ ЗНАНИЯ И РЕСУРСЫ ТЕПЕРЬ ДОСТУПНЫ{nSetCrdXY,4,12}ТЕБЕ, КАК И КАЖДОМУ ЧЛЕНУ СОЮЗА, НО ПОЛЬЗУЙСЯ{nSetCrdXY,4,13}ИМИ ВДУМЧИВО, СЛИШКОМ МНОГИЕ ЖЕЛАЮТ ДОБРАТЬСЯ{nSetCrdXY,4,14}ДО НАШИХ ЗНАНИЙ И ТЕХНОЛОГИЙ.{nSetCrdXY,4,16}{nFlgPrn_xx1}ПОМНИ! {nFlgPrn_xx1}ЭКСПЕРИМЕНТАЛЬНЫЙ ГИПЕРПРИВОД ПОЗВОЛИТ{nSetCrdXY,4,17}ТЕБЕ ВЕРНУТЬСЯ СЮДА ИЗ ЛЮБОГО МЕСТА ВСЕЛЕННОЙ!
+Msg_InfoMiss61+0|{nSetCrdXY,7,5}{nFlgPrn_2xx}{nFlgPrn_xx1}ТАРГОНЫ...  {nFlgPrn_xx1}ЭТИ ТАРАКАНЫ ВСЕЛЕННОЙ   ПОСЛЕ{nSetCrdXY,4,6}НЕУДАЧНОГО ВТОРЖЕНИЯ  СНОВА  ЗАТЕЯЛИ КАКУЮ-ТО{nSetCrdXY,4,7}СТРАННУЮ ВОЗНЮ. {nFlgPrn_xx1}ВО МНОГИХ МИРАХ БЫЛИ ЗАМЕЧЕНЫ{nSetCrdXY,4,8}ИХ НОВЫЕ КОРАБЛИ. {nFlgPrn_xx1}ОНИ ГОРАЗДО МЕНЬШЕ РАЗМЕРОМ{nSetCrdXY,4,9}И, ЧТО УДИВИТЕЛЬНО, ОСНАЩЕНЫ АНАЛОГОМ СИСТЕМЫ{nSetCrdXY,4,10}ЭКСТРЕННОГО КАТАПУЛЬТИРОВАНИЯ. {nFlgPrn_xx1}МЫ ДУМАЕМ, ЧТО{nSetCrdXY,4,11}ЭТИ ШПИОНЫ ЧТО-ТО РАЗЫСКИВАЮТ. {nFlgPrn_xx1}НАМ НЕОБХОДИМО{nSetCrdXY,4,12}ВЫЯСНИТЬ ИХ ЦЕЛИ.{nSetCrdXY,4,14}{nFlgPrn_1xx}{#B6}{nFlgPrn_2xx}{nFlgPrn_xx1} ОБНАРУЖИТЬ И ЗАХВАТИТЬ НЕСКОЛЬКО{nSetCrdXY,17,15}ТАКИХ КОРАБЛЕЙ  И  ДОСТАВИТЬ  ИХ{nSetCrdXY,17,16}ДЛЯ ИССЛЕДОВАНИЯ.{nSetCrdXY,4,18}{nFlgPrn_1xx}{#B7}
+Msg_InfoMiss62+0|{nSetCrdXY,7,5}{nFlgPrn_2xx}{nFlgPrn_xx1}МЫ ПРОАНАЛИЗИРОВАЛИ  ДАННЫЕ С ЗАХВАЧЕННЫХ{nSetCrdXY,4,6}КОРАБЛЕЙ-ШПИОНОВ И, ПОМИМО ПРОЧЕГО, ВЫЯСНИЛИ{nSetCrdXY,4,7}ОДИН НЕПРИЯТНЫЙ ФАКТ. {nFlgPrn_xx1}ТАРГОНЫ ЗАХВАТИЛИ ОДИН{nSetCrdXY,4,8}ИЗ ОКРАИННЫХ  МИРОВ В  ГАЛАКТИКЕ 
+Msg_InfoMiss62g+0|00 И НАЧАЛИ{nSetCrdXY,4,9}ПОСТРОЙКУ НОВОГО СВЕРХТЯЖЕЛОГО КРЕЙСЕРА.{nSetCrdXY,7,10}{nFlgPrn_xx1}КРОМЕ ТОГО,  НА ДВУХ ЗАХВАЧЕННЫХ КОРАБЛЯХ{nSetCrdXY,4,11}ЭНЕРГОБЛОКИ ОКАЗАЛИСЬ УЦЕЛЕВШИМИ.  {nFlgPrn_xx1}ИНЖЕНЕРАМ{nSetCrdXY,4,12}УДАЛОСЬ АДАПТИРОВАТЬ  ИХ  ПОД  НАШИ СИСТЕМЫ.{nSetCrdXY,4,13}{nFlgPrn_xx1}ОДИН ИЗ НИХ МЫ УСТАНОВИМ НА ТВОЙ КОРАБЛЬ.{nSetCrdXY,4,15}{nFlgPrn_1xx}{#B6}{nFlgPrn_2xx}{nFlgPrn_xx1} ЗАХВАТИТЬ НЕДОСТРОЕННЫЙ КРЕЙСЕР{nSetCrdXY,4,18}{nFlgPrn_1xx}{#B7}
+Msg_InfoMiss63+0|{nSetCrdXY,6,5}{nFlgPrn_2xx}{nFlgPrn_xx1}НАМ НУЖНО ВРЕМЯ, ЧТОБЫ ИЗУЧИТЬ ЗАХВАЧЕННЫЙ{nSetCrdXY,4,6}КРЕЙСЕР.  {nFlgPrn_xx1}ТЕБЕ  ЖЕ  ПРИДЕТСЯ ВЕРНУТЬСЯ В ТОТ{nSetCrdXY,4,7}МИР И ОСВОБОДИТЬ ЕГО ОТ ТАРГОНОВ.{nSetCrdXY,6,8}{nFlgPrn_xx1}НЕ ИСКЛЮЧЕНО,  ЧТО КРОМЕ  ЭТОГО  КРЕЙСЕРА{nSetCrdXY,4,9}ЕСТЬ И  ДРУГИЕ.  {nFlgPrn_xx1}СТАРАЙСЯ  ИЗБЕГАТЬ  С  НИМИ{nSetCrdXY,4,10}СТОЛКНОВЕНИЙ.{nSetCrdXY,4,12}{nFlgPrn_1xx}{#B6}{nFlgPrn_2xx}{nFlgPrn_xx1} ОСВОБОДИТЬ ЗАХВАЧЕННУЮ СИСТЕМУ{nSetCrdXY,4,14}{nFlgPrn_1xx}{#B7}
+Msg_EndMiss6+0|{nSetCrdXY,6,4}{nFlgPrn_2xx}{nFlgPrn_xx1}ТАРГОНЫ ДАЛЕКО ПРОДВИНУЛИСЬ В ТЕХНОЛОГИЯХ.{nSetCrdXY,3,5}ИХ  НОВЫЙ КРЕЙСЕР - ЭТО НАСТОЯЩАЯ КОСМИЧЕСКАЯ{nSetCrdXY,3,6}КРЕПОСТЬ.  {nFlgPrn_xx1}ТАКИМИ   НЕПРОБИВАЕМЫМИ  ЩИТАМИ  И{nSetCrdXY,3,7}ОГНЕВОЙ МОЩЬЮ НЕ ОБЛАДАЕТ НИ ОДИН ИЗ КОРАБЛЕЙ{nSetCrdXY,3,8}В  ИЗВЕСТНЫХ НАМ МИРАХ.  {nFlgPrn_xx1}КРОМЕ ТОГО, ОН МОЖЕТ{nSetCrdXY,3,9}НЕСТИ НА БОРТУ НЕСКОЛЬКО ПЕРЕХВАТЧИКОВ.  {nFlgPrn_xx1}НАДО{nSetCrdXY,3,10}ПОЛАГАТЬ НОВОЕ ВТОРЖЕНИЕ БУДЕТ ГОРАЗДО РАНЬШЕ{nSetCrdXY,3,11}ЧЕМ МЫ ДУМАЛИ.  {nFlgPrn_xx1}МЫ  УСТАНОВИМ НА ТВОЙ КОРАБЛЬ{nSetCrdXY,3,12}ЛАЗЕРНЫЕ ТУРРЕЛИ, СПОСОБНЫЕ ПРОБИТЬ  ЩИТЫ  ИХ{nSetCrdXY,3,13}НОВЫХ  КРЕЙСЕРОВ, В  ГРЯДУЩЕМ  ПРОТИВОСТОЯНИИ{nSetCrdXY,3,14}ОНИ НЕ БУДУТ ЛИШНИМИ.{nSetCrdXY,3,16}{nFlgPrn_xx1}ГОТОВЬСЯ К ВОЙНЕ...
+Msg_HintRaxxla1+0|{nSetCrdXY,3,18}{nFlgPrn_1xx}P.S. {nFlgPrn_2xx}{nFlgPrn_xx1}СИСТЕМА {nFlgPrn_xx1}ININES, И ПОДОБНЫЕ ЕЙ ВОЗМОЖНО{nSetCrdXY,8,19}ЗАИНТЕРЕСУЮТ ТЕБЯ.
+Msg_InfoMiss70+0|{nSetCrdXY,6,5}{nFlgPrn_2xx}{nFlgPrn_xx1}УЧЕНЫЕ НАКОНЕЦ ВЫЯСНИЛИ, ОТКУДА ПОЯВЛЯЮТСЯ{nSetCrdXY,3,6}В НАШИХ МИРАХ КОРАБЛИ ТАРГОНОВ. {nFlgPrn_xx1}ВОЗНИКАЮЩИЕ У{nSetCrdXY,3,7}НЕКОТОРЫХ ЗВЕЗД  АНОМАЛИИ...  {nFlgPrn_xx1}ТЕБЕ, ВЕРОЯТНО,{nSetCrdXY,3,8}УЖЕ  ПРИХОДИЛОСЬ СТАЛКИВАТЬСЯ С НИМИ.  {nFlgPrn_xx1}ОТКУДА{nSetCrdXY,3,9}ОНИ БЕРУТСЯ,  И ПОЧЕМУ ВНЕЗАПНО ИСЧЕЗАЮТ,  МЫ{nSetCrdXY,3,10}ЕЩЕ НЕ ПОНИМАЕМ. {nFlgPrn_xx1}НО НЕКОТОРЫЕ ИЗ НИХ ПРЯМИКОМ{nSetCrdXY,3,11}ВЕДУТ В ГАЛАКТИКУ ТАРГОНОВ.{nSetCrdXY,3,13}{nFlgPrn_1xx}{#B6}{nFlgPrn_2xx}{nFlgPrn_xx1} НАЙТИ ПУТЬ В ГАЛАКТИКУ ТАРГОНОВ.{nSetCrdXY,16,14}{nFlgPrn_xx1}С ПОМОЩЬЮ  ШТУРМОВИКОВ  ОСНОВАТЬ{nSetCrdXY,16,15}ПЛАЦДАРМ ДЛЯ АТАКИ.{nSetCrdXY,3,17}{nFlgPrn_1xx}{#B7}
+Msg_InfoMiss7f+0|{nSetCrdXY,7,5}{nFlgPrn_2xx}{nFlgPrn_xx1}ОТЛИЧНО. {nFlgPrn_xx1}НАЧАЛО ПОЛОЖЕНО. {nFlgPrn_xx1}МЫ ЗАКРЕПИМСЯ В{nSetCrdXY,4,6}ЭТОЙ СИСТЕМЕ  И НАЧНЕМ ПЕРЕБРОСКУ РЕГУЛЯРНЫХ{nSetCrdXY,4,7}ВОЙСК.  {nFlgPrn_xx1}ШТУРМОВЫЕ ОТРЯДЫ БУДУТ ФОРМИРОВАТЬСЯ{nSetCrdXY,4,8}НА ВОЕННЫХ СТАНЦИЯХ.{nSetCrdXY,4,10}{nFlgPrn_1xx}{#B6}{nFlgPrn_2xx}{nFlgPrn_xx1} С ПОМОЩЬЮ ШТУРМОВИКОВ  ЗАХВАТИТЬ{nSetCrdXY,17,11}ВСЕ СТАНЦИИ ТАРГОНОВ В ГАЛАКТИКЕ{nSetCrdXY,4,13}{nFlgPrn_1xx}{#B7}
+Msg_InfoMiss71+0|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ОТЛИЧНАЯ РАБОТА, КОММАНДЕР. {nFlgPrn_xx1}МЫ СТАЛИ НА ОДИН{nSetCrdXY,4,7}ШАГ БЛИЖЕ К ПОБЕДЕ В ВОЙНЕ ЗА ЭТУ ГАЛАКТИКУ.
+Msg_InfoMiss71+1|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ВЕЛИКОЛЕПНО! {nFlgPrn_xx1}ТАРГОНЫ ПОТЕРЯЛИ ВЛИЯНИЕ ЕЩЕ В{nSetCrdXY,4,7}ОДНОЙ  СИСТЕМЕ.  {nFlgPrn_xx1}СКОРО  И  ЗДЕСЬ БУДУТ НАШИ{nSetCrdXY,4,8}РЕГУЛЯРНЫЕ ВОЙСКА.
+Msg_InfoMiss71+2|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ТАРГОНЫ НЕСУТ БОЛЬШИЕ ПОТЕРИ. {nFlgPrn_xx1}ВОТ И ЕЩЕ ОДНА{nSetCrdXY,4,7}СИСТЕМА СТАЛА СВОБОДНОЙ.
+Msg_InfoMiss71+3|{nSetCrdXY,5,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ОТЛИЧНО! {nFlgPrn_xx1}БЛИЗОК ТОТ ДЕНЬ, КОГДА ПОСЛЕДНЯЯ{nSetCrdXY,5,7}СТАНЦИЯ ТАРГОНОВ БУДЕТ УНИЧТОЖЕНА.
+Msg_InfoMiss71+4|{nSetCrdXY,5,6}{nFlgPrn_2xx}{nFlgPrn_xx1}СТАНЦИЯ ЗАХВАЧЕНА!
+Msg_InfoMiss71+5|{nSetCrdXY,3,6}{nFlgPrn_2xx}{nFlgPrn_xx1}МЫ ПОНЕСЛИ БОЛЬШИЕ ПОТЕРИ, НО ИЗГНАЛИ ТАРГОНОВ{nSetCrdXY,3,7}ИЗ ЭТОЙ СИСТЕМЫ.
+Msg_InfoMiss71+6|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ТАРГОНЫ ПОКИНУЛИ ЭТУ СИСТЕМУ ПРАКТИЧЕСКИ НЕ{nSetCrdXY,4,7}ОКАЗАВ СОПРОТИВЛЕНИЯ.
+Msg_InfoMiss71+7|{nSetCrdXY,4,6}{nFlgPrn_2xx}{nFlgPrn_xx1}СТАНЦИЯ ПОД НАШИМ КОНТРОЛЕМ.
+Msg_EndMiss7+0|{nSetCrdXY,6,6}{nFlgPrn_2xx}{nFlgPrn_xx1}ПОСЛЕДНИЙ ОПЛОТ ТАРГОНОВ УНИЧТОЖЕН! {nFlgPrn_xx1}НО КАК{nSetCrdXY,4,7}ЖЕ  МЫ  ОШИБАЛИСЬ...   {nFlgPrn_xx1}ЭТА  ГАЛАКТИКА  НЕ ИХ{nSetCrdXY,4,8}РОДНОЙ  МИР,  А ЛИШЬ ОДНА ИЗ  МНОГОЧИСЛЕННЫХ{nSetCrdXY,4,9}ПОКОРЕННЫХ ИМИ ГАЛАКТИК.{nFlgPrn_xx1}{nSetCrdXY,4,11}ИЗ КАКИХ ГЛУБИН КОСМОСА ОНИ ЯВИЛИСЬ,  СМОЖЕМ{nSetCrdXY,4,12}ЛИ  МЫ КОГДА-НИБУДЬ  ПОЛНОСТЬЮ ИЗБАВИТЬСЯ ОТ{nSetCrdXY,4,13}НИХ...  {nFlgPrn_xx1}ТОЛЬКО  ВРЕМЯ  ДАСТ  ОТВЕТЫ  НА  ЭТИ{nSetCrdXY,4,14}ВОПРОСЫ...

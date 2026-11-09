@@ -1,0 +1,16 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/SaveLoadMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_SaveLoad+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,19,4}МЕНЮ ДОСТУПА{nFlgPrn_xx1}{nSetCrdXY,4,32}ЗАГРУЗИТЬ НОВОГО ПИЛОТА{nFlgPrn_xx1}{nSetCrdXY,4,48}СОХРАНИТЬ ПИЛОТА {nPrnPilotName}{nFlgPrn0xx}{nFlgPrn_xx1}{nSetCrdXY,4,64}ДЕМОНСТРАЦИЯ{nFlgPrn_xx1}{nSetCrdXY,4,80}ВЫХОД
+Msg_LoadGame+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,21,4}ЗАГРУЗКА
+Msg_CommSaved+0|ИГРА СОХРАНЕНА
+Msg_CommLoaded+0|ИГРА ЗАГРУЖЕНА
+Msg_DiskError+0|ОШИБКА ЧТЕНИЯ/ЗАПИСИ
+Msg_FileError+0|ОШИБКА ФАЙЛА
+Msg_NoFiles+0|НЕТ ФАЙЛОВ
+Msg_StartTape+0|ВКЛЮЧИТЕ ЛЕНТУ, ЗАТЕМ НАЖМИТЕ ЛЮБУЮ КЛАВИШУ
+Msg_Break+0|ПРЕРВАНО
+Msg_EnterName+0|ВВЕДИТЕ ИМЯ?
+Msg_TapeError+0|ОШИБКА ЗАГРУЗКИ С ЛЕНТЫ
+Msg_CommFound+0|НАЙДЕН ПИЛОТ:

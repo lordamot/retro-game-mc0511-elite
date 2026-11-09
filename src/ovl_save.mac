@@ -1,0 +1,313 @@
+; =========================================================================
+; ovl_save.mac - the access menu: Elite Legend's Save/Load menu
+; (orig/legend/.../INCLUDE/Menu/SaveLoad.a80) over this port's disk
+; slots.  AN OVERLAY (src/ovl.list, with src/nameask.mac), called
+; through its first word with R0 = 0 to draw and R0 = 1 for its keys.
+; Screen 8 in СТОП's cycle, the last.
+;
+; Legend's menu has three lines - load a new pilot, save this one, exit
+; - and its load list is the disk's catalogue of saved games.  Here the
+; disk holds NCMDRS commanders in fixed slots (src/save.mac), so both
+; the load and the save go through a list of the four, named as the
+; commander chooser names them.  Loading a slot reads the record and
+; restarts the game as that commander, docked, without the title
+; (Legend's NewLoad; FLY_LOADED in src/main.mac).  Saving asks the name
+; first, from the one the record has (InputNamePilot), and the slot
+; saved into becomes the commander's own: the station writes him there
+; from then on.  Legend opens the menu at the main station only; so
+; does this.  Legend's RAM copy of the pilot (StorePilot/RestorePilot,
+; what a death restarts from) has no counterpart: a death here goes
+; back through the title and the chooser, and the disk is the copy.
+;
+; Keys are Legend's: up and down move, left and right go to the first
+; and the last line, ФИКС chooses; and in a list ВВОД goes back to the
+; menu.
+; =========================================================================
+
+		JMP	OVLS_ENTRY		; the overlay's entry, at OVL_BASE
+
+SV_XC	= 4			; the cursor column, and the lines after it
+SV_XL	= 6
+SV_Y0	= 40.			; the first line
+SV_STEP	= 16.
+SV_YMSG	= 176.
+SV_YNAME = 140.			; where the name is asked
+
+; state
+SV_MODE:	.WORD	0		; 0 the menu, 1 the load list, 2 the save list
+SV_SEL:		.WORD	0		; the line the cursor is on
+SV_MSG:		.WORD	0		; a message for the bottom line, or 0
+SV_I:		.WORD	0
+SV_T:		.WORD	0
+SV_NAMES_READY: .WORD 0
+SV_OLD_SLOT: .WORD 0
+SV_NAME_BYTES = 12.
+SV_NAMES_DATA: .BLKB NCMDRS*SV_NAME_BYTES
+ .EVEN
+
+OVLS_ENTRY:	TST	R0
+		BNE	1$
+		CLR SV_NAMES_READY
+		CLR	SV_MODE			; entered: the menu, its first line
+		CLR	SV_SEL
+		CLR	SV_MSG
+		JMP	SV_DRAW
+1$:		JMP	OVLS_KEYS
+
+; =========================================================================
+; The keys (UpSaveLoad, DownSaveLoad, LeftSaveLoad, RightSaveLoad,
+; SelectSaveLoad), tested in KEYS_EDGE where it lies.
+; =========================================================================
+OVLS_KEYS:	CALL	SV_OPEN
+		BCS	9$
+		BIT	#K_ENTER,KEYS_EDGE	; a list: back to the menu
+		BEQ	1$
+		TST	SV_MODE
+		BEQ	1$
+		CLR	SV_MODE
+		CLR	SV_SEL
+		CLR	SV_MSG
+1$:		BIT	#K_UP,KEYS_EDGE
+		BEQ	2$
+		TST	SV_SEL
+		BEQ	2$
+		DEC	SV_SEL
+2$:		BIT	#K_DOWN,KEYS_EDGE
+		BEQ	3$
+		CALL	SV_LINES
+		DEC	R0
+		CMP	SV_SEL,R0
+		BGE	3$
+		INC	SV_SEL
+3$:		BIT	#K_LEFT,KEYS_EDGE	; the first line
+		BEQ	4$
+		CLR	SV_SEL
+4$:		BIT	#K_RIGHT,KEYS_EDGE	; and the last
+		BEQ	5$
+		CALL	SV_LINES
+		DEC	R0
+		MOV	R0,SV_SEL
+5$:		BIT	#K_FIRE,KEYS_EDGE
+		BEQ	6$
+		CALL	SV_FIRE			; may not come back
+		CALL	TILL
+6$:		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN!K_FIRE!K_ENTER,KEYS_EDGE
+		BEQ	9$
+		JMP	SV_DRAW
+9$:		RETURN
+
+TILL:		BCS	1$
+		MOV	#FX_OPTION,R0
+		BR	2$
+1$:		MOV	#FX_KEY,R0
+2$:		JMP	SFX_PLAY
+
+; SV_LINES - R0 = how many lines the current list has.
+SV_LINES:	MOV	#3,R0
+		TST	SV_MODE
+		BEQ	1$
+		MOV	#NCMDRS,R0
+1$:		RETURN
+
+; SV_OPEN - Cmd_Shift_SaveLoad's gate: C set unless docked at the main
+; station.
+SV_OPEN:	TST	DOCKED
+		BEQ	9$
+		MOV	DOCKED_AT,R0
+		BEQ	1$
+		CMP	R0,#BK_STATION
+		BNE	9$
+1$:		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; SV_DRAW - the whole screen: the title, the menu or a list of the
+; slots, and the message line.
+; =========================================================================
+SV_DRAW:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	SV_MODE,R0
+		ASL	R0
+		MOV	SV_TITLES(R0),R1
+		CALL	PUTS2
+
+		MOV	#SV_XL,TX
+		MOV	#SV_Y0,TY
+		TST	DOCKED
+		BNE	1$
+		MOV	#S_M_DOCKED,R1
+		JMP	PUTS
+1$:		CALL	SV_OPEN
+		BCC	2$
+		MOV	#S_V_STATION,R1
+		JMP	PUTS
+
+2$:		TST SV_MODE
+		BEQ 3$
+		CALL SV_CACHE_NAMES
+3$:		CLR	SV_I
+10$:		MOV	SV_I,R1			; the cursor
+		MUL	#SV_STEP,R1		; R1 odd - low 16 bits
+		ADD	#SV_Y0,R1
+		MOV	R1,SV_T
+		MOV	#SV_XC,TX
+		MOV	SV_T,TY
+		MOV	#40,R0
+		CMP	SV_I,SV_SEL
+		BNE	11$
+		MOV	#76,R0			; ">"
+11$:		CALL	PUTC
+		MOV	#SV_XL,TX
+		TST	SV_MODE
+		BNE	20$
+		MOV	SV_I,R0			; the menu's three lines
+		ASL	R0
+		MOV	SV_MENU(R0),R1
+		CALL	PUTS
+		CMP	SV_I,#1			; "СОХРАНИТЬ ПИЛОТА " and his name
+		BNE	30$
+		MOV	#CMDR_NAME,R1
+		CALL	PUTS
+		BR	30$
+20$:		MOV	SV_I,R0			; a slot: its number and its name
+		ADD	#61,R0			; "1".."4"
+		CALL	PUTC
+		MOV	#40,R0
+		CALL	PUTC
+		MOV	SV_I,R0
+		CALL	SV_CACHED_NAME
+		BCC	21$
+		MOV	#S_M_EMPTY,R1
+21$:		CALL	PUTS
+30$:		INC	SV_I
+		CALL	SV_LINES
+		CMP	SV_I,R0
+		BLO	10$
+
+		MOV	SV_MSG,R1		; the message line: a message, or
+		BNE	31$			;   how to leave a list
+		TST	SV_MODE
+		BEQ	9$
+		MOV	#S_V_HINT,R1
+31$:		MOV	#2,TX
+		MOV	#SV_YMSG,TY
+		JMP	PUTS
+9$:		RETURN
+
+SV_TITLES:	.WORD	S_T_ACCESS, S_T_LOAD, S_T_SAVE
+SV_MENU:	.WORD	S_V_LOADNEW, S_V_SAVE, S_V_EXIT
+
+; =========================================================================
+; SV_FIRE - ФИКС: on the menu, into a list or out; in the load list,
+; that commander (SelectSaveLoad, LoadGameFileTRD); in the save list,
+; this one into that slot (SaveGameFileTRD).  C set on a refusal.
+; =========================================================================
+SV_FIRE:	CLR	SV_MSG
+		MOV	SV_MODE,R0
+		BNE	10$
+		MOV	SV_SEL,R0		; the menu
+		BEQ	1$
+		CMP	R0,#1
+		BEQ	2$
+		CLR	SCREEN			; exit: the cockpit
+		JMP	SCR_SHOW
+1$:		MOV	#1,SV_MODE		; the load list, on his own slot
+		BR	3$
+2$:		MOV	#2,SV_MODE		; the save list, the same
+3$:		MOV	CMDR_SLOT,SV_SEL
+		CLC
+		RETURN
+
+10$:		CMP	R0,#2
+		BEQ	SV_SAVE
+
+; Load into staging first. A failed file read leaves the current pilot
+; and selected save slot intact; it must not restart into a different pilot.
+SV_LOAD: MOV SV_SEL,R0
+ CALL SV_CACHED_NAME
+ BCS 2$
+ MOV CMDR_SLOT,SV_OLD_SLOT
+ MOV SV_SEL,CMDR_SLOT
+ CALL LOAD_CMDR
+ BCS 1$
+ JMP FLY_LOADED
+1$: MOV SV_OLD_SLOT,CMDR_SLOT
+2$: MOV #S_V_FILEERR,SV_MSG
+ SEC
+ RETURN
+
+; SaveGameFileTRD: the name, edited from what it is, then the record
+; into the slot, which is the commander's from now on.
+SV_SAVE:	MOV	#2,TX
+		MOV	#SV_YMSG,TY
+		MOV	#S_V_HINT,R1		; the hint would sit under the
+		CALL	PUTS_BLANK		;   prompt: blank it
+		MOV	#SV_YNAME,R0
+		CALL	NAME_EDIT
+		CALL	INPUT_FLUSH		; ВВОД has been dealt with
+		MOV CMDR_SLOT,SV_OLD_SLOT
+		MOV	SV_SEL,CMDR_SLOT
+		CALL	SAVE_CMDR
+		BCS	1$
+		CLR SV_NAMES_READY
+		MOV	#S_V_SAVED,SV_MSG
+		CLR	SV_MODE			; back to the menu, saying so
+		CLR	SV_SEL
+		CLC
+		RETURN
+1$:		MOV SV_OLD_SLOT,CMDR_SLOT
+		MOV	#S_V_DISKERR,SV_MSG
+		SEC
+		RETURN
+
+; PUTS_BLANK - blank as many columns at TX, TY as the string at R1 is
+; long.  Clobbers R0..R4.
+PUTS_BLANK:	CLR	R2
+1$:		TSTB	(R1)+
+		BEQ	2$
+		INC	R2
+		BR	1$
+2$:		MOV	TX,R0
+		MOV	TY,R1
+		JMP	TEXT_CLEAR
+
+; Directory lookups can swap the RT-11 USR. Read names once per menu
+; visit (and after a successful save), not on every cursor redraw.
+; This cache lives only in the save overlay; no resident memory is used.
+SV_CACHE_NAMES:
+ TST SV_NAMES_READY
+ BNE 9$
+ CLR SV_I
+1$: MOV SV_I,R0
+ CALL SLOT_NAME
+ BCC 2$
+ CLR R1
+2$: MOV SV_I,R3
+ MUL #SV_NAME_BYTES,R3
+ ADD #SV_NAMES_DATA,R3
+ TST R1
+ BEQ 4$
+ MOV #NAME_MAX,R2
+3$: MOVB (R1)+,(R3)+
+ SOB R2,3$
+4$: CLRB (R3)
+ INC SV_I
+ CMP SV_I,#NCMDRS
+ BLO 1$
+ INC SV_NAMES_READY
+9$: RETURN
+
+; R0 slot -> R1 cached name, C set for an empty or invalid record.
+SV_CACHED_NAME:
+ MOV R0,R1
+ MUL #SV_NAME_BYTES,R1
+ ADD #SV_NAMES_DATA,R1
+ TSTB (R1)
+ BEQ 1$
+ CLC
+ RETURN
+1$: SEC
+ RETURN

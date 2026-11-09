@@ -1,0 +1,111 @@
+; =========================================================================
+; portal_fly.mac - the portals (SetExtendedObj, Engine/eLowMem.a80), in
+; the flight overlay (src/ovl_fly.mac); MS_PORTALOK and MS_DIAG, the
+; gate, are resident (src/mission.mac), and so is PORTAL_JUMP, the way
+; through (src/bases.mac).
+; =========================================================================
+
+; =========================================================================
+; MS_PORTAL - once a flight frame.  Where a portal may be met the star's
+; distance - twice the sum of its high bytes in Legend's units, here a
+; BASE_U an axis - decides: up to 5, the portal, at the star's near side
+; (Legend's at its own spot give or take a low byte: the port's star is
+; solid); 6, nothing; 7 to 11, on the way to Raxxla's portal, its guard,
+; an Asp or a Fer-de-Lance, angry at a record the law minds.  The portal
+; is Raxxla's on the other diagonal, to an Elite pilot of missions 1..6
+; with no war and 1800 kills; else an ordinary one.  Clobbers R0..R5.
+; =========================================================================
+MS_PORTAL:	CLR	NEAR_PORTAL
+		CALL	MS_PORTALOK
+		BCC	9$
+		CALL	MS_DIAG			; which portal
+		CLR	R4			; R4 = UF_MISSION for Raxxla's
+		CMP	R0,#2
+		BNE	2$
+		CMP	P_RATING+2,#40		; Raxxla's (goto854's gate)
+		BLO	2$
+		MOVB	P_MCOMPLETE,R0
+		COM	R0
+		BIT	#77,R0
+		BNE	2$
+		CMPB	P_WAR,#2
+		BHIS	2$
+		CMP	P_GALAXY,#254.
+		BHIS	2$
+		MOV	#1800.,R0
+		CALL	MS_KILLS
+		BCS	2$
+		MOV	#UF_MISSION,R4
+2$:		MOV	#UNIV,R5		; the star
+		MOV	#NUNIV,R3
+3$:		BIT	#UF_SUN,U.FLAGS(R5)
+		BEQ	31$
+		TST	U.TYPE(R5)
+		BNE	4$
+31$:		ADD	#U.SIZE,R5
+		SOB	R3,3$
+9$:		RETURN
+4$:		CALL	U_NEAR
+		BCS	9$
+		MOV	U.X(R5),R1		; the distance, in Legend's units
+		CALL	PT_UNITS
+		MOV	R0,R3
+		MOV	U.Y(R5),R1
+		CALL	PT_UNITS
+		ADD	R0,R3
+		MOV	U.Z(R5),R1
+		CALL	PT_UNITS
+		ADD	R0,R3
+		ASL	R3
+		CMP	R3,#6
+		BLO	10$
+		BEQ	9$
+		CMP	R3,#12.
+		BHIS	9$
+		TST	R4			; the guard, once, on the way to
+		BEQ	9$			;   Raxxla's
+		TST	PT_GUARD
+		BNE	9$
+		INC	PT_GUARD
+		CALL	AI_RND
+		BIC	#^C1,R0
+		ADD	#SH_ASPH,R0
+		CALL	SPAWN_LEGEND
+		BCS	9$
+		BIC	#UF_HOSTILE,U.FLAGS(R5)
+		TST	P_LEGAL
+		BEQ	9$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+		RETURN
+10$:		INC	NEAR_PORTAL		; the portal, unless it is there
+		MOV	R5,-(SP)
+		MOV	#UNIV,R5
+		MOV	#NUNIV,R3
+11$:		CMP	U.TYPE(R5),#SH_PORTALH
+		BEQ	19$
+		ADD	#U.SIZE,R5
+		SOB	R3,11$
+		MOV	(SP)+,R5
+		MOV	U.X(R5),R1		; the star's near side
+		MOV	U.Y(R5),R2
+		MOV	U.Z(R5),R3
+		SUB	#SUN_R+2000.,R3
+		MOV	R4,-(SP)
+		MOV	#SH_PORTALH,R0
+		CLR	R4
+		CALL	UNIV_ADD
+		MOV	(SP)+,R4
+		BCS	9$
+		BIS	#UF_BASE,U.FLAGS(R5)
+		BIS	R4,U.FLAGS(R5)
+		RETURN
+19$:		TST	(SP)+
+		RETURN
+
+; PT_UNITS - R0 = |R1| in BASE_U, Legend's high-byte units.
+PT_UNITS:	TST	R1
+		BGE	1$
+		NEG	R1
+1$:		CLR	R0
+		DIV	#BASE_U,R0
+		RETURN

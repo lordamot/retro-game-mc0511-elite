@@ -1,0 +1,43 @@
+; Legend's HypEnd: WorkCargoLifeSupport and WorkAutoRepairSystem.
+; Called once per completed jump, including an intercepted one.  R0..R5
+; are scratch.  Random draws and saturation follow eJump.mac exactly.
+PILOT_JUMP:	BITB	#DEV_OFF,P_LIFESUPPORT
+		BEQ	1$
+		ADD	P_CARGO+<3*2>,P_CARGO+<24.*2>
+		CLR	P_CARGO+<3*2>
+		ADD	P_CARGO+<31.*2>,P_CARGO+<20.*2>
+		CLR	P_CARGO+<31.*2>
+1$:		MOVB	P_WEAR,R4
+		BIC	#177400,R4
+		CALL	RND_BYTE
+		BIC	#^C1,R0
+		INC	R0
+		ADD	R0,R4
+		CMP	R4,#377
+		BLOS	2$
+		MOV	#377,R4
+2$:		MOVB	R4,P_WEAR
+		BITB	#DEV_OFF,P_AUTOREPAIR
+		BNE	9$
+		CALL	RND_BYTE
+		BIC	#^C3,R0
+		INC	R0
+		ASR	R0			; 0, 1, 1, 2, as RRA / SBC
+		SUB	R0,R4
+		BHIS	3$
+		CLR	R4
+3$:		MOVB	R4,P_WEAR
+		MOV	#P_ENERGYUNIT,R4
+4$:		BITB	#DEV_NONE,(R4)
+		BNE	5$
+		BITB	#DEV_BROKEN,(R4)
+		BEQ	5$
+		CALL	RND_BYTE
+		CMP	R0,#320		; #D0: try each broken device
+		BLO	5$
+		BICB	#DEV_BROKEN,(R4)
+		RETURN				; at most one device mended
+5$:		INC	R4
+		CMP	R4,#P_RND
+		BLO	4$
+9$:		RETURN

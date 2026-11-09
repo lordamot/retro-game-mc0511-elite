@@ -1,0 +1,448 @@
+; =========================================================================
+; hud.mac - the dashboard, in the lower band of the line table.
+;
+; Lines DASH_Y..287 carry their own palette element (see NEW_TABLE in
+; src/ppu.mac), so the gauges get green, red and white without spending
+; any of the colours the space view wants.  Because the CPU writes both
+; planes with one word, a bar segment is a single MOV of INK_GREEN or
+; INK_RED into the window - eight pixels at a time, which is why the
+; whole dashboard costs almost nothing to redraw every frame.
+; =========================================================================
+
+HBARC:		.WORD	INK_GREEN	; the ink HBAR paints with
+HBARH:		.WORD	BAR_H		; and how many lines high
+
+; =========================================================================
+; HBAR - a horizontal bar at byte column R0, pixel row R1, HBARH lines
+; high: R2 byte columns lit with HBARC, the rest of R3 blanked.
+; Clobbers R0..R5.
+; =========================================================================
+HBAR:		MOV	R1,R4
+		MOV	R1,R5
+		MUL	#SCRWB,R5		; R5 odd - low 16 bits
+		ADD	R0,R5
+		ADD	#VRAM,R5		; plane address of the bar's corner
+		MOV	HBARH,R4
+10$:		MOV	R5,-(SP)
+		MOV	R3,-(SP)
+		MOV	R2,-(SP)
+		MOV	R3,R1			; columns still to paint
+20$:		MOV	R5,@#VADDR
+		TST	R2
+		BLE	21$
+		MOV	HBARC,@#VDATA
+		DEC	R2
+		BR	22$
+21$:		CLR	@#VDATA
+22$:		INC	R5
+		SOB	R1,20$
+		MOV	(SP)+,R2
+		MOV	(SP)+,R3
+		MOV	(SP)+,R5
+		ADD	#SCRWB,R5
+		SOB	R4,10$
+		RETURN
+
+; =========================================================================
+; GAUGE - one gauge's bar.  GA_BX is its column, GA_Y the top line,
+; GA_VAL the value and GA_MAX its full-scale reading.  Values at or
+; under an eighth of full scale come up red.  Its label is the
+; dashboard overlay's, drawn once (src/ovl_dash.mac).
+; =========================================================================
+GA_BX:		.WORD	0
+GA_Y:		.WORD	0
+GA_VAL:		.WORD	0
+GA_MAX:		.WORD	0
+GA_LOWRED:	.WORD	1		; 1 = low is bad, 0 = high is bad
+
+; A gauge whose value has not moved is still on the screen: nothing
+; draws over the dashboard band except the scanner, and that keeps to
+; the middle of it.  So the ten of them are only redrawn when they have
+; something new to say - which for the fuel, the cabin, the altitude and
+; the missiles is hardly ever.  The index counts itself: HUD_UPDATE
+; clears it and calls the nine in a fixed order, then a bar a bank.
+; NGAUGES (src/defs.mac) counts the rack's slot as well, the last.
+; HUD_LAST, a word a gauge (what it last showed), is laid over the PPU
+; program's dead copy by src/tail.mac: the dashboard overlay fills it
+; before use.
+GA_IDX:		.WORD	0
+
+GAUGE:		MOV	GA_IDX,R2
+		ASL	R2
+		INC	GA_IDX
+		CMP	GA_VAL,HUD_LAST(R2)
+		BNE	20$			; 20$, not 01$: a leading zero means
+		RETURN				; nothing here, and 01$ is 1$
+20$:		MOV	GA_VAL,HUD_LAST(R2)
+
+		MOV	GA_VAL,R0		; lit = val * BAR_W / max
+		MOV	#BAR_W,R1
+		MUL	R1,R0
+		MOV	GA_MAX,R2
+		BEQ	1$
+		DIV	R2,R0
+		BR	2$
+1$:		CLR	R0
+2$:		CMP	R0,#BAR_W		; clamp
+		BLE	3$
+		MOV	#BAR_W,R0
+3$:		TST	R0
+		BGE	4$
+		CLR	R0
+4$:		MOV	R0,-(SP)
+
+		MOV	#INK_GREEN,HBARC	; pick the ink
+		MOV	#BAR_W/8.,R1		; an eighth of full scale
+		TST	GA_LOWRED
+		BEQ	5$
+		CMP	R0,R1
+		BGT	6$
+		BR	7$
+5$:		CMP	R0,#BAR_W-2
+		BLT	6$
+7$:		MOV	#INK_RED,HBARC
+6$:		MOV	(SP)+,R2
+		MOV	GA_BX,R0
+		MOV	GA_Y,R1
+		MOV	#BAR_W,R3
+		MOV	#BAR_H,HBARH
+		JMP	HBAR
+
+; =========================================================================
+; BANKS_DRAW - the energy banks, a thin bar each under one label at
+; GA_BX, GA_Y, the first bank on top: Legend's cockpits show a
+; bar a bank (cocpAdrInd), and this dashboard has the lines for seven
+; below the right-hand block.  Each bar keeps a HUD_LAST slot after the
+; gauges', so the index runs on.
+; =========================================================================
+BK_P:		.WORD	0
+BK_N:		.WORD	0
+BANKS_DRAW:	MOV	#PBANKS,BK_P
+		MOV	CKV_ENUNITS,BK_N
+1$:		MOV	GA_IDX,R2
+		ASL	R2
+		INC	GA_IDX
+		MOV	@BK_P,R0
+		CMP	R0,HUD_LAST(R2)
+		BEQ	5$
+		MOV	R0,HUD_LAST(R2)
+		MOV	#BAR_W,R1		; lit = val * BAR_W / ENERGY_MAX
+		MUL	R1,R0
+		MOV	#ENERGY_MAX,R2
+		DIV	R2,R0
+		CMP	R0,#BAR_W
+		BLE	2$
+		MOV	#BAR_W,R0
+2$:		MOV	#INK_GREEN,HBARC
+		CMP	R0,#BAR_W/8.		; an eighth of full scale: red
+		BGT	3$
+		MOV	#INK_RED,HBARC
+3$:		MOV	R0,R2
+		MOV	GA_BX,R0
+		MOV	GA_Y,R1
+		MOV	#BAR_W,R3
+		MOV	#BANK_H,HBARH
+		CALL	HBAR
+5$:		ADD	#2,BK_P
+		ADD	#BANK_STEP,GA_Y
+		DEC	BK_N
+		BGT	1$
+		RETURN
+
+; =========================================================================
+; DASH_DRAW - the dashboard, drawn by its overlay (src/ovl_dash.mac) for
+; the cockpit being flown: the rule, the compass ring, Legend's scanner
+; dish for this cockpit and the labels.  The resident notes the cockpit
+; it was drawn for, so returning to the cockpit redraws it only when
+; the ship has changed (SCR_SHOW); a commander coming aboard sets
+; DASH_CK to -1 first.  Loads an overlay: never from overlay code.
+; Clobbers everything.
+; =========================================================================
+DASH_CK:	.WORD	-1		; the cockpit the dashboard shows
+DASH_DRAW:	MOV	#OVL_DASH,R0
+		CALL	OVL_LOAD
+		MOV	CKV_NUM,DASH_CK
+		JMP	OVL_BASE
+
+; =========================================================================
+; RACK - the missile rack, the left block's seventh row: CKV_MAXMISS
+; cells (cocpMaxMiss), the standard missiles lit first and the military
+; ones after them in the other ink, the rest dark.  A cell is a byte
+; column with a pixel of gap each side.  Redrawn when either count
+; changes, in HUD_LAST's last slot.
+; =========================================================================
+RK_GAP	= 077176			; 01111110 in both planes' bytes
+RACK:		MOV	P_MISSTYPE,R0
+		SWAB	R0
+		BIS	PMISSILES,R0
+		CMP	R0,HUD_LAST+<<NGAUGES-1>*2>
+		BEQ	9$
+		MOV	R0,HUD_LAST+<<NGAUGES-1>*2>
+		MOV	#BAR_H,HBARH
+		MOV	#INK_GREEN&RK_GAP,HBARC
+		MOV	#LBAR_BX,R0
+		MOV	#RACK_Y,R1
+		MOV	PMISSILES,R2
+		MOV	CKV_MAXMISS,R3
+		BEQ	9$
+		CALL	HBAR			; the standard ones, and the rack
+		MOV	#INK_RED&RK_GAP,HBARC	;   blanked after them
+		MOV	#LBAR_BX,R0
+		ADD	PMISSILES,R0
+		MOV	#RACK_Y,R1
+		MOV	P_MISSTYPE,R2
+		MOV	R2,R3
+		BEQ	9$
+		JMP	HBAR
+9$:		RETURN
+
+; cos and sin at 22.5-degree steps, in units of 256, one full turn
+SCANTAB:	.WORD	236., 98.
+		.WORD	181., 181.
+		.WORD	98., 236.
+		.WORD	0, 256.
+		.WORD	-98., 236.
+		.WORD	-181., 181.
+		.WORD	-236., 98.
+		.WORD	-256., 0
+		.WORD	-236., -98.
+		.WORD	-181., -181.
+		.WORD	-98., -236.
+		.WORD	0, -256.
+		.WORD	98., -236.
+		.WORD	181., -181.
+		.WORD	236., -98.
+		.WORD	256., 0
+
+; =========================================================================
+; COMPASS - where the station is, or the world when there is no station.
+;
+; The dot is the target's direction with its LARGEST component divided
+; out, which maps the sky onto the ring's box rather than onto a sphere.
+; That is cheap - two multiplies and two divides, no square root - and it
+; is also the right instrument: dead ahead sits in the middle, anything
+; off to one side is pinned to the rim, and what the commander wants to
+; know is which way to turn.  Ahead is a dash and behind is a single
+; pixel, so one ring says which half of the sky it is in.
+;
+; It goes through SEG_LINE, like the scanner's blips, so it is rubbed out
+; with the rest of the frame and needs no erase of its own.
+; =========================================================================
+CO_M:		.WORD	0		; the largest component, in world units
+CO_Z:		.WORD	0		; and the sign of the one that matters
+CO_MODE:	.WORD	0		; Legend's CompassMode: 0 the station or
+				;   the world, 1 the sun, 2 the world, 3
+				;   the station, 4 the military base, 5
+				;   the hermit's rock, 6 the fuel station,
+				;   7 the ring (8, the cardinal points of
+				;   free space, waits for phase 4)
+
+CO_STYLE:	.WORD	0
+COMPASS:	CLR	CO_STYLE
+		CMP	CO_MODE,#8.
+		BNE	11$
+		JMP	NAV_COMPASS
+11$:		MOV	CO_MODE,R0
+		BNE	10$
+		CALL	FIND_STATION		; the standard compass
+		BCC	1$
+		CALL	FIND_PLANET
+		BCS	9$
+		BR	1$
+10$:		CALL	FIND_MODE		; the advanced one: what the mode
+		BCS	8$			;   names, or nothing at all
+1$:		CALL	POS_NARROW		; the direction survives the
+		JMP	COMPASS_VECTOR
+8$:		CLR	CO_M
+9$:		RETURN
+
+COMPASS_VECTOR:
+		MOV	PN_Z,CO_Z		;   narrowing, and a station out
+					;   past sixteen bits is what the
+					;   compass is for
+		MOV	PN_X,R0			; |x|, |y|, |z|, largest wins
+		BGE	2$
+		NEG	R0
+2$:		MOV	R0,R3
+		MOV	PN_Y,R0
+		BGE	3$
+		NEG	R0
+3$:		CMP	R0,R3
+		BLE	4$
+		MOV	R0,R3
+4$:		MOV	CO_Z,R0
+		BGE	5$
+		NEG	R0
+5$:		CMP	R0,R3
+		BLE	6$
+		MOV	R0,R3
+6$:		TST	R3
+		BLE	9$			; sitting on it: nothing to point at
+		MOV	R3,CO_M
+
+		MOV	PN_X,R0			; R0 is EVEN, so the product is the
+		MUL	#COMP_RX,R0		; whole 32 bits and a station a long
+		DIV	CO_M,R0			; way out does not wrap round
+		ADD	#COMP_CX,R0
+		MOV	R0,LX0
+		MOV	R0,LX1
+		MOV	PN_Y,R0
+		MUL	#COMP_RY,R0
+		DIV	CO_M,R0
+		MOV	#COMP_CY,R1
+		SUB	R0,R1			; up on the ring is down in memory
+		MOV	R1,LY0
+		MOV	R1,LY1
+		TST	CO_STYLE
+		BEQ	61$
+		INC	LY1
+		TST	CO_Z
+		BLE	7$
+		ADD	#3,LY1
+		BR	7$
+61$:		INC	LX1			; a segment lights both its ends
+		TST	CO_Z			; (PP_LINE_* draws max(dx,dy)+1), so
+		BLE	7$			; the dot behind you is two pixels
+		ADD	#3,LX1			; wide and the dash ahead is five
+7$:		CALL	CLIP_DASH
+		CALL	SEG_LINE
+		JMP	CLIP_VIEW
+8$:		CLR	CO_M			; no bearing, and say so
+9$:		RETURN
+
+; FIND_MODE - R0 = a compass mode 1..7; R5 = the slot it names, C set
+; if this sky has no such thing.  A body or the station is known by its
+; flag, a base by its kind (src/bases.mac).  Clobbers R0..R3.
+FM_TAB:		.WORD	UF_SUN, -1, UF_PLANET, -1, UF_STATION, -1
+		.WORD	UF_BASE, BK_MILITARY, UF_BASE, BK_HERMIT
+		.WORD	UF_BASE, BK_FUEL, UF_BASE, BK_RING
+FIND_MODE:	ASL	R0
+		ASL	R0
+		MOV	FM_TAB-4(R0),R2		; the flag
+		MOV	FM_TAB-2(R0),R3		; and the kind, -1 for any
+		MOV	#UNIV,R5
+		MOV	#NUNIV,FM_I
+1$:		TST	U.TYPE(R5)
+		BEQ	2$
+		BIT	R2,U.FLAGS(R5)
+		BEQ	2$
+		TST	R3
+		BLT	8$
+		CALL	BASE_KIND
+		CMP	R0,R3
+		BEQ	8$
+2$:		ADD	#U.SIZE,R5
+		DEC	FM_I
+		BGT	1$
+		SEC
+		RETURN
+8$:		CLC
+		RETURN
+FM_I:		.WORD	0
+
+; COMPASS_KEY - М: the advanced compass's next mode (UseCompassMode),
+; if one is fitted and whole, and its name on the message line.
+COMPASS_KEY:	BITB	#DEV_OFF,P_ADVCOMPASS
+		BNE	9$
+		INC	CO_MODE
+		CMP	CO_MODE,#9.
+		BLO	1$
+		CLR	CO_MODE
+1$:		MOV	CO_MODE,R0
+		ASL	R0
+		MOV	CO_NAMES(R0),HD_NAME
+		MOV	#S_M_COMPASS,R1
+		JMP	SAY_LINE2
+9$:		RETURN
+CO_NAMES:	.WORD	S_C_AUTO, S_C_SUN, S_C_PLANET, S_C_STATION
+		.WORD	S_C_MILITARY, S_C_HERMIT, S_C_FUEL, S_C_RING, S_C_CARDINAL
+
+; =========================================================================
+; HUD_UPDATE - the ten gauges.  Called once a frame.
+; =========================================================================
+HUD_UPDATE:	CALL	HUD_SIGNALS
+		CLR	GA_IDX
+		MOV	#LBAR_Y,GA_Y
+		MOV	#LBAR_BX,GA_BX
+		MOV	#1,GA_LOWRED
+
+		MOV	PSHIELD_F,GA_VAL
+		MOV	#ENERGY_MAX,GA_MAX
+		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		MOV	PSHIELD_A,GA_VAL
+		MOV	#ENERGY_MAX,GA_MAX
+		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		MOV	PFUEL,GA_VAL
+		MOV	CKV_MAXFUEL,GA_MAX	; the cockpit's tank: 70 to 212
+		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		CLR	GA_LOWRED		; heat: high is what hurts
+		MOV	PCABTEMP,GA_VAL
+		MOV	#255.,GA_MAX
+		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		MOV	PLASTEMP,GA_VAL
+		MOV	#LASER_CAP,GA_MAX	; Legend's ceiling; cut-out is 144
+		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		MOV	#1,GA_LOWRED
+		MOV	PALTITUDE,GA_VAL
+		MOV	#255.,GA_MAX
+		CALL	GAUGE
+
+		MOV	#RBAR_Y,GA_Y		; the right-hand block
+		MOV	#RBAR_BX,GA_BX
+		CLR	GA_LOWRED
+
+		MOV	PSPEED,GA_VAL
+		MOV	CKV_MAXSPEED,GA_MAX	; full scale is this ship's top
+		TST	JD_SPEED		; and the injectors are past it
+		BEQ	75$
+		MOV	GA_MAX,GA_VAL
+75$:		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		MOV	PROLL,R0		; centred gauges read -8..8
+		ADD	#8.,R0
+		MOV	R0,GA_VAL
+		MOV	#16.,GA_MAX
+		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		MOV	PPITCH,R0
+		ADD	#8.,R0
+		MOV	R0,GA_VAL
+		MOV	#16.,GA_MAX
+		CALL	GAUGE
+		ADD	#BAR_STEP,GA_Y
+
+		CALL	BANKS_DRAW
+		JMP	RACK
+
+; =========================================================================
+; VIEW_CLEAR - blank the space view.  The PPU's line fill does this far
+; faster than the CPU could through the window.
+; =========================================================================
+VIEW_CLEAR:	CALL	SEG_RESET
+		CLR	R0
+		MOV	#VIEW_H,R1
+		CLR	R2
+		JMP	FILL_LINES
+
+
+; PAGE_CLEAR - text pages use all 288 lines for the system font.
+; The main loop restores the cockpit before flight resumes. Never load
+; the dashboard here: this is called from an executing screen overlay.
+PAGE_CLEAR:	CALL	SEG_RESET
+		MOV	#-1,DASH_CK
+		CLR	R0
+		MOV	#SCRH,R1
+		CLR	R2
+		JMP	FILL_LINES

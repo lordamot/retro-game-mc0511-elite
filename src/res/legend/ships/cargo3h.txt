@@ -1,0 +1,96 @@
+# d_Cargo3H - extracted from orig/legend by tools/legend_ships.py;
+# object 14 of AdrDataShips, hull d_Cargo3.
+# `make extract` overwrites it.
+name CARGO3H
+index 14
+class 1
+speed 15
+energy 17
+bounty 0
+laser 0
+collide 20
+cargo 0
+launch 0
+dot 12
+rating 31
+flags 0
+flags2 2
+laservert 0
+type 7
+objflags 128
+shipnum 0
+radius 28
+vertex   -12    -7   -16
+vertex   -12     7   -16
+vertex    12    -7   -16
+vertex    12     7   -16
+vertex   -24   -14    -2
+vertex   -24    14    -2
+vertex    24   -14    -2
+vertex    24    14    -2
+vertex   -28     0     2
+vertex    28     0     2
+vertex     0   -14   -16
+vertex     0    14   -16
+vertex     0   -28    -2
+vertex     0    28    -2
+vertex   -14   -24     2
+vertex    14   -24     2
+vertex    14    24     2
+vertex   -14    24     2
+vertex   -14     0    16
+vertex    14     0    16
+vertex    -7    12    16
+vertex    -7   -12    16
+vertex     7   -12    16
+vertex     7    12    16
+edge 0 4 31 1 0
+edge 4 8 31 7 0
+edge 8 5 31 6 0
+edge 5 1 31 5 0
+edge 1 0 31 13 0
+edge 10 12 31 2 1
+edge 12 14 31 8 1
+edge 14 4 31 7 1
+edge 0 10 31 13 1
+edge 2 6 31 3 2
+edge 6 15 31 9 2
+edge 15 12 31 8 2
+edge 10 2 31 13 2
+edge 3 7 31 4 3
+edge 7 9 31 10 3
+edge 9 6 31 9 3
+edge 2 3 31 13 3
+edge 11 13 31 5 4
+edge 13 16 31 11 4
+edge 16 7 31 10 4
+edge 3 11 31 13 4
+edge 5 17 31 6 5
+edge 17 13 31 11 5
+edge 11 1 31 13 5
+edge 8 18 31 7 6
+edge 18 20 31 12 6
+edge 20 17 31 11 6
+edge 14 21 31 8 7
+edge 21 18 31 12 7
+edge 15 22 31 9 8
+edge 22 21 31 12 8
+edge 9 19 31 10 9
+edge 19 22 31 12 9
+edge 16 23 31 11 10
+edge 23 19 31 12 10
+edge 20 23 31 12 11
+normal  -48    0  -41
+normal  -24  -41  -41
+normal   24  -41  -41
+normal   48    0  -41
+normal   24   41  -41
+normal  -24   41  -41
+normal  -41   24   41
+normal  -41  -24   41
+normal    0  -48   41
+normal   41  -24   41
+normal   41   24   41
+normal    0   48   41
+normal    0    0   96
+normal    0    0  -96

@@ -1,0 +1,343 @@
+; =========================================================================
+; bases.mac - the bases a system has besides its station, where they are,
+; and what docking at one means.
+;
+; Elite Legend's sky has up to four more places to dock at (eJump.a80,
+; SetDockedObj / SetCrdSunPlCoriolis, transliterated here):
+;
+;   a hermit's rock       in a multi-government system (government 2)
+;   a military station    in a democracy or a corporate state (6, 7)
+;   a service station     government 2 up, tech level 3 up (as counted
+;                         internally; 4 on the data screen)
+;   a jump ring           tech level 7 up, government 4 up
+;
+; and Legend places them relative to the sun, the world and the point
+; you arrive at: the service station four of its high-byte units behind
+; you and a little to one side, the ring a quarter of one straight
+; behind, the military station three units off the sun, the hermit's
+; rock forty beyond the world and twenty-four out.  This port's sky is
+; the 1985 one, the world PLANET_Z ahead, so a Legend unit is taken as
+; BASE_U = PLANET_Z / 6 and the same shape comes out at this port's
+; scale; the rock lands beyond sixteen bits, which is what the 32-bit
+; positions are for.  It cannot be flown to without Legend's J-drive
+; (phase 3), and it is too far to draw, but it is there.
+;
+; A base carries UF_BASE, not UF_STATION: the compass, the docking
+; computer and the police keep pointing at THE station, while the
+; docking test, the collision rules and the launch bays treat both the
+; same (UF_DOCK).  Docking at a base is the ordinary docked screen with
+; the base named - the services each one really offers are phase 2's -
+; and launching from it puts the sky back with THAT base STATION_Z
+; ahead (LAUNCH_FROM).  A ring is flown through, not docked with: it
+; takes RING_FARE off the purse and puts you at the station's doorstep,
+; which in this port's sky is where you already were - the trip it
+; saves in Legend starts far from the world (phase 4).
+; =========================================================================
+
+SYS_BASES:	.WORD	0		; SB_* bits: which bases this system has
+DOCKED_AT:	.WORD	0		; BK_* of the base the commander is docked
+				;   at; 0 = the station itself
+DK_I:		.WORD	0
+SFT_X:		.WORD	0, 0		; the 32-bit shift LAUNCH_FROM applies
+SFT_Y:		.WORD	0, 0
+SFT_Z:		.WORD	0, 0
+
+; the hermit's rock: 24 units out and 40 beyond the world, in two words
+HERMIT_XL = 42464.		; 24 * 4500 = 108000 = 1:42464
+HERMIT_XH = 1
+HERMIT_ZL = 11392.		; 28000 + 40 * 4500 = 208000 = 3:11392
+HERMIT_ZH = 3
+
+; =========================================================================
+; SYS_BASES_SET - Legend's SetDockedObj: which bases this system has, by
+; its government and tech level, into SYS_BASES.  Clobbers R0.
+; =========================================================================
+SYS_BASES_SET:	CALL	MS_HELDHERE		; a world the Targons hold has its
+		BCC	5$			;   station and nothing else
+		CLR	SYS_BASES		;   (SetDockedObj)
+		RETURN
+5$:		CLR	R0
+		CMP	SYS_GOVT,#2		; a multi-government system has
+		BNE	1$			;   the hermit's rock
+		BIS	#SB_HERMIT,R0
+		BR	2$
+1$:		CMP	SYS_GOVT,#6		; a democracy or a corporate state
+		BLT	2$			;   the military station
+		BIS	#SB_MILITARY,R0
+2$:		CMP	SYS_GOVT,#2		; the service station: settled
+		BLT	3$			;   enough, and able to build one
+		CMP	SYS_TECH,#3
+		BLT	3$
+		BIS	#SB_FUEL,R0
+3$:		CMP	SYS_TECH,#7		; the ring: high tech and a stable
+		BLT	4$			;   government
+		CMP	SYS_GOVT,#4
+		BLT	4$
+		BIS	#SB_RING,R0
+4$:		MOV	R0,SYS_BASES
+		RETURN
+
+; =========================================================================
+; BASES_SPAWN - put this system's bases in the sky.  Called at the end of
+; SPAWN_LOCALS, after everything the 1985 rules put there, so the slots
+; the checks poke keep their numbers.  Clobbers everything.
+; =========================================================================
+BASES_SPAWN:	BIT	#SB_FUEL,SYS_BASES
+		BEQ	10$
+		MOV	#SH_FUELSTH,R0
+		MOV	SYS_SEED,R1		; 0..3 units to one side, the
+		BIC	#177774,R1		;   side from the seed too
+		MUL	#BASE_U,R1		; R1 is ODD: the low word only
+		BIT	#200,SYS_SEED
+		BEQ	1$
+		NEG	R1
+1$:		MOV	SYS_SEED+2,R3		; and the same up or down
+		BIC	#177774,R3
+		MUL	#BASE_U,R3
+		BIT	#200,SYS_SEED+2
+		BEQ	2$
+		NEG	R3
+2$:		MOV	R3,R2
+		MOV	#-4*BASE_U,R3		; four units behind
+		CALL	BASE_PUT
+
+10$:		BIT	#SB_RING,SYS_BASES
+		BEQ	20$
+		MOV	#SH_RINGH,R0
+		CLR	R1
+		CLR	R2
+		MOV	#RING_Z,R3
+		CALL	BASE_PUT
+		BCS	20$
+		CLR	U.LAUNCH(R5)		; a ring launches nothing, whatever
+					;   its header's launch byte says
+
+20$:		BIT	#SB_MILITARY,SYS_BASES
+		BEQ	30$
+		MOV	#SH_MILITARYST2H,R0
+		MOV	#SUN_X+<3*BASE_U>,R1	; three units off the sun
+		MOV	#-3*BASE_U,R2
+		MOV	#SUN_Z-<3*BASE_U>,R3
+		CALL	BASE_PUT
+
+30$:		BIT	#SB_HERMIT,SYS_BASES
+		BEQ	40$
+		MOV	#SH_ASTEROIDSTH,R0
+		CLR	R1
+		CLR	R2
+		CLR	R3
+		CALL	BASE_PUT
+		BCS	40$
+		MOV	#HERMIT_XL,U.X(R5)	; beyond sixteen bits: the words
+		MOV	#HERMIT_XH,U.XH(R5)	;   are set by hand
+		BIT	#100,SYS_SEED		; either side, by the seed
+		BEQ	31$
+		NEG	U.X(R5)			; a 32-bit negate: the carry out of
+		ADC	U.XH(R5)		;   the low word, then the high
+		NEG	U.XH(R5)
+31$:		MOV	#HERMIT_XL,U.Y(R5)
+		MOV	#HERMIT_XH,U.YH(R5)
+		BIT	#100,SYS_SEED+2
+		BEQ	32$
+		NEG	U.Y(R5)
+		ADC	U.YH(R5)
+		NEG	U.YH(R5)
+32$:		MOV	#HERMIT_ZL,U.Z(R5)
+		MOV	#HERMIT_ZH,U.ZH(R5)
+40$:		RETURN
+
+; =========================================================================
+; BASE_PUT - R0 = a base's type, R1,R2,R3 = where.  Adds it standing
+; still, indestructible and flagged UF_BASE; C set if the sky or the hull
+; area had no room for it.  R5 = the slot.
+; =========================================================================
+BASE_PUT:	CLR	R4
+		CALL	UNIV_ADD
+		BCS	9$
+		BIS	#UF_BASE,U.FLAGS(R5)
+		MOV	#200.,U.ENERGY(R5)	; not something to shoot at
+		CLC
+9$:		RETURN
+
+; =========================================================================
+; BASE_KIND - R5 = a slot with a bay; returns its BK_* in R0.  Anything
+; carrying UF_STATION is the station; a base is known by its hull.
+; Clobbers R1.
+; =========================================================================
+BASE_KIND:	BIT	#UF_STATION,U.FLAGS(R5)
+		BEQ	1$
+		MOV	#BK_STATION,R0
+		RETURN
+1$:		MOV	U.TYPE(R5),R1
+		MOV	#BK_TAB,R0
+2$:		TST	(R0)
+		BEQ	3$
+		CMP	R1,(R0)+
+		BEQ	4$
+		TST	(R0)+
+		BR	2$
+4$:		MOV	(R0),R0
+		RETURN
+3$:		MOV	#BK_STATION,R0		; a bay this table does not know is
+		RETURN				;   docked with like the station
+
+BK_TAB:		.WORD	SH_MILITARYST2H, BK_MILITARY
+		.WORD	SH_FUELSTH, BK_FUEL
+		.WORD	SH_ASTEROIDSTH, BK_HERMIT
+		.WORD	SH_RINGH, BK_RING
+		.WORD	SH_PORTALH, BK_PORTAL
+		.WORD	SH_SHIPGENH, BK_GENSHIP
+		.WORD	SH_PLATFORMH, BK_PLATFORM
+		.WORD	0
+
+; the base names for the docked screen, by BK_*
+BASE_NAMES:	.WORD	0, 0			; a ring is not docked at, and the
+		.WORD	S_M_MILITARY		;   station needs no name
+		.WORD	S_M_FUELST
+		.WORD	S_M_HERMITST
+		.WORD	0			; a portal is not docked at
+		.WORD	S_M_GENSHIP
+
+; =========================================================================
+; LAUNCH_FROM - after SPAWN_LOCALS has laid the sky out for a launch: if
+; the commander docked at a base rather than the station, move the whole
+; sky so that base is where the station would be, STATION_Z dead ahead.
+; Clobbers everything.
+; =========================================================================
+LAUNCH_FROM:	TST	DOCKED_AT
+		BEQ	9$
+		MOV	#UNIV,R5		; find the base again
+		MOV	#NUNIV,DK_I
+1$:		TST	U.TYPE(R5)
+		BEQ	2$
+		BIT	#UF_BASE,U.FLAGS(R5)
+		BEQ	2$
+		CALL	BASE_KIND
+		CMP	R0,DOCKED_AT
+		BEQ	3$
+2$:		ADD	#U.SIZE,R5
+		DEC	DK_I
+		BGT	1$
+		CLR	DOCKED_AT		; not in this sky: the station, then
+		RETURN
+
+3$:		MOV	U.X(R5),SFT_X		; the shift is minus its position,
+		MOV	U.XH(R5),SFT_X+2	;   32 bits wide
+		NEG	SFT_X
+		ADC	SFT_X+2
+		NEG	SFT_X+2
+		MOV	U.Y(R5),SFT_Y
+		MOV	U.YH(R5),SFT_Y+2
+		NEG	SFT_Y
+		ADC	SFT_Y+2
+		NEG	SFT_Y+2
+		MOV	#STATION_Z,SFT_Z	;   and STATION_Z - z
+		CLR	SFT_Z+2
+		SUB	U.Z(R5),SFT_Z
+		SBC	SFT_Z+2
+		SUB	U.ZH(R5),SFT_Z+2
+		CLR	DOCKED_AT
+
+		MOV	#UNIV,R5		; and everything moves by it
+		MOV	#NUNIV,DK_I
+4$:		TST	U.TYPE(R5)
+		BEQ	5$
+		ADD	SFT_X,U.X(R5)
+		ADC	U.XH(R5)
+		ADD	SFT_X+2,U.XH(R5)
+		ADD	SFT_Y,U.Y(R5)
+		ADC	U.YH(R5)
+		ADD	SFT_Y+2,U.YH(R5)
+		ADD	SFT_Z,U.Z(R5)
+		ADC	U.ZH(R5)
+		ADD	SFT_Z+2,U.ZH(R5)
+5$:		ADD	#U.SIZE,R5
+		DEC	DK_I
+		BGT	4$
+9$:		RETURN
+
+; =========================================================================
+; RING_JUMP - the commander has flown into the ring (GoJumpRing,
+; Engine/eObjPilotLow.a80).  Once a pass, not once a frame: RING_IN says
+; the ship was in the ring's mouth last frame too.  The law turns away
+; anyone whose legal status reaches its high byte (В ДОСТУПЕ ОТКАЗАНО);
+; a purse short of RING_FARE is told so (НЕ ХВАТАЕТ ДЕНЕГ); either way
+; the ring is then just a ring.  Paid, the jump to the orbit: the sky is
+; laid out again the way an arrival lays it, with the station ahead, and
+; no time, fuel or contract clock passes.  Jumped to from DOCK_CHECK,
+; the way DO_DOCK is.
+; =========================================================================
+RING_IN:	.WORD	0		; in the ring's mouth this frame
+RING_WAS:	.WORD	0		;   and the last (DOCK_CHECK rolls it)
+
+RING_JUMP:	MOV	#1,RING_IN
+		TST	RING_WAS		; still going through: said already
+		BNE	9$
+		MOV	#S_M_DENIED,R1
+		CMP	P_LEGAL,#256.		; the high byte: turned away
+		BHIS	8$
+		MOV	#RING_FARE,R0
+		CALL	CASH_CAN
+		MOV	#S_M_NOCASH,R1
+		BCS	8$
+		MOV	#RING_FARE,R0
+		CALL	CASH_SUB
+		CALL	DOCK_TUNNEL		; what a jump has always looked like
+		CALL	UNIV_CLEAR
+		CALL	SEG_RESET
+		CLR	MISS_LOCK
+		CALL	SPAWN_LOCALS
+		CLR	SCREEN
+		CALL	VIEW_CLEAR
+		CALL	VIEW_LABEL
+		MOV	#2,TX
+		MOV	#4,TY
+		MOV	#S_M_RING,R1
+		CALL	PUTS2
+		MOV	#S_M_RING,HYP_MSG
+		MOV	#40.,HYP_SHOW
+		CALL	INPUT_FLUSH
+		MOV	#16.,PSPEED
+		MOV	#FX_GATE,R0		; JumpGate
+		CALL	SFX_BIG
+9$:		RETURN
+8$:		CALL	SAY_LINE
+		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY
+
+; =========================================================================
+; PORTAL_JUMP - the commander has flown into a portal (GoJumpRing's
+; JumpDocking 3 and 4, HyperspaceBegin): no fuel, no interception.  An
+; ordinary portal throws the ship to the system nearest a random point
+; of this galaxy - or, while mission 7 is on, of the Targons' galaxy
+; (#FE); Raxxla's portal (UF_MISSION on it) to the system of #FF nearest
+; a point about #70,#68 (JumpToRaxxla).  A galaxy changed is a galactic
+; jump's toll (GAL_LAND).  Jumped to from DOCK_CHECK.
+; =========================================================================
+PORTAL_JUMP:	MOV	#1,RING_IN		; once a pass
+		TST	RING_WAS
+		BNE	9$
+		MOV	U.FLAGS(R5),-(SP)
+		CALL	RND_BYTE
+		MOV	R0,HOME_X
+		CALL	RND_BYTE
+		MOV	R0,HOME_Y
+		MOV	(SP)+,R0
+		BIT	#UF_MISSION,R0
+		BEQ	2$
+		BIC	#^C37,HOME_X		; Raxxla: #60..#7F, #60..#6F
+		ADD	#140,HOME_X
+		BIC	#^C17,HOME_Y
+		ADD	#140,HOME_Y
+		MOV	#255.,R0
+		BR	3$
+2$:		BITB	#1,P_M7			; the Targons' galaxy, on mission 7
+		BEQ	4$
+		MOV	#254.,R0
+3$:		CALL	GAL_LAND
+		BR	5$
+4$:		CALL	GAL_NEAREST		; this galaxy: no toll
+5$:		MOV	#S_M_ANOMALY,HYP_MSG
+		MOV	#1,HYP_NOROLL
+		JMP	HYP_GO
+9$:		RETURN

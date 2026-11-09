@@ -1,0 +1,85 @@
+; =========================================================================
+; ovl_cmdr.mac - who is flying.  AN OVERLAY (src/ovl.list), called
+; through its first word with R0 = 0 to pick a commander off the disk
+; (CMDR_CHOOSE: C clear if one was loaded, C set if the slot was empty)
+; and R0 = 1 to ask a new one's name (NAME_ASK, in src/nameask.mac,
+; which the access menu assembles too). R0 = 2 shows the two startup
+; pages (src/splash.mac), before the title on a fresh program launch.
+; =========================================================================
+
+		JMP	OVLN_ENTRY		; the overlay's entry, at OVL_BASE
+
+OVLN_ENTRY:	CMP	R0,#2
+		BNE	1$
+		JMP	SPLASH
+1$:		TST	R0
+		BNE	NAME_ASK
+		JMP	CMDR_CHOOSE
+
+; =========================================================================
+; CMDR_CHOOSE - which of the disk's commanders is flying.
+;
+; The disk holds NCMDRS named RT-11 files, CMDR_SECTORS blocks each; this is
+; the screen that picks one: the four are listed by name, an empty one
+; says so, and a digit chooses.  Returns C clear if a commander was
+; loaded and C set if the slot was empty and a new one has to be made -
+; which is exactly what LOAD_CMDR's own answer means, so FLY does not
+; have to learn anything new.
+;
+; Looking up the four files and reading their names at boot buys
+; the thing every Elite disk had: more than one commander on it.
+; =========================================================================
+CH_Y0	= 90.			; the list, and ten pixels a line
+CH_STEP	= 14.
+CH_I:		.WORD	0
+CH_LAST:	.WORD	0
+
+CMDR_CHOOSE:	MOV	PP_LASTKEY,CH_LAST	; noted BEFORE the screen is
+					; drawn: filling it takes long
+					; enough that a key pressed
+					; meanwhile would otherwise look
+					; like no key at all
+		CLR	R0			; a clean screen to choose on
+		MOV	#SCRH,R1
+		CLR	R2
+		CALL	FILL_LINES
+		MOV	#14.,TX
+		MOV	#60.,TY
+		MOV	#S_M_WHICH,R1
+		CALL	PUTS
+
+		CLR	CH_I
+10$:		MOV	#14.,TX			; "1 " and then the name
+		MOV	CH_I,R0
+		MUL	#CH_STEP,R0		; R0 even, but the product is small
+		ADD	#CH_Y0,R1
+		MOV	R1,TY
+		MOV	CH_I,R0
+		ADD	#61,R0			; "1".."4"
+		CALL	PUTC
+		MOV	#40,R0
+		CALL	PUTC
+		MOV	CH_I,R0
+		CALL	SLOT_NAME
+		BCC	11$
+		MOV	#S_M_EMPTY,R1		; nobody here yet
+11$:		CALL	PUTS
+		INC	CH_I
+		CMP	CH_I,#NCMDRS
+		BLT	10$
+
+20$:		CALL	VSYNC			; and wait for a digit
+		MOV	PP_LASTKEY,R0
+		CMP	R0,CH_LAST
+		BEQ	20$
+		MOV	R0,CH_LAST
+		BIT	#200,R0
+		BNE	20$
+		CALL	NM_LOOKUP		; the same map the name uses
+		SUB	#61,R0			; "1" -> 0
+		BLT	20$
+		CMP	R0,#NCMDRS
+		BGE	20$
+		MOV	R0,CMDR_SLOT
+		JMP	LOAD_CMDR		; and it answers for itself
+

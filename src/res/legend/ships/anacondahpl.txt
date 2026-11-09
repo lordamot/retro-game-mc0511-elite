@@ -1,0 +1,74 @@
+# d_AnacondaHpl - extracted from orig/legend by tools/legend_ships.py;
+# object 36 of AdrDataShips, hull d_Anaconda.
+# `make extract` overwrites it.
+name ANACONDAHPL
+index 36
+class 2
+speed 48
+energy 250
+bounty 0
+laser 126
+collide 80
+cargo 7
+launch 12
+dot 56
+rating 896
+flags 194
+flags2 0
+laservert 14
+type 9
+objflags 116
+shipnum 2
+radius 254
+vertex     0     7   -58
+vertex   -43   -13   -37
+vertex    43   -13   -37
+vertex   -26   -47    -3
+vertex    26   -47    -3
+vertex   -43   -39    40
+vertex    43   -39    40
+vertex   -69    15   -15
+vertex    69    15   -15
+vertex   -69    -1    32
+vertex    69    -1    32
+vertex   -43    53   -23
+vertex    43    53   -23
+vertex     0    48   -49
+vertex     0     0   254
+edge 2 0 31 5 0
+edge 0 1 31 1 0
+edge 1 3 31 2 0
+edge 3 4 31 3 0
+edge 4 2 31 4 0
+edge 7 11 31 7 1
+edge 11 13 31 6 1
+edge 13 0 31 5 1
+edge 1 7 31 2 1
+edge 5 9 31 8 2
+edge 9 7 31 7 2
+edge 3 5 31 3 2
+edge 6 14 31 9 3
+edge 14 5 31 8 3
+edge 4 6 31 4 3
+edge 8 10 31 10 4
+edge 10 6 31 9 4
+edge 2 8 31 5 4
+edge 12 13 31 6 5
+edge 8 12 31 10 5
+edge 11 12 31 11 6
+edge 14 9 31 8 7
+edge 11 14 31 11 7
+edge 14 10 31 10 9
+edge 14 12 31 11 10
+normal    0  -46  -44
+normal  -31   11  -54
+normal  -50  -37  -12
+normal    0  -63   11
+normal   50  -37  -12
+normal   31   11  -54
+normal    0   63  -11
+normal  -50   37   12
+normal  -52  -33   16
+normal   52  -33   16
+normal   50   37   12
+normal    0   62   12

@@ -1,0 +1,49 @@
+; =========================================================================
+; rnd.mac - a 32-bit linear congruential generator.
+;
+; Elite leans on randomness for nearly everything that is not the galaxy
+; itself: who turns hostile, what a station launches, when a bounty
+; hunter finds you.  A generator whose consecutive outputs correlate
+; turns "act when a random byte clears a threshold", sampled once a
+; frame, into bursts - so this keeps a full 32-bit state and returns its
+; high half, where an LCG's good bits live.
+;
+;   seed = seed * 69069 + 1
+;
+; The PDP-11's MUL is a SIGNED 16x16 -> 32 multiply, so UMUL corrects its
+; high word for operands with bit 15 set.  The low word of a product is
+; the same either way, which is why the high half of the state can be
+; multiplied with a plain MUL into an odd register.
+; =========================================================================
+
+LCG_MUL	= 69069.
+
+; UMUL - unsigned R2 * R3 -> R0 (high) : R1 (low).  Clobbers R0,R1.
+UMUL:		MOV	R2,R0
+		MUL	R3,R0		; R0 even - signed 32-bit product
+		TST	R2
+		BPL	1$
+		ADD	R3,R0		; correct for a negative multiplicand
+1$:		TST	R3
+		BPL	2$
+		ADD	R2,R0		; ... and multiplier
+2$:		RETURN
+
+; RND - returns a pseudo-random word in R0.  Clobbers R1,R2,R3,R5.
+RND:		MOV	RNDSEED+2,R2	; low half of the state
+		MOV	#LCG_MUL,R3
+		CALL	UMUL		; R0:R1 = low * 69069
+		MOV	RNDSEED,R5	; high half
+		MUL	#LCG_MUL,R5	; R5 odd - low 16 bits, all that reaches
+		ADD	R5,R0		;   the product's high word
+		ADD	#1,R1
+		ADC	R0
+		MOV	R0,RNDSEED
+		MOV	R1,RNDSEED+2
+		RETURN
+
+; RND_BYTE - returns 0..255 in R0.
+RND_BYTE:	CALL	RND
+		SWAB	R0
+		BIC	#177400,R0
+		RETURN

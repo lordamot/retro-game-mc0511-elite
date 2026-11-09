@@ -1,0 +1,754 @@
+; =========================================================================
+; ovl_mission.mac - the missions' talking: Elite Legend's
+; Menu/Missions.a80 and the mission half of BuySell.a80.  AN OVERLAY
+; (src/ovl.list, with build/mistext.mac), called through its first word
+; with R0 = 0 for the docking's first turn, 1 for its second and 2 for
+; the market screen's (MS_DOCK1, MS_DOCK2 and MS_MARKET in
+; src/mission.mac, which say what each is).
+;
+; Every screen is Legend's PrintSpecialMessage: the view cleared, the
+; message printed where Legend puts it, and a key waited for.  The text
+; is Legend's own (Menu/MissionsMsg.a80), read off the disk when it is
+; printed: tools/mission_text.py lays it at MTEXT_LBA0 and names each
+; message's offset MT_*, and MO_READ brings in the two sectors a message
+; starts in, which is always all of it.  Legend's screen is 52 columns
+; of a narrow font on 24 rows; its coordinates are kept and set in the
+; middle of the port's 80 columns, a row to eleven pixel lines.
+;
+; Legend's question is "(Y/N)?"; here it is "(Д/Н)?", and Д or ФИКС is
+; yes, Н or СТОП no.  An information screen goes on at any key.
+; =========================================================================
+
+		JMP	MO_ENTRY		; the overlay's entry, at OVL_BASE
+
+MO_X0	= 14.			; Legend's column 0, in the port's columns
+MO_Y0	= 1			; and its row 0, in the port's text rows
+MT_BUF	= OVL_END-1024.		; the two sectors a message is read into
+
+MO_LAST:	.WORD	0		; the scancode already dealt with
+MO_GAL:		.WORD	0		; the galaxy a message names (code 3)
+
+MO_TAB:		.WORD	MO_DOCK1, MO_DOCK2, MO_MARKET
+
+MO_ENTRY:	ASL	R0
+		CALL	@MO_TAB(R0)
+		JMP	INPUT_FLUSH		; the keys the screens took must not
+					;   reach the station's loop: ФИКС
+					;   there is the launch
+
+; =========================================================================
+; MO_DOCK1 - BeginDocking's first missions: at the main station only
+; (Docking = 1) the Targon station, then the Constrictor, the plans and
+; Raxxla (later steps), in Legend's order.
+; =========================================================================
+MO_DOCK1:	CMP	DOCKED_AT,#BK_GENSHIP	; nothing at a generation ship
+		BEQ	9$
+		CALL	MO_M7			; at any station
+		TST	DOCKED_AT
+		BNE	9$
+		TST	PIRATE_ON		; GoPirates: the pirates' station
+		BEQ	1$			;   takes the ship
+		MOV	#MT_BOARDP,R0
+		CALL	MO_SAY
+		JMP	PLAYER_DEAD
+1$:		CALL	MO_M3
+		CALL	MO_M4
+		CALL	MO_M5
+		JMP	MO_RAXXLA
+9$:		RETURN
+
+; =========================================================================
+; MO_M7 - GoMission7, Retribution: issued (2), the offer at a military
+; station - yes, and every world of the Targons' galaxy is theirs; under
+; way, docked at a world they hold: with the assault squad aboard it is
+; taken, one time in 32 the Targons take the ship instead; in a Targoid
+; ship it is taken if the squad is aboard, and nothing happens if not;
+; with neither, the Targons take the ship.  A world taken: its bit
+; cleared, the squad gone, #3000 on the rating, the first time's word
+; (bit 2 of 7) or one of eight others; the last, the end.
+; =========================================================================
+MO_M7:		MOVB	P_M7,R0
+		BEQ	9$
+		CMP	R0,#1
+		BEQ	9$
+		CMP	R0,#2
+		BNE	3$
+		CMP	DOCKED_AT,#BK_MILITARY	; the offer: a military station
+		BNE	9$
+		CLRB	P_M7
+		CALL	MO_OFFER
+		BCC	9$
+		MOVB	#7,P_M7
+		MOV	#P_M7+1,R1		; every world theirs
+		MOV	#32.,R2
+1$:		MOVB	#377,(R1)+
+		SOB	R2,1$
+		MOV	#MT_INFOMISS70,R0
+		JMP	MO_SAY
+9$:		RETURN
+3$:		CALL	MS_HELDHERE		; a world they hold
+		BCC	9$
+		MOV	R1,-(SP)
+		MOV	R2,-(SP)
+		CALL	MS_TARGOID
+		BNE	4$
+		CMPB	P_M1+1,#5		; a Targoid ship: the squad, or
+		BNE	8$			;   nothing happens
+		BR	5$
+4$:		CMPB	P_M1+1,#5		; the squad, and the roll
+		BNE	7$
+		CALL	RND_BYTE
+		CMP	R0,#370
+		BHIS	7$
+5$:		MOV	(SP)+,R2		; taken
+		MOV	(SP)+,R1
+		BICB	R2,(R1)
+		CLRB	P_M3
+		CLRB	P_M1+1
+		CALL	CAPACITY
+		MOV	R0,P_FREECARGO
+		MOV	#30000,R0		; #3000
+		CALL	MS_RATING
+		MOV	#P_M7+1,R1		; any left?
+		MOV	#32.,R2
+		CLR	R0
+6$:		BISB	(R1)+,R0
+		SOB	R2,6$
+		TSTB	R0
+		BNE	61$
+		MOVB	#1,P_M7			; the last: the end
+		MOV	#MT_ENDMISS7,R0
+		JMP	MO_SAY
+61$:		BITB	#4,P_M7			; the first
+		BEQ	62$
+		BICB	#4,P_M7
+		MOV	#MT_INFOMISS7F,R0
+		JMP	MO_SAY
+62$:		MOVB	P_RND,R0		; one of eight
+		BIC	#^C7,R0
+		ASL	R0
+		MOV	MT_INFOMISS71_T(R0),R0
+		JMP	MO_SAY
+7$:		CMP	(SP)+,(SP)+		; the Targons take the ship
+		MOV	#MT_BOARDT,R0
+		CALL	MO_SAY
+		JMP	PLAYER_DEAD
+8$:		CMP	(SP)+,(SP)+
+		RETURN
+
+; MO_RAXXLA - GoMissionRaxxla: at Raxxla's station, the first time: the
+; League of the Dark Wheel's welcome, #FFFF on the rating, the legend's
+; bit (MissionComplete bit 7).
+MO_RAXXLA:	CMP	P_GALAXY,#255.
+		BNE	9$
+		TST	P_PLANET
+		BNE	9$
+		TSTB	P_MCOMPLETE
+		BMI	9$
+		BISB	#200,P_MCOMPLETE
+		MOV	#177777,R0
+		CALL	MS_RATING
+		MOV	#MT_FINDRAXXLA,R0
+		JMP	MO_SAY
+9$:		RETURN
+
+; =========================================================================
+; MO_M4 - GoMission4, the Constrictor hunt: issued (1), the offer; won
+; (2), the reward; on the trail with a message due (bit 7), the next
+; word of it - in phases 1 and 3 (bit 2) another system of this galaxy,
+; one of three ways of saying so, a hop counted in bits 1-0 and a phase
+; on at the fourth; in phase 2 (bit 3) the black-market galactic drive,
+; the trail's galaxy one on.
+; =========================================================================
+MO_M4:		MOVB	P_M4,R0
+		BEQ	9$
+		CMPB	R0,#1
+		BEQ	MO_GIVE4
+		CMPB	R0,#2
+		BEQ	MO_END4
+		TSTB	R0
+		BPL	9$
+		BICB	#200,P_M4
+		BITB	#4,P_M4
+		BNE	2$
+		BITB	#10,P_M4
+		BEQ	9$
+		MOVB	P_M4+1,R0		; the galactic drive: the next
+		INC	R0			;   galaxy, of forty-eight
+		BIC	#177400,R0
+		CMP	R0,#48.
+		BLO	1$
+		CLR	R0
+1$:		MOVB	R0,P_M4+1
+		MOV	#MT_INFOMISS42,R0
+		JMP	MO_SAY
+2$:		INCB	P_M4			; a hop
+		CALL	MO_ELSEWHERE
+		MOVB	R0,P_M4+2
+		CALL	MO_NAME4
+		CALL	RND_BYTE		; which of the three
+		BIC	#^C3,R0
+		ASR	R0
+		ADC	R0
+		ASL	R0
+		MOV	MT_INFOMISS41_T(R0),R0
+		JMP	MO_SAY
+9$:		RETURN
+
+; MO_GIVE4 - GiveMission4: yes, and the ship was stolen from a system of
+; this galaxy not this one; the trail's first phase.
+MO_GIVE4:	CLRB	P_M4
+		CALL	MO_OFFER
+		BCC	9$
+		MOVB	GALNUM,P_M4+1
+		CALL	MO_ELSEWHERE
+		MOVB	R0,P_M4+2
+		MOVB	#4,P_M4
+		CALL	MO_NAME4
+		MOV	#MT_INFOMISS40,R0
+		JMP	MO_SAY
+9$:		RETURN
+
+; MO_END4 - EndMission4: #FFFF on the rating, the mission complete, and
+; the naval laser in the first mount - front, rear, left, right - whose
+; gun is less (or none, or the mining laser); every mount naval or
+; Targoid already, 10000 Cr instead.
+MO_END4:	CLRB	P_M4
+		MOV	#177777,R0
+		CALL	MS_RATING
+		BISB	#20,P_MCOMPLETE
+		MOV	#P_LASERS,R1
+		MOV	#4,R2
+1$:		CMP	(R1),#LAS_NAVAL
+		BLO	2$
+		CMP	(R1),#LAS_MINING
+		BHIS	2$
+		TST	(R1)+
+		SOB	R2,1$
+		MOV	#1,R0			; 100000 tenths
+		MOV	#103240,R1
+		CALL	CASH_ADD32
+		BR	3$
+2$:		MOV	#LAS_NAVAL,(R1)
+3$:		MOV	#MT_ENDMISSION4,R0
+		JMP	MO_SAY
+
+; MO_NAME4 - the trail's system (P_M4+1, P_M4+2) into MS_NAME.
+MO_NAME4:	MOVB	P_M4+1,R0
+		BIC	#177400,R0
+		MOVB	P_M4+2,R1
+		BIC	#177400,R1
+		JMP	MS_NAMEOF
+
+; MO_ELSEWHERE - R0 = a system of this galaxy at random, not this one.
+MO_ELSEWHERE:	CALL	RND_BYTE
+		CMP	R0,SYS_INDEX
+		BEQ	MO_ELSEWHERE
+		RETURN
+
+; =========================================================================
+; MO_M5 - GoMission5, the Thargoid plans: issued (1), the offer; at the
+; target (3), the reward.
+; =========================================================================
+MO_M5:		MOVB	P_M5,R0
+		CMPB	R0,#1
+		BEQ	MO_GIVE5
+		CMPB	R0,#3
+		BEQ	MO_END5
+		RETURN
+
+; MO_GIVE5 - GiveMission5: yes, and the plans go to a system of this
+; galaxy forty light years off or more (FuelToPlanet), kept where the
+; Constrictor's trail was (PilotMission5-2); 4, under way.
+MO_GIVE5:	CLRB	P_M5
+		CALL	MO_OFFER
+		BCC	9$
+1$:		CALL	RND_BYTE
+		MOV	R0,-(SP)
+		CALL	SYS_SELECT
+		CALL	SYS_DISTANCE
+		MOV	(SP)+,R1
+		CMP	R0,#400.
+		BLO	1$
+		MOVB	GALNUM,P_M4+1
+		MOVB	R1,P_M4+2
+		MOV	SYS_INDEX,R0
+		CALL	SYS_SELECT
+		MOVB	#4,P_M5
+		CALL	MO_NAME4
+		MOV	#MT_INFOMISS50,R0
+		JMP	MO_SAY
+9$:		RETURN
+
+; MO_END5 - EndMission5: #FFFF on the rating, the mission complete, and
+; the naval energy unit if the one fitted is plain or there is none;
+; 30000 Cr if it is better already.
+MO_END5:	CLRB	P_M5
+		MOV	#177777,R0
+		CALL	MS_RATING
+		BISB	#40,P_MCOMPLETE
+		BITB	#3,P_ENERGYUNIT
+		BNE	1$
+		MOVB	#1,P_ENERGYUNIT		; fitted, whole, naval
+		BR	2$
+1$:		MOV	#4,R0			; 300000 tenths
+		MOV	#111740,R1
+		CALL	CASH_ADD32
+2$:		MOV	#MT_ENDMISSION5,R0
+		JMP	MO_SAY
+
+; MO_M3 - GoMission3: issued (1, 2), the offer; brought down (5), the
+; reward; at the Targon station (4) in anything but a Targoid ship, the
+; Targons take the ship (the aggressive station has shot it first,
+; DOCK_CHECK, unless the war's occupied zone made it 4 - a later step).
+MO_M3:		MOVB	P_M3,R0
+		CMP	R0,#1
+		BEQ	MO_GIVE3
+		CMP	R0,#2
+		BEQ	MO_GIVE3
+		CMP	R0,#5
+		BEQ	MO_END3
+		CMP	R0,#4
+		BNE	9$
+		CALL	MS_TARGOID
+		BEQ	9$
+		MOV	#MT_BOARDT,R0		; КОРАБЛЬ ЗАХВАЧЕН ТАРГОНАМИ!
+		CALL	MO_SAY
+		JMP	PLAYER_DEAD
+9$:		RETURN
+
+; MO_GIVE3 - GiveMission3: asked once - no, and it is gone.  Yes: the
+; naval ECM is fitted there and then, for the job (Legend's reward comes
+; first), and the orders name the system.
+MO_GIVE3:	CLRB	P_M3
+		CALL	MO_OFFER
+		BCC	9$
+		MOVB	#DEV_NAVAL,P_ECM	; fitted, whole, naval
+		MOVB	#3,P_M3
+		CALL	MO_NAME3
+		MOV	#MT_INFOMISS3,R0
+		JMP	MO_SAY
+9$:		RETURN
+
+; MO_END3 - EndMission3: #FFFF on the rating, the mission complete, and
+; the system's thanks.
+MO_END3:	CLRB	P_M3
+		MOV	#177777,R0
+		CALL	MS_RATING
+		BISB	#4,P_MCOMPLETE
+		CALL	MO_NAME3
+		MOV	#MT_ENDMISSION3,R0
+		JMP	MO_SAY
+
+; MO_NAME3 - the Targon station's system into MS_NAME.
+MO_NAME3:	MOV	GALNUM,R0
+		MOVB	P_M3+1,R1
+		BIC	#177400,R1
+		JMP	MS_NAMEOF
+
+; MO_OFFER - GiveNewMission: Legend's invitation, asked.  C set for yes.
+MO_OFFER:	MOV	#MT_GIVEMISS3,R0
+		JMP	MO_ASK
+
+; =========================================================================
+; MO_DOCK2 - BeginDocking's missions after TestFinishContract: the war
+; (a later step) and mission 6.
+; =========================================================================
+MO_DOCK2:	CMP	DOCKED_AT,#BK_GENSHIP	; nothing at a generation ship
+		BEQ	9$
+		CALL	MO_WAR
+		JMP	MO_M6
+9$:		RETURN
+
+; =========================================================================
+; MO_WAR - GoMissionWar, at any station: in the occupied zone the
+; station is the Targons' (P_M3 4); the war over, a pilot who took a
+; rank is stood down, one rank up (the retired bit); at the front, a
+; promotion due (rank bit 0) is the offer to a pilot with none - with
+; nobody aboard - or, the rank's task done (P_WAR+2's bit), the next
+; rank and its orders (Msg_War1..7).
+; =========================================================================
+MO_WAR:		CLR	R0
+		CALL	MS_HEREZONE
+		BCC	1$
+		MOVB	#4,P_M3
+		RETURN
+1$:		CMPB	P_WAR,#1		; over
+		BNE	3$
+		MOVB	P_RANK,R0
+		BIT	#100,R0
+		BNE	9$
+		BIC	#177400,R0
+		CMP	R0,#202
+		BLO	9$
+		BISB	#100,P_RANK
+		INCB	P_RANK
+		MOV	#MT_WAREND,R0
+		JMP	MO_SAY
+3$:		CALL	MS_COMBAT
+		BCC	9$
+		MOVB	P_RANK,R0
+		BIT	#1,R0
+		BEQ	9$
+		ASR	R0
+		BIC	#^C7,R0
+		BNE	4$
+		TSTB	P_M1+1			; the offer: nobody aboard
+		BNE	9$
+		MOV	#MT_GIVEWAR,R0
+		CALL	MO_ASK
+		BCC	9$
+		CLR	R0
+		BR	5$
+4$:		MOV	R0,R2			; the task of rank r done: bit r-1
+		MOV	#1,R1
+		DEC	R2
+		ASH	R2,R1
+		BITB	R1,P_WAR+2
+		BEQ	9$
+5$:		INCB	P_RANK			; promoted, and its orders
+		CLRB	P_WAR+3
+		ASL	R0
+		MOV	MO_WARS(R0),R0
+		JMP	MO_SAY
+9$:		RETURN
+MO_WARS:	.WORD	MT_WAR1, MT_WAR2, MT_WAR3, MT_WAR4, MT_WAR5, MT_WAR6, MT_WAR7
+
+; =========================================================================
+; MO_M6 - GoMission6, Confrontation, at a military station only: an odd
+; state is the next word due.  1, the offer of the first part, the spy
+; hunt; 3, the second, the sabotage - the unfinished cruiser at the
+; leftmost world of a galaxy PilotRnd names; 5, the third, the
+; counter-attack; 7, the end.  Each part's reward comes with its orders.
+; =========================================================================
+MO_M6:		CMP	DOCKED_AT,#BK_MILITARY
+		BNE	9$
+		MOVB	P_M6,R0
+		BIT	#1,R0
+		BEQ	9$
+		ASR	R0
+		BIC	#^C3,R0
+		BEQ	MO_GIVE61
+		INCB	P_M6			; the next part (res 3: 8 is 0)
+		BICB	#10,P_M6
+		DEC	R0
+		BEQ	MO_GIVE62
+		DEC	R0
+		BNE	MO_END6
+		MOV	#MT_INFOMISS63,R0	; the third part: its orders only
+		JMP	MO_SAY
+9$:		RETURN
+
+; MO_GIVE61 - GiveMission6_1: yes, and three to six spies are to be
+; taken; the naval capture system is fitted and twenty tonnes of drones
+; loaded, if they fit, for the job.
+MO_GIVE61:	CLRB	P_M6
+		CALL	MO_OFFER
+		BCC	9$
+		CALL	RND_BYTE
+		BIC	#^C3,R0
+		ADD	#3,R0
+		MOVB	R0,P_M6+1
+		MOVB	#2,P_M6
+		MOVB	#1,P_DRONE		; fitted, whole, naval
+		CMP	P_FREECARGO,#20.
+		BLT	1$
+		SUB	#20.,P_FREECARGO
+		ADD	#20.,CARGO+<2*G_DRONE>
+1$:		MOV	#MT_INFOMISS61,R0
+		JMP	MO_SAY
+9$:		RETURN
+
+; MO_GIVE62 - GiveMission6_2: the galaxy out of PilotRnd's low six bits,
+; forty-eight round; its leftmost world the target (in P_M4+2, where
+; Legend keeps it too); the Targoid energy unit fitted now.
+MO_GIVE62:	MOVB	P_RND,R0
+		BIC	#^C77,R0
+		CMP	R0,#48.
+		BLO	1$
+		SUB	#48.,R0
+1$:		MOVB	R0,P_M6+1
+		MOV	R0,MO_GAL
+		CALL	MS_LEFTMOST
+		MOVB	R0,P_M4+2
+		MOVB	#2,P_ENERGYUNIT		; fitted, whole, Targoid
+		MOV	#MT_INFOMISS62,R0
+		JMP	MO_SAY
+
+; MO_END6 - EndMission6: the mission complete, #FFFF on the rating, the
+; Targoid laser in the first mount that has not one; and to a pilot of
+; Elite rating who has not found Raxxla, a word about ININES.
+MO_END6:	BISB	#100,P_MCOMPLETE
+		MOV	#177777,R0
+		CALL	MS_RATING
+		MOV	#P_LASERS,R1
+		MOV	#4,R2
+1$:		CMP	(R1),#LAS_TARGOID
+		BNE	2$
+		TST	(R1)+
+		SOB	R2,1$
+		BR	3$
+2$:		MOV	#LAS_TARGOID,(R1)
+3$:		MOV	#MT_ENDMISS6,R0
+		CALL	MO_SHOW
+		TSTB	P_MCOMPLETE		; Raxxla found: no word
+		BMI	4$
+		CMP	P_RATING+2,#60		; the rating's top half #0030 up
+		BLO	4$
+		MOV	#MT_HINTRAXXLA1,R0
+		CALL	MO_READ
+		CALL	MO_PRINT
+4$:		JMP	MO_KEY
+
+; =========================================================================
+; MO_MARKET - the market screen entered (BuySell's goto014).  With people
+; aboard (P_M1+1), they are set down at a main station in a system with
+; no nova, and the rescue pays; otherwise GoMission1 offers to take
+; some aboard, which sells the hold and leaves no room in it.
+; =========================================================================
+MO_MARKET:	MOVB	P_M1+1,R0		; who is aboard
+		BEQ	MO_TAKE
+		CMPB	R0,#5			; the assault squad stays
+		BEQ	9$
+		TST	DOCKED_AT		; the main station only
+		BNE	9$
+		TSTB	P_M1			; and not in the nova's system
+		BNE	9$
+		CMPB	P_WAR,#2		; in a war, a pilot of rank 2 up
+		BLO	1$			;   keeps them (troops); at the
+		CMPB	P_RANK,#204		;   front they cannot be set down
+		BHIS	9$
+		CALL	MS_COMBAT
+		BCS	9$
+		INCB	P_WAR+3			; the refugees' task: enough trips
+		CALL	RND_BYTE		;   - more than two to four - and
+		BIC	#^C3,R0			;   it is done
+		ASR	R0
+		ADC	R0
+		ADD	#2,R0
+		CMPB	R0,P_WAR+3
+		BHIS	1$
+		BISB	#1,P_WAR+2
+1$:		MOVB	P_M1+1,-(SP)
+		CLRB	P_M1+1			; set down (goto188)
+		CALL	CAPACITY
+		MOV	R0,P_FREECARGO
+		CMPB	(SP)+,#4		; the generation ship's people: gems,
+		BNE	2$			;   gold and platinum, and the law's
+		CALL	RND_BYTE		;   record wiped clean
+		BIC	#^C77,R0
+		ADD	#100.,R0
+		MOV	R0,CARGO+<2*15.>
+		CALL	RND_BYTE
+		BIC	#^C57,R0
+		ADD	#40.,R0
+		MOV	R0,CARGO+<2*13.>
+		CALL	RND_BYTE
+		BIC	#^C17,R0
+		ADD	#20.,R0
+		MOV	R0,CARGO+<2*14.>
+		CLR	P_LEGAL
+		MOV	#MT_REWARDGEN,R0
+		JMP	MO_SAY
+2$:		MOV	#100.,CARGO+<2*15.>	; a hundred gem-stones, set rather
+		BISB	#1,P_MCOMPLETE		;   than added: the hold was sold
+		MOV	#MT_SAVEREF,R0
+		JMP	MO_SAY
+9$:		RETURN
+
+; MO_TAKE - GoMission1: in the nova's system, and not intercepted in
+; deep space, the refugees ask to come aboard.  Yes: they are aboard,
+; the cargo bay's life support is fitted and running, and the hold is
+; sold to make room for them - none is left for anything else.
+MO_TAKE:	TSTB	P_M1
+		BNE	1$
+		CMP	DOCKED_AT,#BK_GENSHIP	; the generation ship's people, if
+		BNE	MO_WARTAKE		;   there is no war and
+		CMPB	P_WAR,#2		;   the life support is there for
+		BHIS	MO_RET			;   them
+		BITB	#DEV_OFF,P_LIFESUPPORT
+		BNE	MO_RET
+		MOV	#MT_GIVEGENSHIP,R0
+		CALL	MO_ASK
+		BCC	MO_RET
+		MOV	#4,R0
+		BR	MO_ABOARD
+1$:
+		TST	WITCH
+		BNE	MO_RET
+		MOV	#MT_GIVEMISS1,R0
+		CALL	MO_ASK
+		BCC	MO_RET
+		MOV	#1,R0
+MO_ABOARD:	MOVB	R0,P_M1+1
+		CMP	R0,#3			; troops need no life support
+		BEQ	1$
+		CMP	R0,#5
+		BEQ	1$
+		CLRB	P_LIFESUPPORT		; fitted, whole
+1$:
+		CALL	HOLD_SELL		; SellAllProducts
+		CLR	P_FREECARGO
+MO_RET:		RETURN
+
+; MO_WARTAKE - GoMission1's war: at the front, a sergeant is asked to
+; take refugees; a lieutenant colonel (rank 5) the assault troops, in a
+; ship big enough to carry them (NumOfDescentShips).
+MO_WARTAKE:	CMPB	P_M7,#3			; Retribution: the assault squad
+		BLO	5$			;   at a military station (goto287)
+		CMP	DOCKED_AT,#BK_MILITARY
+		BNE	5$
+		MOV	#5,R3
+		BR	MO_TROOPS
+5$:		CMPB	P_RANK,#202
+		BLO	MO_RET
+		CALL	MS_COMBAT
+		BCC	MO_RET
+		CMPB	P_RANK,#204
+		BHIS	1$
+		MOV	#MT_WARREFUGEES,R0
+		CALL	MO_ASK
+		BCC	MO_RET
+		MOV	#2,R0
+		BR	MO_ABOARD
+1$:		MOVB	P_RANK,R0
+		BIC	#^C216,R0
+		CMP	R0,#212
+		BNE	MO_RET
+		MOV	#3,R3
+
+; MO_TROOPS - goto288: troops (R3 = 3, the war's, or 5, Retribution's)
+; go only in a ship big enough (NumOfDescentShips).
+MO_TROOPS:	MOV	#MO_DESCENT,R1
+2$:		MOVB	(R1)+,R0
+		BEQ	3$
+		CMP	R0,P_SHIP
+		BNE	2$
+		MOV	R3,-(SP)
+		MOV	#MT_WARDESCENT,R0
+		CALL	MO_ASK
+		MOV	(SP)+,R0
+		BCC	9$
+		BR	MO_ABOARD
+3$:		MOV	#MT_WARDESCSML,R0
+		JMP	MO_SAY
+9$:		RETURN
+MO_DESCENT:	.BYTE	2, 4, 5, 6, 7, 8., 15., 18., 19., 0	; NumOfDescentShips
+		.EVEN
+
+; =========================================================================
+; MO_SAY - PrintSpecialMessage: message R0 (an MT_* offset) on a cleared
+; view, and a key.  MO_ASK - the same with Legend's question: C set for
+; yes.  Clobbers everything.
+; =========================================================================
+MO_SAY:		CALL	MO_SHOW
+		JMP	MO_KEY
+
+MO_ASK:		CALL	MO_SHOW
+1$:		CALL	MO_KEY
+		CMP	R0,#107			; ФИКС
+		BEQ	8$
+		CMP	R0,#57			; Д
+		BEQ	8$
+		CMP	R0,#4			; СТОП
+		BEQ	7$
+		CMP	R0,#54			; Н
+		BNE	1$
+7$:		CLC
+		RETURN
+8$:		SEC
+		RETURN
+
+; MO_SHOW - the key noted, the view cleared, message R0 printed.  The
+; key is noted BEFORE the disk is read: a key that begins and ends
+; during the read is still a key.
+MO_SHOW:	MOV	R0,-(SP)
+		MOV	PP_LASTKEY,MO_LAST
+		CALL	PAGE_CLEAR
+		MOV	(SP)+,R0
+		CALL	MO_READ
+		JMP	MO_PRINT
+
+; MO_KEY - the next key pressed, its scancode in R0.
+MO_KEY:		CALL	VSYNC
+		MOV	PP_LASTKEY,R0
+		CMP	R0,MO_LAST
+		BEQ	MO_KEY
+		MOV	R0,MO_LAST
+		BIT	#200,R0			; a release names a row, not a key
+		BNE	MO_KEY
+		RETURN
+
+; MO_READ - R0 = a message's offset in the bank: its first two sectors
+; into MT_BUF, and R1 = the message there.  Retried until the disk reads.
+MO_READ:	MOV	R0,-(SP)
+		CLRB	R0			; sector = offset / 512
+		SWAB	R0
+		ASR	R0
+		ADD	#MTEXT_LBA0,R0
+		MOV	R0,-(SP)
+		MOV	@SP,R0
+		MOV	#MT_BUF,R1
+		MOV	#512.,R2		; two sectors, in words
+		CALL	DATA_READ
+		BCC	1$
+		JMP	RT_IOERROR
+1$:		TST	(SP)+
+		MOV	(SP)+,R1
+		BIC	#^C777,R1		; offset within the sector
+		ADD	#MT_BUF,R1
+		RETURN
+
+; MO_PRINT - the message at R1: KOI-7 text, and tools/mission_text.py's
+; codes - 1 x y the cursor to Legend's column x and row y, 2 the
+; mission's system (MS_NAME), 3 the galaxy MO_GAL in two digits, 4 a
+; pause (dropped: nothing here is animated), 0 the end.
+MO_PRINT:	CALL	RING_WAIT
+1$:		MOVB	(R1)+,R0
+		BIC	#177400,R0
+		BEQ	9$
+		CMP	R0,#1
+		BNE	2$
+		MOVB	(R1)+,R0
+		ADD	#MO_X0,R0
+		MOV	R0,TX
+		MOVB	(R1)+,R0
+		ADD	#MO_Y0,R0
+		MOV	R0,R3
+		MUL	#FONT_H,R3
+		MOV	R3,TY
+		BR	1$
+2$:		CMP	R0,#2
+		BNE	3$
+		MOV	R1,-(SP)
+		MOV	#MS_NAME,R1
+		CALL	PUTS
+		MOV	(SP)+,R1
+		BR	1$
+3$:		CMP	R0,#3
+		BNE	4$
+		MOV	R1,-(SP)
+		MOV	MO_GAL,R1		; two digits, the galaxy counted
+		INC	R1			;   from one, a space for no tens
+		CLR	R0
+		DIV	#10.,R0
+		MOV	R1,-(SP)
+		ADD	#'0,R0
+		CMP	R0,#'0
+		BNE	31$
+		MOV	#' ,R0
+31$:		CALL	PUTC
+		MOV	(SP)+,R0
+		ADD	#'0,R0
+		CALL	PUTC
+		MOV	(SP)+,R1
+		BR	1$
+4$:		CMP	R0,#4
+		BEQ	1$
+		MOV	R1,-(SP)
+		CALL	PUTC
+		MOV	(SP)+,R1
+		BR	1$
+9$:		RETURN
+
+		.IIF	GT, .-MT_BUF, .ERROR ; the overlay has grown into its text buffer

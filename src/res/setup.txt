@@ -1,0 +1,56 @@
+# The key file: which key does what, and how the pause menu's options
+# start.  Legend's setup.ini (INCLUDE/Loader/setup.ini) on the УКНЦ.
+#
+# tools/keyfile.py turns this into the PPU's key tables for the build
+# (build/keytab.mac) and into one sector of the disk (build/keys.bin, at
+# KEYS_LBA), which the game reads at boot - so a disk can be given other
+# keys without a rebuild, commanders and all:
+#
+#     python3 tools/keyfile.py my-keys.txt --disk build/elite.dsk
+#
+# COMMAND = KEY [KEY ...]  - a command may have more than one key, and a
+#   key may be a Cyrillic letter, a digit, one of the names below, or a
+#   raw scancode in octal with a leading 0 (0166):
+#     ←  →  ↑  ↓  ФИКС  ВВОД  ДОП.ВВОД (the numpad's)  СТОП  АР2
+#     ПРОБЕЛ  ЗАБОЙ  ТАБ  ...  - `keyfile.py --names` lists them all
+# NAME = 0 or 1            - an option's state at boot
+#
+# THE ONE RULE: a key's release clears every key in its matrix row (the
+# low four bits of its code), so a key must not share a row with a key
+# that is HELD - the stick, ФИКС, the J-drive.  `keyfile.py --check`
+# says which rows are shared.  Typing a name and the pause menu's
+# letters read the raw scancode and do not go through this file.
+
+# ---- held: the stick, the trigger, the J-drive ----
+ROLL_LEFT	= ←
+ROLL_RIGHT	= →
+PITCH_UP	= ↑
+PITCH_DOWN	= ↓
+FIRE		= ФИКС		# the laser; on a screen, "do it"
+JDRIVE		= О		# PC J - the J-drive, the injectors
+
+# ---- pressed ----
+ENTER		= ВВОД		# a screen's other list, a chart's search
+STOP		= СТОП		# the next screen
+PAUSE		= АР2		# PC Tab - the pause menu
+THROTTLE	= ДОП.ВВОД	# PC right Ctrl / keypad Enter
+MISSILE		= ПРОБЕЛ	# lock on, then let go
+VIEW		= 1		# front, rear, left, right
+ECM		= 2
+BOMB		= 3
+POD		= 6		# the escape capsule
+MISSKIND	= 8		# what the space bar does next
+CLOAK		= 9
+COMPASS		= М		# PC V - the compass's next mode
+SCANNER		= Ы		# PC S - the scanner's next mode
+TURRET		= А		# PC F - the turrets turn
+
+# ---- the pause menu's options, as the game starts ----
+SOUND		= 1		# S  the effects and the tune
+INVERT		= 0		# B  the stick inverted
+INVERT_UD	= 0		# Y  up and down swapped
+INERTIA		= 0		# R  an opposite key slows the turn, not stops it
+STEADY_TURN	= 0		# D  a turn keeps its rate when let go
+INTERCEPT	= 0		# F  the Targons stop every jump
+EASY_DOCK	= 0		# C  no need to level the slot
+LAUNCH_CONFIRM	= 0		# U  ask before launching

@@ -1,0 +1,46 @@
+; =========================================================================
+; sync.mac - CPU-side timing: wait helpers for the PPU-published 50 Hz clock.
+; =========================================================================
+
+CPU_VSYNC: .WORD 0 ; published by PPU; CPU vector 100 stays RT-11's
+
+; VSYNC - wait for the next 50 Hz frame boundary.
+VSYNC:		MOV	CPU_VSYNC,-(SP)
+1$:		CMP	CPU_VSYNC,(SP)
+		BEQ	1$
+		TST	(SP)+
+		RETURN
+
+; =========================================================================
+; VSYNC_PACE - what the flight loop waits on.
+;
+; VSYNC rounds UP to the next tick boundary, and throws away whatever is
+; left of the tick the frame finished in - half a tick a frame on
+; average, which at ten frames a second is 6-8% of the machine.  Worse,
+; it quantises: a frame of 4.2 ticks and one of 4.9 both cost five, so
+; the frame rate can only ever be 50/N and a change in the work has to
+; cross a whole tick before it shows.
+;
+; This holds only when the frame that has just ended BEGAN in the tick
+; that is still running - which caps the loop at 50 frames a second, so
+; a light scene cannot spin the AI and the generator faster than the
+; hardware ticks, and lets a frame that has already outrun a tick get
+; straight on with the next one.
+;
+; Clobbers R0.
+; =========================================================================
+VS_LAST:	.WORD	0
+
+VSYNC_PACE:	MOV	CPU_VSYNC,R0
+		CMP	R0,VS_LAST		; a tick has passed while the frame
+		BNE	9$			;   was being drawn: get on with it
+1$:		CMP	CPU_VSYNC,VS_LAST	; otherwise wait for the boundary
+		BEQ	1$
+		MOV	CPU_VSYNC,R0
+9$:		MOV	R0,VS_LAST
+		RETURN
+
+; WAIT_FRAMES - wait R0 frames (R0 >= 1).  Clobbers R0.
+WAIT_FRAMES:	CALL	VSYNC
+		SOB	R0,WAIT_FRAMES
+		RETURN

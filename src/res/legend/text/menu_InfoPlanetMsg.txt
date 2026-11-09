@@ -1,0 +1,55 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/InfoPlanetMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_DataOn+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,17,4}ДАННЫЕ НА {nPlanetDest}
+Msg_Economy+0|ЭКОНОМИКА
+Msg_Rich+0|БОГАТАЯ 
+Msg_Rich+1|СРЕДНЯЯ 
+Msg_Rich+2|БЕДНАЯ 
+Msg_Mainly+0|ПРЕИМУЩ.
+Msg_Industrial+0|ПРОМЫШЛЕННАЯ
+Msg_Agricult+0|СЕЛЬСКОХОЗЯЙСТВЕННАЯ
+Msg_Governmet+0|ПРАВИТЕЛЬСТВО
+Msg_GovernmetT+0|АНАРХИЯ
+Msg_GovernmetT+1|ФЕОДАЛЬНОЕ
+Msg_GovernmetT+2|МУЛЬТИПРАВИТЕЛЬСТВО
+Msg_GovernmetT+3|ДИКТАТУРА
+Msg_GovernmetT+4|КОММУНИЗМ
+Msg_GovernmetT+5|КОНФЕДЕРАЦИЯ
+Msg_GovernmetT+6|ДЕМОКРАТИЯ
+Msg_GovernmetT+7|КОРПОРАТИВНОЕ
+Msg_TechLevel+0|ТЕХН. УРОВЕНЬ
+Msg_Population+0|НАСЕЛЕНИЕ
+Msg_Billion+0| МИЛЛИАРДА
+Msg_HumCol+0|ЧЕЛОВЕЧЕСКАЯ КОЛОНИЯ
+Msg_PopulatSize+0|БОЛЬШИЕ
+Msg_PopulatSize+1|ОЖЕСТОЧЕННЫЕ
+Msg_PopulatSize+2|МАЛЕНЬКИЕ
+Msg_PopulatCol+0|ЗЕЛЕНЫЕ
+Msg_PopulatCol+1|КРАСНЫЕ
+Msg_PopulatCol+2|ЖЕЛТЫЕ
+Msg_PopulatCol+3|СИНИЕ
+Msg_PopulatCol+4|ЧЕРНЫЕ
+Msg_PopulatCol+5|БЕЗОБИДНЫЕ
+Msg_PopulatType+0|СЛИЗИСТЫЕ
+Msg_PopulatType+1|ПУЧЕГЛАЗЫЕ
+Msg_PopulatType+2|РОГАТЫЕ
+Msg_PopulatType+3|КОСТЛЯВЫЕ
+Msg_PopulatType+4|ТОЛСТЫЕ
+Msg_PopulatType+5|ПУШИСТЫЕ
+Msg_PopulatGen+0|ГРЫЗУНЫ
+Msg_PopulatGen+1|ЛЯГУШКИ
+Msg_PopulatGen+2|ЯЩЕРИЦЫ
+Msg_PopulatGen+3|ОМАРЫ
+Msg_PopulatGen+4|ПТИЦЫ
+Msg_PopulatGen+5|ГУМАНОИДЫ
+Msg_PopulatGen+6|КОШКИ
+Msg_PopulatGen+7|НАСЕКОМЫЕ
+Msg_Gross+0|ВАЛОВОЙ ДОХОД
+Msg_BegComm+0|(
+Msg_EndComm+0|)
+Msg_spMcr+0| МКР
+Msg_AvRadius+0|СРЕДНИЙ РАДИУС
+Msg_km+0| КМ
+Msg_Invasion+0|{nFlgPrn_1xx}{nPlanetDest} ПРОТИВОСТОИТ ВТОРЖЕНИЮ ТАРГОНОВ

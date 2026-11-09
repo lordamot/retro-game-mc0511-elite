@@ -1,0 +1,256 @@
+; =========================================================================
+; contract.mac - the carrier market's business the resident has to keep:
+; the planet's offers, and what the flight code does to the pilot's
+; contracts between visits to the screen (src/ovl_carrier.mac).
+;
+; Elite Legend's carrier market (INCLUDE/Menu/Delivery.a80,
+; Galaxy/genContracts.a80, Pilot/pCalcData.a80) offers twelve contracts
+; a system - cargo to carry against a deposit, a passenger for a cabin,
+; a parcel - each to a planet of this galaxy within so many hours of
+; the clock, and the pilot may hold six.  The pilot's six are in the
+; record (P_CONTRACT, src/pilot.mac) and go to the disk; the planet's
+; twelve are not saved anywhere by Legend either, so they live here,
+; PLANET_CT, and are worked out again from the record's random byte
+; when the screen is opened after an arrival (CT_MAKE: Legend does it
+; on the jump; the numbers are the same, the inputs are noted at
+; arrival by CT_ARRIVE and nothing else feeds them).  The whole contract is in
+; the PDP-11's shape, C.SIZE bytes with the words on even addresses,
+; the fields Legend's:
+;
+;   C.RATE  byte  the planet's list: the least delivery rating that may
+;                 take it, 0 for anyone, #80 no contract in this slot
+;   C.GAL   byte  the pilot's list, the same byte: the galaxy it was
+;                 taken in, #80 an empty slot
+;   C.PLANET byte the destination, a system number of this galaxy
+;   C.ADV   word  the advance (passengers) or the deposit (cargo),
+;   C.ADVH  byte    tenths of a credit, 24 bits
+;   C.FEEH  byte  the fee on delivery, 24 bits, high byte first so
+;   C.FEE   word    that the word lands even
+;   C.TIME  word  tenths of an hour: allowed, then left
+;   C.NUM   word  tonnes (or kilogrammes, or grammes) of the good
+;   C.TYPE  byte  bits 7-6: 00 cargo, 01 a passenger, 10 a parcel;
+;                 bits 5-0: the good, or the passenger's or parcel's name
+;
+; What the resident does with them: the clock's travel time comes off
+; every contract (CT_SUBTIME, SubTimeContracts) when the jump is made;
+; at every docking the delivered ones pay and the late passengers may
+; leave (the overlay's CT_FINISH, TestFinishContract, through CT_DOCK);
+; a contract is torn up (CT_REFUSE, RefuseContract) from the screen, by
+; the escape capsule and by the yard for the passengers, whose cabins
+; go with the ship; and the delivery rating moves (CT_RATING,
+; IncRatingContract) - a 16-bit sign-and-magnitude number, bit 15 the
+; sign, as Legend keeps it in PilotDelivRating.
+; =========================================================================
+
+NPLANET_CT = 12.		; contracts a planet offers
+C.RATE	= 0
+C.GAL	= 0
+C.PLANET = 1
+C.ADV	= 2
+C.ADVH	= 4
+C.FEEH	= 5
+C.FEE	= 6
+C.TIME	= 10
+C.NUM	= 12
+C.TYPE	= 14
+C.SIZE	= 16			; 14 bytes
+
+CTK_PASS = 100			; C.TYPE bit 6: a passenger
+CTK_PARCEL = 200		; bit 7: a parcel; neither: cargo
+CT_NONE	= 200			; C.RATE / C.GAL: nothing here
+
+; PLANET_CT, the planet's offers (NPLANET_CT of C.SIZE), is laid over the
+; PPU program's dead copy by src/tail.mac: CT_MAKE makes them after
+; every arrival and every commander read in, before the carrier market
+; can show them (CT_OPEN: docked at the main station only).
+CT_FRESH:	.WORD	0		; 1: arrived, the offers not yet made
+CT_MASK0:	.WORD	0		; P_CONTRACTS as it stood at arrival:
+				;   it feeds the generator's stream
+CT_RATE0:	.WORD	0		; and the rating's high byte then
+CT_MSG:		.WORD	0		; what the docking said about a
+				;   contract, for DRAW_DOCKED, or 0
+
+; =========================================================================
+; CT_ARRIVE - a system arrived at (or a commander read in): the offers
+; are to be made anew, from what the record says now.  The caller has
+; put the twelve bits in P_CONTRACTS (a jump puts all sixteen, as
+; JumpToPlanet does).  Clobbers nothing.
+; =========================================================================
+CT_ARRIVE:	MOV	#1,CT_FRESH
+		MOV	P_CONTRACTS,CT_MASK0
+		MOVB	P_DELIV+1,CT_RATE0
+		BIC	#177400,CT_RATE0
+		RETURN
+
+; =========================================================================
+; CT_SUBTIME - SubTimeContracts: R0 tenths of an hour off every
+; contract's time, stopping at nought.  Every slot, as Legend does it -
+; an empty one holds nothing that matters.  Preserves R0; clobbers
+; R1, R2.
+; =========================================================================
+CT_SUBTIME:	MOV	R5,-(SP)
+		MOV	#P_CONTRACT,R5
+		MOV	#NCONTRACTS,R1
+1$:		MOV	C.TIME(R5),R2
+		SUB	R0,R2
+		BHIS	2$
+		CLR	R2
+2$:		MOV	R2,C.TIME(R5)
+		ADD	#C.SIZE,R5
+		SOB	R1,1$
+		MOV	(SP)+,R5
+		RETURN
+
+; =========================================================================
+; CT_DOCK - docked: the offers overlay closes what has been delivered
+; and lets the late passengers go (TestFinishContract), leaving what it
+; said in CT_MSG.  Loads an overlay, so never from overlay code.
+; Clobbers everything.
+; =========================================================================
+CT_DOCK:	MOV	#OVL_CTGEN,R0
+		CALL	OVL_LOAD
+		MOV	#1,R0
+		JMP	OVL_BASE
+
+; =========================================================================
+; CT_MAKE - before the carrier market is drawn: the first time since an
+; arrival, and only where the offers are made (docked, at the main
+; station), the offers overlay makes them.  Cheap when there is nothing
+; to do, so SCR_SHOW calls it for every screen.  Loads an overlay.
+; Clobbers everything.
+; =========================================================================
+CT_MAKE:	CMP	SCREEN,#NSCREENS-1
+		BNE	9$
+		TST	CT_FRESH
+		BEQ	9$
+		TST	DOCKED
+		BEQ	9$
+		TST	DOCKED_AT
+		BNE	9$
+		CLR	CT_FRESH
+		MOV	#OVL_CTGEN,R0
+		CALL	OVL_LOAD
+		CLR	R0
+		JMP	OVL_BASE
+9$:		RETURN
+
+; =========================================================================
+; CT_REFUSE - RefuseContract: the pilot's contract at R5 torn up.  A
+; parcel is simply gone; cargo stays in the hold and the deposit is
+; lost; a passenger's advance goes back, and a purse that cannot cover
+; it is emptied and the rating falls to the bottom.  Either way the
+; rating loses what the contract would have earned (CT_RATING).
+; Clobbers R0..R3.
+; =========================================================================
+CT_REFUSE:	MOVB	C.TYPE(R5),R0
+		BMI	8$			; a parcel
+		BIT	#CTK_PASS,R0
+		BEQ	8$			; cargo
+		CALL	CT_GETADV		; the advance back
+		CALL	CASH_CAN32
+		BCC	7$
+		CLR	CASH_L
+		CLR	CASH_H
+		MOV	#177777,P_DELIV		; -32767: rock bottom
+		BR	8$
+7$:		CALL	CASH_SUB32
+8$:		MOVB	#CT_NONE,C.GAL(R5)
+		MOV	#100000,R0		; minus
+		; fall into CT_RATING
+
+; =========================================================================
+; CT_RATING - IncRatingContract: the delivery rating moves by what the
+; contract at R5 is worth - the advance and the fee together, over 128
+; - up (R0 = 0) or down (R0 = 100000).  The rating is sign and
+; magnitude and stops at 32767 either way.  Clobbers R0..R3.
+; =========================================================================
+CT_RATING:	MOV	R0,-(SP)
+		CALL	CT_GETADV		; R0:R1 = the advance
+		ADD	C.FEE(R5),R1		; plus the fee, 24 bits
+		ADC	R0
+		MOVB	C.FEEH(R5),R2
+		BIC	#177400,R2
+		ADD	R2,R0
+		BIC	#177400,R0		; a byte, as Legend's adc a,c
+		ASHC	#-7,R0			; over 128: R1 is the low 16 bits
+		BIS	(SP)+,R1		;   of it, and the sign goes on
+		MOV	P_DELIV,R0
+		CALL	CT_SMADD
+		MOV	R0,P_DELIV
+		RETURN
+
+; CT_GETADV - R0:R1 (high:low) = the advance of the contract at R5, the
+; shape CASH_ADD32 and the like take.  Clobbers nothing else.
+CT_GETADV:	MOV	C.ADV(R5),R1
+		MOVB	C.ADVH(R5),R0
+		BIC	#177400,R0
+		RETURN
+
+; CT_GETFEE - the same for the fee.
+CT_GETFEE:	MOV	C.FEE(R5),R1
+		MOVB	C.FEEH(R5),R0
+		BIC	#177400,R0
+		RETURN
+
+; =========================================================================
+; CT_SMADD - Legend's AddSign_HL_DE without its halving: R0 and R1 are
+; sign-and-magnitude words (bit 15 the sign), and R0 comes back their
+; sum in the same form, the magnitude held at 32767.  Two magnitudes of
+; different sign subtract, and the result takes the larger's sign.
+; Clobbers R1..R3.
+; =========================================================================
+CT_SMADD:	MOV	R0,R2
+		BIC	#77777,R2		; the signs
+		MOV	R1,R3
+		BIC	#77777,R3
+		BIC	#100000,R0		; the magnitudes
+		BIC	#100000,R1
+		CMP	R2,R3
+		BNE	1$
+		ADD	R1,R0			; alike: add, and a sum that
+		BPL	2$			;   reaches bit 15 is held
+		MOV	#77777,R0
+2$:		BIS	R2,R0
+		RETURN
+1$:		CMP	R0,R1			; unlike: the smaller off the larger
+		BLO	3$
+		SUB	R1,R0
+		BIS	R2,R0
+		RETURN
+3$:		SUB	R0,R1
+		MOV	R1,R0
+		BIS	R3,R0
+		RETURN
+
+; =========================================================================
+; CT_REFUSEPASS - the passengers' contracts torn up: the escape capsule
+; leaves them behind (eObjPilot's escape) and a change of ship takes
+; their cabins away (RefuseAllContracts, v1.09: the passengers only).
+; Clobbers R0..R5.
+; =========================================================================
+CT_REFUSEPASS:	MOV	#P_CONTRACT,R5
+		MOV	#NCONTRACTS,R4
+1$:		CMPB	C.GAL(R5),#CT_NONE
+		BEQ	2$
+		MOVB	C.TYPE(R5),R0
+		BMI	2$
+		BIT	#CTK_PASS,R0
+		BEQ	2$
+		CALL	CT_REFUSE
+2$:		ADD	#C.SIZE,R5
+		SOB	R4,1$
+		RETURN
+
+; CT_REFUSEALL - every contract torn up, with what each costs: a galactic
+; jump takes the pilot out of reach of all of them (JumpToGalaxy's
+; RefuseAllContracts with C set, v1.09).  Clobbers R0..R5.
+CT_REFUSEALL:	MOV	#P_CONTRACT,R5
+		MOV	#NCONTRACTS,R4
+1$:		CMPB	C.GAL(R5),#CT_NONE
+		BEQ	2$
+		MOV	R4,-(SP)
+		CALL	CT_REFUSE
+		MOV	(SP)+,R4
+2$:		ADD	#C.SIZE,R5
+		SOB	R4,1$
+		RETURN

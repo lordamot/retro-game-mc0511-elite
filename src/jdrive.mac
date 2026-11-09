@@ -1,0 +1,30 @@
+; =========================================================================
+; jdrive.mac - the J-drive, the fuel injectors and the fuel collector,
+; as Legend has them (Use_J_Drive in Engine/eObjPilot.a80).
+;
+; One key, HELD (KB_JDRIVE).  While nothing mass-locks the drive it is
+; the J-drive: everything but the bodies and the bays leaves the sky
+; (ClearAroundObj), and every body and bay comes JD_STEP nearer a frame
+; along z and on past you (proc_07: only z moves), which is how a world
+; three minutes off is reached in ten seconds.  What locks it: a bay
+; within BASE_U on every axis (Legend's DockingObjNear: all three high
+; bytes zero), a ship on the scanner (its oFlg_4 bit 3 clear - drops
+; do not lock it, rocks do), and - this port's own, because its worlds
+; are bigger than Legend's #4000 - a world or a sun within JD_BODY.
+;
+; Locked, the same key is the injectors, if a pair is fitted and whole
+; and there is fuel: the throttle is overridden with INJ_SPEED, or the
+; military pair's INJ_SPEED_MIL, the stick is dead (BlockControl = 2),
+; and a tenth of fuel goes every INJ_FRAMES.  Coming straight off the
+; drive onto the injectors is refused for a frame (var_12), as Legend
+; refuses it.  The fuel collector, fitted and whole, makes a tenth every
+; COLL_FRAMES of drive.
+; =========================================================================
+JD_SPEED:	.WORD	0		; the injectors' speed; 0 = the throttle's
+JD_LAST:	.WORD	0		; the key last frame: 0 nothing, 1 the
+				;   drive, 2 the injectors (var_12)
+JD_FUELT:	.WORD	INJ_FRAMES	; var_07
+JD_COLLT:	.WORD	COLL_FRAMES	; var_08
+JD_LOCKED:	.WORD	0		; 1 while the key is held on a locked
+				;   drive, for the verifier
+JD_I:		.WORD	0

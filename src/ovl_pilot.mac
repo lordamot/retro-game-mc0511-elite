@@ -1,0 +1,519 @@
+; =========================================================================
+; ovl_pilot.mac - the commander's record on the screen: Legend's pilot
+; info page (orig/legend/.../INCLUDE/Menu/PilotInfo.a80) laid out for
+; eighty columns.  AN OVERLAY (src/ovl.list), called through its first
+; word with R0 = 0 to draw and R0 = 1 for its keys, of which it has
+; none; screen 7, in СТОП's cycle where the 1985 status page was.
+;
+; Legend's page, line for line: the date and time, the ship, the
+; present and the target system, where the pilot is, the fuel with
+; the extra tank's in brackets, the purse, the legal status in five
+; bands, the rating in ten, the military rank if he holds one, then
+; the equipment - the missiles by rack with their counts, the guns by
+; mount, the cabins, the tank, and every device aboard, a broken one
+; marked with a dash in the margin.  Legend pages the equipment ten
+; at a time; the wide screen puts it in a column of its own beside the
+; rest, so that everything the 1985 rules can bolt on fits on one page.
+; Two things Legend keeps on other pages are here because the 1985
+; status page had them and a pilot in flight has no other page for
+; them: the kill count, and what is in the hold.
+;
+; Everything printed comes straight out of the record (src/pilot.mac):
+; the names of the equipment out of Legend's own table
+; (build/legend_equip.mac), the ship's out of the strings.
+; =========================================================================
+
+		JMP	OVLP_ENTRY		; the overlay's entry, at OVL_BASE
+
+OVLP_ENTRY:	TST	R0
+		BNE	9$
+		JMP	SCR_PILOT
+9$:		RETURN
+
+PI_X0	= 2			; the labels
+PI_X1	= 19.			; and their values
+PI_XH	= 24.			; the hold's second column
+PI_X2	= 48.			; the equipment column
+PI_Y0	= 24.			; the first row, under the title
+PI_STEP	= 12.			; a row: the glyph and a line of air
+PI_ROWS	= 19.			; rows in the full-height page
+PI_YEND	= PI_Y0+<PI_STEP*PI_ROWS>
+
+PI_I:		.WORD	0
+PI_T:		.WORD	0
+PI_X:		.WORD	0
+PI_ROW:		.WORD	0		; the equipment column's next row
+
+; the rating's rungs: Legend's TablRating, which grades the 32-bit
+; rating on its top three bytes - the same rungs as 1985's on the
+; middle two, with LEGENDARY above ELITE once the top byte is set
+RATETAB:	.WORD	9., 17., 33., 65., 129., 768., 2816., 6656., 0
+RATENAMES:	.WORD	S_RT_0, S_RT_1, S_RT_2, S_RT_3, S_RT_4
+		.WORD	S_RT_5, S_RT_6, S_RT_7, S_RT_8
+
+; the law's bands, PilotLegalStatus: a record below the entry
+LEGALTAB:	.WORD	1, LEGAL_FUGITIVE, 256., 8192., 0
+LEGALNAMES:	.WORD	S_LS_CLEAN, S_LS_OFFENDER, S_LS_FUGITIVE
+		.WORD	S_LS_OUTLAW, S_LS_ROGUE
+
+; where he is: Msg_LocName by Legend's Docking value, which is BK_*
+; here, with 1 the station itself and 6 deep space
+LOCNAMES:	.WORD	S_LOC_SPACE, S_LOC_STATION, S_LOC_MILITARY
+		.WORD	S_LOC_SERVICE, S_LOC_HERMIT, S_LOC_GENSHIP
+		.WORD	S_LOC_DEEP
+
+RANKNAMES:	.WORD	S_RK_0, S_RK_1, S_RK_2, S_RK_3
+		.WORD	S_RK_4, S_RK_5, S_RK_6, S_RK_7
+
+MOUNTNAMES:	.WORD	S_MT_FRONT, S_MT_REAR, S_MT_LEFT, S_MT_RIGHT
+
+; the yard's ships, by P_SHIP - 1
+SHIPNAMES:	.WORD	S_SN_01, S_SN_02, S_SN_03, S_SN_04, S_SN_05
+		.WORD	S_SN_06, S_SN_07, S_SN_08, S_SN_09, S_SN_10
+		.WORD	S_SN_11, S_SN_12, S_SN_13, S_SN_14, S_SN_15
+		.WORD	S_SN_16, S_SN_17, S_SN_18, S_SN_19, S_SN_20
+NSHIPS	= 20.
+
+; =========================================================================
+; SCR_PILOT - draw the page.
+; =========================================================================
+SCR_PILOT:	CALL	PAGE_CLEAR
+		MOV	#2,TX			; "ПИЛОТ" and the name, double
+		MOV	#2,TY			;   width
+		MOV	#S_T_PILOT,R1
+		CALL	PUTS2
+		ADD	#2,TX
+		MOV	#P_NAME,R1
+		CALL	PUTS2
+
+		; ---- the left column ------------------------------------
+		MOV	#S_P_DATE,R1		; 0: the clock
+		CLR	R0
+		CALL	PI_LABEL
+		CALL	PUT_CLOCK
+
+		MOV	#S_P_SHIP,R1		; 1: the ship, by the yard's number
+		MOV	#1,R0
+		CALL	PI_LABEL
+		MOV	P_SHIP,R0
+		DEC	R0
+		BLT	11$
+		CMP	R0,#NSHIPS
+		BHIS	11$
+		ASL	R0
+		MOV	SHIPNAMES(R0),R1
+		CALL	PUTS
+11$:
+		MOV	#S_P_PRESENT,R1		; 2: where he is
+		MOV	#2,R0
+		CALL	PI_LABEL
+		MOV	SYS_INDEX,R0
+		CALL	SYS_SELECT
+		MOV	#SYS_NAME,R1
+		CALL	PUTS
+
+		MOV	#S_P_DEST,R1		; 3: where the chart cursor is
+		MOV	#3,R0
+		CALL	PI_LABEL
+		MOV	CURSYS,R0
+		CALL	SYS_SELECT
+		MOV	#SYS_NAME,R1
+		CALL	PUTS
+
+		MOV	#S_P_LOC,R1		; 4: in a bay, or in the sky
+		MOV	#4,R0
+		CALL	PI_LABEL
+		CALL	PI_LOCATION
+		CALL	PUTS
+
+		MOV	#S_P_FUEL,R1		; 5: the tanks, and the extra one
+		MOV	#5,R0
+		CALL	PI_LABEL
+		MOV	PFUEL,R0
+		CALL	PUT_TENTHS
+		MOV	#S_P_LY,R1
+		CALL	PUTS
+		MOVB	P_TANKS,R0
+		BMI	12$
+		MOV	#40,R0			; " (+4.0)"
+		CALL	PUTC
+		MOV	#50,R0
+		CALL	PUTC
+		MOV	#53,R0
+		CALL	PUTC
+		MOVB	P_TANKS,R0
+		BIC	#177700,R0		; bits 5-0: what is in it
+		CALL	PUT_TENTHS
+		MOV	#51,R0
+		CALL	PUTC
+12$:
+		MOV	#S_P_CASH,R1		; 6: the purse
+		MOV	#6,R0
+		CALL	PI_LABEL
+		CALL	PUTCASH
+
+		MOV	#S_P_LEGAL,R1		; 7: the law's opinion
+		MOV	#7,R0
+		CALL	PI_LABEL
+		MOV	P_LEGAL,R0
+		MOV	#LEGALTAB,R2
+		MOV	#LEGALNAMES,R4
+		CALL	PI_BAND
+		CALL	PUTS
+
+		MOV	#S_P_RATING,R1		; 8: the ladder's
+		MOV	#8.,R0
+		CALL	PI_LABEL
+		CALL	PI_RATING
+		CALL	PUTS
+
+		MOVB	P_RANK,R0		; 9: the rank, if the war gave one
+		BIC	#177400,R0
+		CMP	R0,#202			; #82: in the war, and a rank
+		BLO	13$
+		MOV	#S_P_RANK,R1
+		MOV	#9.,R0
+		CALL	PI_LABEL
+		MOVB	P_RANK,R0
+		ASR	R0
+		BIC	#177760,R0		; bits 4-1: 1..8
+		DEC	R0
+		BGE	131$
+		CLR	R0
+131$:		CMP	R0,#7
+		BLE	132$
+		MOV	#7,R0
+132$:		ASL	R0
+		MOV	RANKNAMES(R0),R1
+		CALL	PUTS
+		BITB	#100,P_RANK		; bit 6: the war is over
+		BEQ	13$
+		MOV	#S_RK_RETIRED,R1
+		CALL	PUTS
+13$:
+		MOV	#S_P_KILLS,R1		; 10: the count behind the rating
+		MOV	#10.,R0
+		CALL	PI_LABEL
+		MOV	KILLS,R0
+		MOV	#1,R1
+		CALL	PUTDEC
+
+		MOV	#S_P_GALAXY,R1		; 11: which galaxy
+		MOV	#11.,R0
+		CALL	PI_LABEL
+		MOV	GALNUM,R0
+		INC	R0
+		MOV	#1,R1
+		CALL	PUTDEC
+
+		; ---- the hold: used/room, then what is in it --------------
+		MOV	#S_P_HOLD,R1		; 12
+		MOV	#12.,R0
+		CALL	PI_LABEL
+		CALL	HOLD_USED
+		MOV	R0,PI_T
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#57,R0			; "/"
+		CALL	PUTC
+		MOV	PI_T,R0
+		ADD	P_FREECARGO,R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		; Only what is aboard is listed, six rows in two columns, the
+		; rows stepping like the market's; a hold of more kinds than
+		; that shows the first twelve.
+		CLR	PI_I			; the good
+		CLR	PI_T			; how many are listed
+60$:		MOV	PI_I,R0
+		ASL	R0
+		TST	CARGO(R0)
+		BEQ	61$
+		CMP	PI_T,#12.
+		BHIS	69$
+		MOV	PI_T,R1
+		CLR	R0
+		DIV	#6,R0			; R0 the column, R1 the row in it
+		ADD	#13.,R1
+		MUL	#PI_STEP,R1		; R1 odd - low 16 bits
+		ADD	#PI_Y0,R1
+		MOV	R1,TY
+		MOV	#PI_X0,PI_X
+		TST	R0
+		BEQ	62$
+		MOV	#PI_XH,PI_X
+62$:		MOV	PI_X,TX
+		MOV	PI_I,R0
+		ASL	R0
+		MOV	GOODNAMES(R0),R1
+		CALL	PI_HOLDNAME
+		MOV	PI_X,TX
+		ADD	#17.,TX		; a separate quantity field after the name
+		MOV	PI_I,R0
+		ASL	R0
+		MOV	CARGO(R0),R0
+		MOV	#4,R1
+		CALL	PUTDEC
+		INC	PI_T
+61$:		INC	PI_I
+		CMP	PI_I,#NGOODS
+		BLT	60$
+69$:
+		; ---- the equipment column ---------------------------------
+		MOV	#PI_X2,TX
+		MOV	#PI_Y0,TY
+		MOV	#S_P_EQUIP,R1
+		CALL	PUTS
+		MOV	#PI_Y0+PI_STEP,PI_ROW
+		BR	20$
+28$:		RETURN				; the column is full
+
+20$:		MOV	P_MISSILES,R0		; the rack, with its count
+		BEQ	21$
+		CALL	PI_EQ_OPEN
+		BCS	28$
+		MOV	#1,R0
+		CALL	PI_EQ_NAME
+		CALL	PUTS
+		MOV	P_MISSILES,R0
+		CALL	PI_EQ_NUM
+21$:		MOV	P_MISSTYPE,R0		; the military rack
+		BEQ	22$
+		CALL	PI_EQ_OPEN
+		BCS	28$
+		MOV	#2,R0
+		CALL	PI_EQ_NAME
+		CALL	PUTS
+		MOV	P_MISSTYPE,R0
+		CALL	PI_EQ_NUM
+22$:
+		CLR	PI_I			; the guns, by mount
+30$:		MOV	PI_I,R0
+		ASL	R0
+		MOV	P_LASERS(R0),R0
+		CMP	R0,#LAS_NONE
+		BEQ	38$
+		CALL	PI_EQ_OPEN
+		BCS	29$
+		MOV	PI_I,R0
+		ASL	R0
+		MOV	MOUNTNAMES(R0),R1
+		CALL	PUTS
+		MOV	PI_I,R0
+		ASL	R0
+		MOV	P_LASERS(R0),R0
+		ADD	#6,R0			; row 6 is the pulse laser
+		CALL	PI_EQ_NAME
+		CALL	PUTS
+38$:		INC	PI_I
+		CMP	PI_I,#4
+		BLT	30$
+
+		MOVB	P_CABINS,R0		; the cabins, with their count
+		BIC	#177400,R0
+		BEQ	23$
+		CALL	PI_EQ_OPEN
+		BCS	29$
+		MOV	#3,R0
+		CALL	PI_EQ_NAME
+		CALL	PUTS
+		MOVB	P_CABINS,R0
+		BIC	#177400,R0
+		CALL	PI_EQ_NUM
+23$:
+		MOVB	P_TANKS,R0		; the extra tank, with what is in it
+		BMI	24$
+		CALL	PI_EQ_OPEN
+		BCS	29$
+		MOV	#4,R0			; row 4 the 1 ly tank, 5 the 4 ly
+		BITB	#100,P_TANKS
+		BEQ	231$
+		INC	R0
+231$:		CALL	PI_EQ_NAME
+		CALL	PUTS
+		MOVB	P_TANKS,R0
+		BIC	#177700,R0
+		CALL	PI_EQ_NUM
+24$:
+		; the devices: Legend's own test (TestPilotEquip), row by row
+		; - the row's device byte, masked to bit 7 and the type bits,
+		; equals the row's type when that row's kind is aboard
+		CLR	PI_I
+40$:		MOV	PI_I,R0
+		CMP	R0,#NEQL-EQL_DEV0
+		BHIS	29$
+		MOVB	EQL_DEV(R0),R2
+		BIC	#177400,R2
+		MOV	R2,R3
+		BIC	#177700,R3		; the device's index
+		ASH	#-6,R2			; and the row's type
+		MOVB	P_DEVICES(R3),R4
+		MOV	R4,R5
+		BIC	#177574,R4		; bit 7 and the type bits
+		CMP	R4,R2
+		BNE	48$
+		CALL	PI_EQ_OPEN
+		BCS	29$
+		BIT	#DEV_BROKEN,R5
+		BEQ	41$
+		DEC	TX			; a broken one is flagged in the
+		MOV	#55,R0			;   margin
+		CALL	PUTC
+41$:		MOV	PI_I,R0
+		ADD	#EQL_DEV0,R0
+		CALL	PI_EQ_NAME
+		CALL	PUTS
+48$:		INC	PI_I
+		BR	40$
+29$:		RETURN
+
+; PI_HOLDNAME - sixteen columns, with a dot when a longer name is cut.
+; The two hold columns end before the equipment column; quantities must
+; never overwrite a name or run into the next column. Clobbers R0..R5.
+PI_HOLDNAME:	CALL	RING_WAIT
+		MOV	R1,R4
+		MOV	#16.,R5
+1$:		MOVB	(R4)+,R0
+		BEQ	9$
+		DEC	R5
+		BNE	2$
+		TSTB	@R4
+		BEQ	2$
+		MOV	#56,R0			; final column marks truncation
+2$:		CALL	PUTC
+		TST	R5
+		BNE	1$
+9$:		RETURN
+
+; PI_LABEL - the label in R1 on row R0 of the left column, with a colon,
+; and the cursor left in the value column.
+PI_LABEL:	MOV	R1,-(SP)
+		MOV	R0,R1
+		MUL	#PI_STEP,R1		; R1 odd - low 16 bits
+		ADD	#PI_Y0,R1
+		MOV	R1,TY
+		MOV	#PI_X0,TX
+		MOV	(SP)+,R1
+		CALL	PUTS
+		MOV	#72,R0			; ":"
+		CALL	PUTC
+		MOV	#PI_X1,TX
+		RETURN
+
+; PI_BAND - R0 = a value, R2 = a table of thresholds ending in 0, R4 =
+; the names; returns R1 = the name of the first band the value is
+; below, or the last name.  Unsigned.
+PI_BAND:	CLR	R3
+1$:		MOV	(R2)+,R1
+		BEQ	2$
+		CMP	R0,R1
+		BLO	2$
+		INC	R3
+		BR	1$
+2$:		ASL	R3
+		ADD	R3,R4
+		MOV	@R4,R1
+		RETURN
+
+; PI_RATING - R1 = the rating's name.  A set top byte is LEGENDARY;
+; below that RATING_TALLY's two middle bytes go up the 1985 rungs.
+PI_RATING:	CMP	RATING_H,#256.
+		BLO	1$
+		MOV	#S_RT_9,R1
+		RETURN
+1$:		CALL	RATING_TALLY
+		MOV	#RATETAB,R2
+		MOV	#RATENAMES,R4
+		JMP	PI_BAND
+
+; PI_LOCATION - R1 = where he is.
+PI_LOCATION:	TST	DOCKED
+		BEQ	1$
+		MOV	DOCKED_AT,R0		; 0 is the station itself
+		BNE	2$
+		MOV	#1,R0
+		BR	2$
+1$:		CLR	R0
+		TST	WITCH
+		BEQ	2$
+		MOV	#6,R0
+2$:		ASL	R0
+		MOV	LOCNAMES(R0),R1
+		RETURN
+
+; PI_EQ_OPEN - start a line in the equipment column: C set if the
+; column is full.
+PI_EQ_OPEN:	CMP	PI_ROW,#PI_YEND
+		BHIS	1$
+		MOV	#PI_X2,TX
+		MOV	PI_ROW,TY
+		ADD	#PI_STEP,PI_ROW
+		CLC
+		RETURN
+1$:		SEC
+		RETURN
+
+; PI_EQ_NAME - R0 = an equipment row; returns R1 = its name.
+PI_EQ_NAME:	ASL	R0
+		MOV	EQL_NAMES(R0),R1
+		RETURN
+
+; PI_EQ_NUM - " (n)" after a name, if there is room on the line for it.
+PI_EQ_NUM:	CMP	TX,#SCRWB-6
+		BHI	9$
+		MOV	R0,-(SP)
+		MOV	#40,R0
+		CALL	PUTC
+		MOV	#50,R0
+		CALL	PUTC
+		MOV	(SP)+,R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#51,R0
+		JMP	PUTC
+9$:		RETURN
+
+; PUT_TENTHS - R0 tenths as "d.d", no padding.
+PUT_TENTHS:	MOV	#1,R1
+		JMP	PUT_TENTHSW
+
+; PUT_CLOCK - the record's clock as Legend prints it (PrnTime):
+; year/day hh:mm:ss, the day in three digits and the rest in two.
+PUT_CLOCK:	MOV	P_TIME,R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#57,R0			; "/"
+		CALL	PUTC
+		MOVB	P_DAY,R1
+		BIC	#177400,R1
+		CLR	R0
+		DIV	#100.,R0
+		MOV	R1,-(SP)
+		ADD	#60,R0
+		CALL	PUTC
+		MOV	(SP)+,R0
+		CALL	PUT_2D
+		MOV	#40,R0
+		CALL	PUTC
+		MOVB	P_HOUR,R0
+		CALL	PUT_2D
+		MOV	#72,R0			; ":"
+		CALL	PUTC
+		MOVB	P_MIN,R0
+		CALL	PUT_2D
+		MOV	#72,R0
+		CALL	PUTC
+		MOVB	P_SEC,R0
+		JMP	PUT_2D
+
+; PUT_2D - R0 (0..99) as two digits.
+PUT_2D:		BIC	#177400,R0
+		MOV	R0,R1
+		CLR	R0
+		DIV	#10.,R0
+		MOV	R1,-(SP)
+		ADD	#60,R0
+		CALL	PUTC
+		MOV	(SP)+,R0
+		ADD	#60,R0
+		JMP	PUTC

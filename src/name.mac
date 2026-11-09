@@ -1,0 +1,87 @@
+; =========================================================================
+; name.mac - the keyboard as letters.
+;
+; Every other screen in this port reads the keyboard as a WORD of bits,
+; one per key, because that is all flying needs.  A name needs letters,
+; and there are thirty-three of those - so the commander's name
+; (src/ovl_cmdr.mac) and the chart's search (src/ovl_charts.mac) read
+; the raw scancode the PPU publishes in PP_LASTKEY instead, and map it
+; through the ЙЦУКЕН layout the machine actually has, which is this
+; table.  It stays in the resident because two overlays use it.
+;
+; The sweep in tools/keymap.py is what says this is safe: every scancode
+; delivers its own make code, and a release is 0200 plus the matrix row,
+; so anything with bit 7 set is a key coming back up and is ignored.
+; =========================================================================
+
+; scancode, KOI-7 character.  The letters are the ЙЦУКЕН keys in the
+; order the keyboard has them (see the layout in tools/keymap.py's
+; output and the map the emulator draws), then the digits along the top
+; and the space bar.  KOI-7 puts the Cyrillic alphabet at 0100..0137,
+; which is the range src/res/font/uknc11.txt draws.
+NM_TAB:		.BYTE	27,112		; Й
+		.BYTE	50,103		; Ц
+		.BYTE	51,125		; У
+		.BYTE	52,113		; К
+		.BYTE	33,105		; Е
+		.BYTE	54,116		; Н
+		.BYTE	55,107		; Г
+		.BYTE	36,133		; Ш
+		.BYTE	37,135		; Щ
+		.BYTE	157,132		; З
+		.BYTE	156,110		; Х
+		.BYTE	155,137		; Ъ
+		.BYTE	47,106		; Ф
+		.BYTE	70,131		; Ы
+		.BYTE	71,127		; В
+		.BYTE	72,101		; А
+		.BYTE	53,120		; П
+		.BYTE	74,122		; Р
+		.BYTE	75,117		; О
+		.BYTE	56,114		; Л
+		.BYTE	57,104		; Д
+		.BYTE	137,126		; Ж
+		.BYTE	136,134		; Э
+		.BYTE	67,121		; Я
+		.BYTE	110,136		; Ч
+		.BYTE	111,123		; С
+		.BYTE	112,115		; М
+		.BYTE	73,111		; И
+		.BYTE	114,124		; Т
+		.BYTE	115,130		; Ь
+		.BYTE	76,102		; Б
+		.BYTE	77,100		; Ю
+		.BYTE	30,61		; 1
+		.BYTE	31,62		; 2
+		.BYTE	32,63		; 3
+		.BYTE	13,64		; 4
+		.BYTE	34,65		; 5
+		.BYTE	35,66		; 6
+		.BYTE	16,67		; 7
+		.BYTE	17,70		; 8
+		.BYTE	177,71		; 9
+		.BYTE	176,60		; 0
+		.BYTE	113,40		; the space bar
+		.BYTE	0,0		; the end of the table
+		.EVEN
+
+
+; NM_LOOKUP - R0 = a scancode; returns the character in R0, or 0, with
+; the key's beep for a character.
+NM_LOOKUP:	MOV	#NM_TAB,R1
+1$:		MOVB	(R1)+,R2
+		BEQ	9$
+		CMPB	R2,R0
+		BEQ	2$
+		TSTB	(R1)+
+		BR	1$
+2$:		MOVB	(R1),R0
+		BIC	#177400,R0
+		MOV	R0,-(SP)		; a key that types is heard
+		MOV	#FX_KEY,R0		;   (InputText's playFX_KeyPressed)
+		CALL	SFX_PLAY
+		MOV	(SP)+,R0
+		RETURN
+9$:		CLR	R0
+		RETURN
+

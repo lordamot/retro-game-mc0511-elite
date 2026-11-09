@@ -1,0 +1,6 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Engine/Messages/LeftR.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+?+0|0STWT{#93}
+?+1|9{#A5}9%{#B9}{nFlgPrn_2xx}){#A9}km{#A9}

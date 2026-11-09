@@ -1,0 +1,176 @@
+; =========================================================================
+; planet.mac - who lives there, and what the place is known for.
+;
+; Elite reads a system's inhabitants straight out of the seed that made
+; it, and so does this: four indices into four lists, and 2048 worlds
+; get their own answer without a byte of it being stored.  The rule is
+; the original's -
+;
+;   bit 7 of the third seed word's high byte set: they are human
+;   colonists and nothing else is printed;
+;   otherwise  size   = (s2 >> 2) & 7, printed if it names one
+;              colour = (s2 >> 5) & 7
+;              trait  = (s0 ^ s1) & 7
+;              kind   = (trait + (s2 & 3)) & 7
+;
+; - and so are the words: the four lists come off the disk at 0xF2FE in
+; the order the original holds them, with the endings written out (see
+; tools/planet_extract.py).
+;
+; The DESCRIPTION is the port's own, and is marked as such in the docs:
+; the vocabulary is the original's, but the sentences it is poured into
+; were written here, because the original's own description grammar is
+; in its Z80 and has not been read yet.
+; =========================================================================
+
+PL_S0:		.WORD	0		; the seed's three high bytes
+PL_S1:		.WORD	0
+PL_S2:		.WORD	0
+PL_TRAIT:	.WORD	0
+
+; PL_SEEDS - pull the three high bytes out of the system's seed.
+PL_SEEDS:	MOV	SYS_SEED,R0
+		SWAB	R0
+		BIC	#177400,R0
+		MOV	R0,PL_S0
+		MOV	SYS_SEED+2,R0
+		SWAB	R0
+		BIC	#177400,R0
+		MOV	R0,PL_S1
+		MOV	SYS_SEED+4,R0
+		SWAB	R0
+		BIC	#177400,R0
+		MOV	R0,PL_S2
+		RETURN
+
+; PL_WORD - print word R0 of the table at R1, with a space after it.
+PL_WORD:	ASL	R0
+		ADD	R0,R1
+		MOV	(R1),R1
+		CALL	PUTS
+		MOV	#40,R0			; a space
+		JMP	PUTC
+
+; =========================================================================
+; SPECIES_SHOW - print the inhabitants of the selected system at the
+; cursor.
+; =========================================================================
+SPECIES_SHOW:	CALL	PL_SEEDS
+		BIT	#200,PL_S2		; the ones who came from Earth
+		BEQ	1$
+		MOV	#S_D_HUMANS,R1
+		JMP	PUTS
+
+1$:		MOV	PL_S2,R0		; how big, or how fierce
+		ASH	#-2,R0
+		BIC	#177770,R0
+		CMP	R0,#NSIZE
+		BGE	2$
+		MOV	#SIZETAB,R1
+		CALL	PL_WORD
+
+2$:		MOV	PL_S2,R0		; what colour
+		ASH	#-5,R0
+		BIC	#177770,R0
+		CMP	R0,#NCOLOUR
+		BGE	3$
+		MOV	#COLOURTAB,R1
+		CALL	PL_WORD
+
+3$:		MOV	PL_S0,R0		; and what they are like
+		MOV	PL_S1,R1
+		XOR	R1,R0
+		BIC	#177770,R0
+		MOV	R0,PL_TRAIT
+		CMP	R0,#NTRAIT
+		BGE	4$
+		MOV	#TRAITTAB,R1
+		CALL	PL_WORD
+
+4$:		MOV	PL_TRAIT,R0		; and what they are
+		MOV	PL_S2,R1
+		BIC	#177774,R1
+		ADD	R1,R0
+		BIC	#177770,R0
+		CMP	R0,#NKIND
+		BLT	5$
+		CLR	R0
+5$:		ASL	R0
+		MOV	#KINDTAB,R1
+		ADD	R0,R1
+		MOV	(R1),R1
+		JMP	PUTS
+
+; =========================================================================
+; DESC_SHOW - a line about the place.
+;
+; Four sentences, chosen by the seed, filled from the words the original
+; describes worlds with.  The frames are this port's own Russian; the
+; nouns and adjectives in them are not.
+; =========================================================================
+PL_TMP:		.WORD	0
+
+DESC_SHOW:	CALL	PL_SEEDS
+		MOV	PL_S1,R0		; which sentence
+		ASH	#-3,R0
+		BIC	#177774,R0
+		MOV	R0,PL_TMP
+		BNE	1$
+
+		MOV	#S_D_KNOWN,R1		; "известна: <какие> <что>"
+		CALL	PUTS
+		CALL	PL_QUALITY
+		JMP	PL_SIGHT
+
+1$:		CMP	PL_TMP,#1
+		BNE	2$
+		MOV	#S_D_DANGER,R1		; "опасна: <что>"
+		CALL	PUTS
+		JMP	PL_HAZARD
+
+2$:		CMP	PL_TMP,#2
+		BNE	3$
+		MOV	#S_D_HERE,R1		; "здесь <какие> <что>"
+		CALL	PUTS
+		CALL	PL_QUALITY
+		JMP	PL_HAZARD
+
+3$:		MOV	#S_D_VALUE,R1		; "здесь ценят <что>"
+		CALL	PUTS
+		JMP	PL_SIGHT
+
+; The three word choices.  Each takes its own bits of the seed and wraps
+; them into the list's length, so the answer is the same every time the
+; commander comes back and different from one system to the next.
+PL_QUALITY:	MOV	PL_S0,R0
+		ASH	#-2,R0
+		CLR	R2
+		MOV	R0,R3
+		DIV	#NQUALITY,R2
+		MOV	R3,R0
+		MOV	#QUALITYTAB,R1
+		JMP	PL_WORD			; further off than a branch reaches
+
+PL_SIGHT:	MOV	PL_S1,R0
+		ASH	#-1,R0
+		CLR	R2
+		MOV	R0,R3
+		DIV	#NSIGHT,R2
+		MOV	R3,R0
+		ASL	R0
+		MOV	#SIGHTTAB,R1
+		ADD	R0,R1
+		MOV	(R1),R1
+		JMP	PUTS
+
+PL_HAZARD:	MOV	PL_S2,R0
+		ASH	#-1,R0
+		CLR	R2
+		MOV	R0,R3
+		DIV	#NHAZARD,R2
+		MOV	R3,R0
+		ASL	R0
+		MOV	#HAZARDTAB,R1
+		ADD	R0,R1
+		MOV	(R1),R1
+		JMP	PUTS

@@ -1,0 +1,328 @@
+; =========================================================================
+; pilot.mac - the commander: Elite Legend's record, field for field.
+;
+; Legend keeps everything about the pilot in one block, PilotVar
+; (orig/legend/.../INCLUDE/Pilot.var.a80): who he is, what the law and
+; the ladder make of him, the purse, the ship and its four guns and 27
+; devices, the hold, where he is and what the station there stocks,
+; the ships he owns and the one for sale, the clock, and the missions.
+; PilotDataSaved is what save/load writes.  This is that record with
+; the same fields, the same values in them and the same order, in the
+; PDP-11's shape: a field the 1985 rules read as a word is a word here
+; (the fuel, the missiles, the four lasers, the galaxy and planet
+; numbers), a 32-bit number is its low word then its high, and the
+; byte runs are padded to a word boundary.  The device bytes keep
+; Legend's packing exactly - bit 7 not fitted, bit 6 broken, the low
+; bits the type - see DEV_* in defs.mac.
+;
+; Resident helpers retain aliases into this record (CASH_L is P_CASH,
+; PFUEL is P_FUEL, CARGO is P_CARGO). Device bytes, legal units and free
+; tonnage use Legend semantics; do not interpret them as Boolean kit
+; flags, an unweighted kill count or a fixed cargo capacity.
+;
+; The whole record goes to the disk as it stands (src/save.mac): 772
+; bytes, two sectors a commander.
+; =========================================================================
+
+PILOT_SIGN = 066153		; #6C6B: Legend's PilotSign, v1.03
+PILOT_VERS = 2			; and the port's own layout number, bumped
+				;   whenever a field below moves (2: a
+				;   contract is 14 bytes, 2026-09-25)
+NDEVICES = 27.			; device bytes, PilotDevices..EndPilotShip
+NCONTRACTS = 6			; PilotContracts, Legend's 13 bytes each -
+CONTRACT_LEN = 14.		;   14 here, the words on even addresses
+				;   (C.* in src/contract.mac)
+
+PILOT:
+P_SIGN:		.WORD	PILOT_SIGN
+P_VERS:		.WORD	PILOT_VERS
+P_NAME:		.BLKB	NAME_MAX+2	; PilotName: ten letters, a zero, a pad
+P_LEGAL:	.WORD	0		; PilotLegalStatus (LEGAL_* in defs.mac)
+P_RATING:	.WORD	0, 0		; PilotRating, 32-bit, low word first
+P_JUMPS:	.WORD	0		; JumpCounter
+P_CASH:		.WORD	0, 0		; PilotCash, tenths of a credit, 32-bit
+P_SHIP:		.WORD	0		; PilotNumShip: 1..20, the yard's order
+P_GALAXY:	.WORD	0		; PilotNumGalaxy 0..7
+P_PLANET:	.WORD	0		; PilotNumPlanet
+P_WEAR:		.BYTE	0		; PilotFactorRepair
+P_RANK:		.BYTE	0		; PilotRank: bit 7 in the war, bit 6
+				;   retired, bits 4-1 the rank
+P_FUEL:		.WORD	0		; Pilot_Fuel, tenths of a light year
+P_TANKS:	.BYTE	DEV_NONE	; PilotExtraFuelTanks: bit 6 the 4 ly
+				;   tank, bits 5-0 what is left in it
+P_CABINS:	.BYTE	0		; PilotPassengerCab
+P_MISSILES:	.WORD	0		; PilotMissiles bits 3-0: the rack
+P_MISSTYPE:	.WORD	0		;   and bits 7-4: military missiles
+P_LASERS:	.WORD	0, 0, 0, 0	; PilotLasers: front, rear, left, right
+				;   as LAS_* (defs.mac), LAS_NONE empty
+P_DEVICES:				; PilotDevices, one byte each: those the
+P_LARGECARGO:	.BYTE	DEV_NONE	;   sky cannot break ...
+P_ADVCOMPASS:	.BYTE	DEV_NONE
+P_TARGETLOCK:	.BYTE	DEV_NONE
+P_AUTOREPAIR:	.BYTE	DEV_NONE
+P_LIFESUPPORT:	.BYTE	DEV_NONE
+P_DEVICE5:	.BYTE	DEV_NONE	;   PilotNotUsed
+P_ADVNAV:	.BYTE	DEV_NONE	;   bit 0: the experimental array
+P_ENERGYUNIT:	.BYTE	DEV_NONE	; ... and PilotDevicesBreak, those it can:
+				;   bits 1-0: 0 plain, 1 naval, 2 Targoid
+P_GALDRIVE:	.BYTE	DEV_NONE	;   PilotGyperdrive: bits 1-0 as above
+P_ECM:		.BYTE	DEV_NONE	;   bit 0 naval, bit 5 switched on
+P_INJECTORS:	.BYTE	DEV_NONE	;   bit 0 military, bit 5 running
+P_EBOMB:	.BYTE	DEV_NONE	;   bit 0: the Q-bomb
+P_AUTOECM:	.BYTE	DEV_NONE	;   bit 5 armed, bit 4 a missile is out
+P_AUTOPOD:	.BYTE	DEV_NONE	;   bit 5 armed
+P_DRONE:	.BYTE	DEV_NONE	;   bit 0: the advanced drone
+P_SHIELDGEN:	.BYTE	DEV_NONE
+P_MILSHIELDS:	.BYTE	DEV_NONE
+P_LASERCOOL:	.BYTE	DEV_NONE
+P_CLOAK:	.BYTE	DEV_NONE
+P_ALIENCOMP:	.BYTE	DEV_NONE
+P_OREPROC:	.BYTE	DEV_NONE
+P_ESCPOD:	.BYTE	DEV_NONE
+P_FUELCOLL:	.BYTE	DEV_NONE
+P_FUELSCOOPS:	.BYTE	DEV_NONE	;   the scoop: fuel off a star and
+				;   cargo out of the sky, as in 1985
+P_DOCKCOMP:	.BYTE	DEV_NONE
+P_AUTOTAKE:	.BYTE	DEV_NONE
+P_EJECT:	.BYTE	DEV_NONE
+P_RND:		.BYTE	0		; PilotRnd: rolled after a jump
+P_CARGO:	.BLKW	NGOODS_L	; PilotCargo: the hold, a word a good
+P_FREECARGO:	.WORD	0		; PilotFreeCargo: tonnes still free
+P_CONTRACTS:	.WORD	0		; PilotPlanetContracts: bits, 12 of them
+P_DESTR:	.WORD	0, 0		; PilotDestrObjects: kills, 32-bit
+P_PLANETDATA:	.BLKB	6		; PilotPlanetData: y at +1, x at +3
+P_ECO:		.BYTE	0		; PilotPlanetEco
+P_GOV:		.BYTE	0		; PilotPlanetGov
+P_TECH:		.BYTE	0		; PilotPlanetTechLvl
+P_COLOUR:	.BYTE	0		; PilotPlanetColour: the star's
+P_PRODUCT:	.BLKW	NGOODS_L	; PilotPlanetProduct: the station's stock
+P_SUN:		.BLKB	10.		; PilotDataOfSun: nine bytes and a pad
+P_TARGET:	.WORD	0		; Pilot_CrdXTarget/Y: the chart cursor,
+				;   as a system number in this port
+P_YARD:		.BLKB	20.		; PilotPlanetShips: 19 for sale, and a pad
+P_SHIPS:	.BLKB	19.*18.		; PilotShips: 19 owned, lenPilotShip each
+P_TIME:		.WORD	0		; PilotTime: the year,
+P_DAY:		.BYTE	0		;   the day 1..244,
+P_HOUR:		.BYTE	0		;   the hour 0..29,
+P_MIN:		.BYTE	0		;   the minute 0..49,
+P_SEC:		.BYTE	0		;   the second 0..49
+P_MSTAT:	.BYTE	0		; PilotMissionStat
+P_M1:		.BYTE	0, 0		; PilotMission1
+P_M2:		.BYTE	0		; PilotMission2
+P_M3:		.BYTE	0, 0		; PilotMission3
+P_MALIEN:	.BYTE	0		; PilotMissionAlien
+P_WAR:		.BYTE	0, 0, 0, 0	; PilotTargonWar
+		.EVEN
+P_DELIV:	.WORD	0		; PilotDelivRating
+P_CONTRACT:	.BLKB	NCONTRACTS*CONTRACT_LEN	; PilotContracts, 14 a contract
+P_MCOMPLETE:	.BYTE	0		; PilotMissionComplete
+P_M4:		.BYTE	0, 0, 0		; PilotMission4
+P_M5:		.BYTE	0		; PilotMission5
+P_M6:		.BYTE	0, 0		; PilotMission6
+P_M7:		.BYTE	0		; PilotMission7
+		.BLKB	32.		;   and its 32 spare
+		.WORD	0, 0		; the 1985 missions' two words, spare
+PILOT_END:
+PILOT_LEN = PILOT_END-PILOT		; 772 bytes: even, and under two sectors
+
+; ---- the 1985 names, where the field means what it always did --------
+CASH_L	= P_CASH
+CASH_H	= P_CASH+2
+PFUEL	= P_FUEL
+PMISSILES = P_MISSILES
+PLASERS	= P_LASERS
+KILLS	= P_DESTR			; the low word: 16 bits is plenty to
+					;   ask "six yet?"
+RATING_L = P_RATING
+RATING_H = P_RATING+2
+LEGAL	= P_LEGAL
+CMDR_NAME = P_NAME
+GALNUM	= P_GALAXY			; 0..7 now, not 1..8: Legend's number
+SYS_INDEX = P_PLANET
+CURSYS	= P_TARGET
+CARGO	= P_CARGO
+MKT_QTY	= P_PRODUCT			; the 1985 market's shelf, the first
+					;   NGOODS of the station's stock
+
+; =========================================================================
+; PILOT_NEW - a commander who has never flown: Legend's starting record
+; (Pilot.var.release.a80), which is Elite's - 100 Cr, full tanks, three
+; missiles, a pulse laser, a 20-tonne hold, at Lave in galaxy 1 - with
+; the ship the yard calls number 6, a Cobra Mk III, the clock at
+; 3398/187 10:10:10, and nothing else aboard.  The name is left for
+; NAME_ASK.  Clobbers R0, R1, R5.
+;
+; The record used to be the image's initial values; a death goes back
+; through the title, and the next "new" commander inherited the dead
+; one's purse, guns and record.  Everything is written here.
+; =========================================================================
+PILOT_NEW:	MOV	#PILOT,R0
+		MOV	#PILOT_LEN/2,R1
+1$:		CLR	(R0)+
+		SOB	R1,1$
+		MOV	#PILOT_SIGN,P_SIGN
+		MOV	#PILOT_VERS,P_VERS
+		MOV	#1000.,CASH_L		; 100 Cr
+		MOV	#6,P_SHIP		; a Cobra Mk III
+		MOV	#7,P_PLANET		; Lave
+		MOV	#7,P_TARGET
+		MOV	#70.,P_FUEL
+		MOVB	#DEV_NONE,P_TANKS
+		MOV	#3,P_MISSILES
+		MOV	#LAS_PULSE,P_LASERS
+		MOV	#LAS_NONE,P_LASERS+2
+		MOV	#LAS_NONE,P_LASERS+4
+		MOV	#LAS_NONE,P_LASERS+6
+		CALL	DEVICES_NONE
+		MOV	#HOLD_STD,P_FREECARGO
+		MOV	#7777,P_CONTRACTS	; #0FFF: all twelve on offer
+		MOV	#3398.,P_TIME
+		MOVB	#187.,P_DAY
+		MOVB	#10.,P_HOUR
+		MOVB	#10.,P_MIN
+		MOVB	#10.,P_SEC
+		MOVB	#200,P_MSTAT		; bit 7: missions come after a jump
+		MOV	#P_CONTRACT,R0		; no contracts taken: #80 first
+		MOV	#NCONTRACTS,R1
+2$:		MOVB	#200,(R0)
+		ADD	#CONTRACT_LEN,R0
+		SOB	R1,2$
+		JMP	GAL_SEEDOF		; galaxy 1's seed
+
+; DEVICES_NONE - nothing bolted to the ship.  Clobbers R0, R1.
+DEVICES_NONE:	MOV	#P_DEVICES,R0
+		MOV	#NDEVICES,R1
+1$:		MOVB	#DEV_NONE,(R0)+
+		SOB	R1,1$
+		RETURN
+
+; =========================================================================
+; SHIP_STANDARD - the ship the escape capsule buys: a standard Cobra Mk
+; III with a pulse laser, full tanks, an empty rack and an empty
+; 20-tonne hold, nothing bolted on.  The purse, the rating and the
+; missions survive, and so does half the record: 1985 wiped it clean,
+; Legend's AutoEscapePod halves it (ESCAPE_POD does).  Clobbers R0, R1.
+; =========================================================================
+SHIP_STANDARD:	MOV	#6,P_SHIP
+		CALL	COCKPIT_SET		; and its limits with it
+		CLRB	P_WEAR
+		MOV	#70.,P_FUEL
+		MOVB	#DEV_NONE,P_TANKS
+		CLRB	P_CABINS
+		CLR	P_MISSILES
+		CLR	P_MISSTYPE
+		MOV	#LAS_PULSE,P_LASERS
+		MOV	#LAS_NONE,P_LASERS+2
+		MOV	#LAS_NONE,P_LASERS+4
+		MOV	#LAS_NONE,P_LASERS+6
+		CALL	DEVICES_NONE
+		CALL	CARGO_CLEAR
+		MOV	#HOLD_STD,P_FREECARGO
+		RETURN
+
+; =========================================================================
+; LEGAL_MEND - one offence off the record, and never below clean.  A
+; night in the station earns one (dock.mac), and so does the fine on the
+; outfitter's last line.
+; =========================================================================
+LEGAL_MEND:	CMP	P_LEGAL,#LEGAL_OFFENCE
+		BLO	1$
+		SUB	#LEGAL_OFFENCE,P_LEGAL
+		RETURN
+1$:		CLR	P_LEGAL
+		RETURN
+
+; =========================================================================
+; PILOT_ARRIVE - the system the commander is in, written into the record
+; the way Legend keeps it (PilotPlanetData, Eco, Gov, TechLvl): called
+; after SYS_SELECT has read the system into SYS_*.  The star's colour is
+; a Legend thing this port has no sky for yet.  Clobbers R0.
+; =========================================================================
+PILOT_ARRIVE:	CLR	P_PLANETDATA
+		CLR	P_PLANETDATA+2
+		CLR	P_PLANETDATA+4
+		MOVB	SYS_Y,P_PLANETDATA+1
+		MOVB	SYS_X,P_PLANETDATA+3
+		MOVB	SYS_ECON,P_ECO
+		MOVB	SYS_GOVT,P_GOV
+		MOVB	SYS_TECH,P_TECH
+		CLRB	P_COLOUR
+		RETURN
+
+; =========================================================================
+; CLOCK_STEP - Legend's clock (Interrupts.a80: it ticks in the 50 Hz
+; interrupt unless bit 5 of Flg_Interrupts stops it): fifty ticks a
+; second, fifty seconds a minute, fifty minutes an hour, thirty hours a
+; day and 244 days a year.  Called once a frame from the flight loop and
+; catches up on however many interrupts the frame took, so a slow frame
+; loses no time.  Clobbers R0.
+; =========================================================================
+CLK_LAST:	.WORD	0
+CLK_TICK:	.WORD	0		; interrupts into the current second
+
+; CLOCK_ADD - IncGalaxyTime: R0 tenths of an hour onto the clock, as a
+; jump's travel time is (JumpToPlanet): five minutes a tenth, carried
+; through the fifty-minute hour, the thirty-hour day and the 244-day
+; year.  Clobbers R0..R3.
+CLOCK_ADD:	MOV	R0,R1			; minutes: five a tenth
+		ASL	R0
+		ASL	R0
+		ADD	R1,R0
+		MOV	R0,R1			; days, then hours and minutes
+		CLR	R0
+		DIV	#1500.,R0
+		MOV	R0,R3			; R3 = days
+		CLR	R0
+		DIV	#50.,R0			; R0 = hours, R1 = minutes
+		MOVB	P_MIN,R2
+		ADD	R1,R2
+		CMP	R2,#50.
+		BLO	1$
+		SUB	#50.,R2
+		INC	R0
+1$:		MOVB	R2,P_MIN
+		MOVB	P_HOUR,R2
+		ADD	R0,R2
+		CMP	R2,#30.
+		BLO	2$
+		SUB	#30.,R2
+		INC	R3
+2$:		MOVB	R2,P_HOUR
+		MOVB	P_DAY,R2
+		BIC	#177400,R2
+		ADD	R3,R2
+3$:		CMP	R2,#245.
+		BLO	4$
+		SUB	#244.,R2
+		INC	P_TIME
+		BR	3$
+4$:		MOVB	R2,P_DAY
+		RETURN
+
+CLOCK_STEP:	MOV	FRAMES,R0
+		SUB	CLK_LAST,R0
+		BLE	9$
+		ADD	R0,CLK_LAST
+1$:		INC	CLK_TICK
+		CMP	CLK_TICK,#50.
+		BLO	8$
+		CLR	CLK_TICK
+		INCB	P_SEC
+		CMPB	P_SEC,#50.
+		BLO	8$
+		CLRB	P_SEC
+		INCB	P_MIN
+		CMPB	P_MIN,#50.
+		BLO	8$
+		CLRB	P_MIN
+		INCB	P_HOUR
+		CMPB	P_HOUR,#30.
+		BLO	8$
+		CLRB	P_HOUR
+		INCB	P_DAY
+		CMPB	P_DAY,#245.
+		BLO	8$
+		MOVB	#1,P_DAY
+		INC	P_TIME
+8$:		SOB	R0,1$
+9$:		RETURN

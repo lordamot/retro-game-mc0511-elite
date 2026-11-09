@@ -1,0 +1,37 @@
+# The 32 name syllables, extracted from orig/ELITE.SCL
+# (the pair table at 0xFDB3).  One per line, in KOI-7 as
+# the original stores them; the comment is the Cyrillic.
+# `make extract` rewrites this file.
+
+TO	;  0  ТО
+TI	;  1  ТИ
+TA	;  2  ТА
+RO	;  3  РО
+RI	;  4  РИ
+RA	;  5  РА
+RE	;  6  РЕ
+LO	;  7  ЛО
+LI	;  8  ЛИ
+LA	;  9  ЛА
+LE	; 10  ЛЕ
+NO	; 11  НО
+NA	; 12  НА
+NY	; 13  НЫ
+EN	; 14  ЕН
+ON	; 15  ОН
+OR	; 16  ОР
+AR	; 17  АР
+KA	; 18  КА
+KE	; 19  КЕ
+LX	; 20  ЛЬ
+ZE	; 21  ЗЕ
+MA	; 22  МА
+TE	; 23  ТЕ
+NI	; 24  НИ
+NE	; 25  НЕ
+WI	; 26  ВИ
+AN	; 27  АН
+IN	; 28  ИН
+BO	; 29  БО
+KO	; 30  КО
+ST	; 31  СТ

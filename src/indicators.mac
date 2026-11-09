@@ -1,0 +1,47 @@
+; Compact dashboard lamps: the view's palette stays readable while
+; danger flashes its lamp.  Bit 0 ECM, bit 1 cloak, bit 2 hostiles.
+HUD_SIGNAL:	.WORD	0
+HI_LAST:	.WORD	-1
+HI_N:		.WORD	0
+HI_X:		.WORD	26.,47.,52.
+HUD_SIGNALS:	CLR	R0
+		TST	ECM_TIME
+		BEQ	1$
+		BIS	#1,R0
+1$:		TST	CLOAK_ON
+		BEQ	2$
+		BIS	#2,R0
+2$:		TST	PIRATE_FLAG
+		BEQ	3$
+		BIS	#4,R0
+3$:		MOV	R0,HUD_SIGNAL
+		BIT	#4,R0
+		BEQ	4$
+		BIT	#10,FRAMES
+		BEQ	4$
+		BIC	#4,R0
+4$:		CMP	R0,HI_LAST
+		BEQ	9$
+		MOV	R0,HI_LAST
+		CALL	RING_WAIT
+		CLR	HI_N
+5$:		MOV	#INK_GREEN,HBARC
+		MOV	HI_N,R0
+		MOV	HI_LAST,R1
+		ASH	R0,R1			; negative count below: low bit
+		BIT	#1,R1
+		BEQ	6$
+		MOV	#INK_RED,HBARC
+6$:		MOV	HI_N,R0
+		NEG	R0
+		ASL	R0
+		MOV	HI_X(R0),R0
+		MOV	#213.,R1
+		MOV	#3,R2
+		MOV	R2,R3
+		MOV	R2,HBARH
+		CALL	HBAR
+		DEC	HI_N
+		CMP	HI_N,#-3
+		BGT	5$
+9$:		RETURN

@@ -1,0 +1,153 @@
+; Startup-only text pages, carried by the commander overlay (entry 2).
+; The second Enter returns to the resident, which loads the normal title.
+; No renderer or gameplay state is changed. Each page consumes one new
+; key edge; holding Enter or pressing another key cannot skip a page.
+
+SP_PAGE:	.WORD	0		; 1 = welcome, 2 = controls, 0 = finished
+SP_PTR:		.WORD	0
+SP_LATIN:	.WORD	0
+
+SPLASH:		MOV	#1,SP_PAGE
+		MOV	#SP_WELCOME,SP_PTR
+		CALL	SP_DRAW
+		MOV	#22.,TX
+		MOV	#22.,TY
+		MOV	#S_SP_HELLO,R1
+		CALL	PUTS2
+; The main font is uppercase KOI-7. Draw a local lowercase v for the
+; exact version tag, without changing any game's glyph or font mapping.
+		MOV	#SP_V,R1
+		MOV	#<VRAM+<272.*SCRWB>+73.>,R2
+		MOV	#FONT_H,R3
+1$:		MOV	R2,@#VADDR
+		MOVB	(R1)+,@#VDATA
+		ADD	#SCRWB,R2
+		SOB	R3,1$
+		CALL	SP_WAIT
+		MOV	#2,SP_PAGE
+		MOV	#SP_CONTROLS,SP_PTR
+		CALL	SP_DRAW
+		MOV	#18.,TX
+		MOV	#8.,TY
+		MOV	#S_SP_KEYS,R1
+		CALL	PUTS2
+		CALL	SP_WAIT
+		CLR	SP_PAGE
+		JMP	INPUT_FLUSH
+
+; Table entries are byte-column, pixel-row, text pointer; -1 ends a page.
+; PUTS may clobber every register, so the table cursor lives in the overlay.
+SP_DRAW:	CALL	INPUT_FLUSH
+		CLR	R0
+		MOV	#SCRH,R1
+		CLR	R2
+		CALL	FILL_LINES
+1$:		MOV	SP_PTR,R4
+		MOV	(R4)+,TX
+		BMI	9$
+		MOV	(R4)+,TY
+		MOV	(R4)+,R1
+		MOV	R4,SP_PTR
+		CALL	SP_PUTS
+		BR	1$
+9$:		RETURN
+
+SP_WAIT:	CALL	VSYNC
+		CALL	INPUT_POLL
+		BIT	#K_ENTER,KEYS_EDGE
+		BEQ	SP_WAIT
+		RETURN
+
+; Body strings use <ASCII> for Latin names inside KOI-7 Russian text.
+; Those glyphs come from the same UKNC ROM, in an overlay-local bank.
+SP_PUTS:	CALL	RING_WAIT
+		CLR	SP_LATIN
+1$:		MOVB	(R1)+,R0
+		BEQ	9$
+		CMP	R0,#74			; < opens Latin text
+		BNE	2$
+		INC	SP_LATIN
+		BR	1$
+2$:		CMP	R0,#76			; > returns to Russian
+		BNE	3$
+		CLR	SP_LATIN
+		BR	1$
+3$:		MOV	R1,-(SP)
+		TST	SP_LATIN
+		BEQ	4$
+		CMP	R0,#SPLAT_FIRST
+		BLO	4$
+		CMP	R0,#SPLAT_LAST
+		BHI	4$
+		SUB	#SPLAT_FIRST,R0
+		MUL	#FONT_H,R0
+		MOV	R1,R0
+		ADD	#SPLAT8,R0
+		MOV	TY,R1
+		MUL	#SCRWB,R1
+		ADD	TX,R1
+		ADD	#VRAM,R1
+		MOV	#FONT_H,R2
+5$:		MOV	R1,@#VADDR
+		MOVB	(R0)+,@#VDATA
+		ADD	#SCRWB,R1
+		SOB	R2,5$
+		INC	TX
+		BR	6$
+4$:		CALL	PUTC
+6$:		MOV	(SP)+,R1
+		BR	1$
+9$:		RETURN
+
+SP_V:		.BYTE	0,0,0,0,102,102,044,044,030,0,0
+		.EVEN
+
+SP_WELCOME:
+		.WORD	8.,64.,S_SP_INTRO1
+		.WORD	8.,80.,S_SP_INTRO2
+		.WORD	8.,112.,S_SP_PORT
+		.WORD	8.,128.,S_SP_AUTHORS
+		.WORD	8.,160.,S_SP_ORIGINAL
+		.WORD	8.,176.,S_SP_ELITE
+		.WORD	8.,192.,S_SP_TORUS
+		.WORD	8.,208.,S_SP_LEGEND
+		.WORD	8.,240.,S_SP_DATE
+		.WORD	3.,272.,S_SP_NEXT
+		.WORD	74.,272.,S_SP_VERSION
+		.WORD	-1
+
+SP_CONTROLS:
+		.WORD	2.,30.,S_SP_FLIGHT
+		.WORD	41.,30.,S_SP_MENUS
+		.WORD	2.,48.,S_SP_F01
+		.WORD	2.,62.,S_SP_F02
+		.WORD	2.,76.,S_SP_F03
+		.WORD	2.,90.,S_SP_F04
+		.WORD	2.,104.,S_SP_F05
+		.WORD	2.,118.,S_SP_F06
+		.WORD	2.,132.,S_SP_F07
+		.WORD	2.,146.,S_SP_F08
+		.WORD	2.,160.,S_SP_F09
+		.WORD	2.,174.,S_SP_F10
+		.WORD	2.,188.,S_SP_F11
+		.WORD	2.,202.,S_SP_F12
+		.WORD	2.,216.,S_SP_F13
+		.WORD	2.,230.,S_SP_F14
+		.WORD	2.,244.,S_SP_F15
+		.WORD	41.,48.,S_SP_M01
+		.WORD	41.,62.,S_SP_M02
+		.WORD	41.,76.,S_SP_M03
+		.WORD	41.,90.,S_SP_M04
+		.WORD	41.,104.,S_SP_M05
+		.WORD	41.,118.,S_SP_M06
+		.WORD	41.,132.,S_SP_M07
+		.WORD	41.,146.,S_SP_M08
+		.WORD	41.,160.,S_SP_M09
+		.WORD	41.,174.,S_SP_M10
+		.WORD	41.,188.,S_SP_M11
+		.WORD	41.,202.,S_SP_M12
+		.WORD	41.,216.,S_SP_M13
+		.WORD	41.,230.,S_SP_M14
+		.WORD	41.,244.,S_SP_M15
+		.WORD	32.,272.,S_SP_PLAY
+		.WORD	-1

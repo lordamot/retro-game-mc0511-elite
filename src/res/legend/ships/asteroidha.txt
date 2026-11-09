@@ -1,0 +1,66 @@
+# d_AsteroidHa - extracted from orig/legend by tools/legend_ships.py;
+# object 24 of AdrDataShips, hull d_Asteroid.
+# `make extract` overwrites it.
+name ASTEROIDHA
+index 24
+class 1
+speed 30
+energy 60
+bounty 5
+laser 0
+collide 80
+cargo 16
+launch 0
+dot 50
+rating 25
+flags 0
+flags2 1
+laservert 0
+type 5
+objflags 192
+shipnum 0
+radius 80
+vertex     0    80     0
+vertex     0   -80     0
+vertex   -80   -10     0
+vertex    70   -40     0
+vertex    60    50     0
+vertex    50     0    60
+vertex   -40     0    70
+vertex     0    30   -75
+vertex     0   -50   -60
+edge 0 2 31 2 7
+edge 0 4 31 6 13
+edge 3 4 31 5 12
+edge 1 3 31 4 11
+edge 2 1 31 3 10
+edge 2 6 31 2 3
+edge 1 6 31 1 3
+edge 1 5 31 1 4
+edge 5 6 31 0 1
+edge 0 5 31 0 6
+edge 3 5 31 4 5
+edge 0 6 31 0 2
+edge 4 5 31 5 6
+edge 2 8 31 8 10
+edge 2 7 31 7 8
+edge 0 7 31 7 13
+edge 4 7 31 12 13
+edge 3 7 31 9 12
+edge 3 8 31 9 11
+edge 1 8 31 10 11
+edge 7 8 31 8 9
+normal    9   66   81
+normal    9  -66   81
+normal  -72   64   31
+normal  -64  -73   47
+normal   45  -79   65
+normal  135   15   35
+normal   38   76   70
+normal  -66   59  -39
+normal  -67  -15  -80
+normal   66  -14  -75
+normal  -70  -80  -40
+normal   58 -102  -51
+normal   81    9  -67
+normal   47   94  -63

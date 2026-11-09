@@ -1,0 +1,618 @@
+; =========================================================================
+; ovl_trade.mac - the market, with the buying and selling behind it.
+; AN OVERLAY (src/ovl.list), called through its first word with R0 = 0
+; to draw the market (screen 4; the outfitter, 5, is src/ovl_equip.mac
+; and the commander's record, 6, src/ovl_pilot.mac), R0 = 1 to act on
+; the keys in KEYS_EDGE, and R0 = 2 on arrival in a system, to stock
+; its markets (MKT_STOCK).  The stock and the purse are in the record
+; (src/pilot.mac) and the hold's arithmetic in the resident
+; (src/market.mac): the sky reads them too.
+; =========================================================================
+
+		JMP	OVLT_ENTRY		; the overlay's entry, at OVL_BASE
+
+SCR_I:		.WORD	0
+SCR_T:		.WORD	0
+SCR_X:		.WORD	0
+
+OVLT_ENTRY:	TST	R0
+		BEQ	3$
+		CMP	R0,#2
+		BNE	OVLT_KEYS
+		JMP	MKT_STOCK
+3$:		CMP	SCREEN,#4
+		BNE	2$
+		JMP	SCR_MARKET
+2$:		RETURN
+
+; the keys: up and down pick a row, right buys one and left sells one,
+; and ФИКС is Legend's BuySellAll.  The key word is tested where it
+; lies, KEYS_EDGE, not in a register: a buy and the till clobber every
+; register, and a bit left behind in one used to read as the next key.
+OVLT_KEYS:	CMP	SCREEN,#4		; the market: up and down pick a
+		BNE	9$			; row, right buys one and left
+		BIT	#K_UP,KEYS_EDGE		; sells one
+		BEQ	71$
+		DEC	MKT_SEL
+		BGE	71$
+		MOV	#NGOODS-1,MKT_SEL
+71$:		BIT	#K_DOWN,KEYS_EDGE
+		BEQ	72$
+		INC	MKT_SEL
+		CMP	MKT_SEL,#NGOODS
+		BLT	72$
+		CLR	MKT_SEL
+72$:		BIT	#K_RIGHT,KEYS_EDGE
+		BEQ	73$
+		MOV	MKT_SEL,R5
+		CALL	BUY_ONE
+		CALL	TILL
+73$:		BIT	#K_LEFT,KEYS_EDGE
+		BEQ	731$
+		MOV	MKT_SEL,R5
+		CALL	SELL_ONE
+		CALL	TILL
+731$:		BIT	#K_FIRE,KEYS_EDGE	; ФИКС: the hold's worth of it
+		BEQ	74$			;   sold, or if there is none, as
+		MOV	MKT_SEL,R5		;   much bought as the purse and
+		CALL	TRADE_ALL		;   the hold take
+		CALL	TILL
+74$:		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN!K_FIRE,KEYS_EDGE
+		BEQ	9$
+		JMP	SCR_MARKET
+
+9$:		RETURN
+
+; TILL - the till rings on a deal and buzzes on a refusal; C is set by
+; BUY_ONE / SELL_ONE and must not be disturbed before the branch.
+TILL:		BCS	1$
+		MOV	#FX_OPTION,R0
+		BR	2$
+1$:		MOV	#FX_KEY,R0
+2$:		JMP	SFX_PLAY
+
+
+; =========================================================================
+; The market: Legend's genStationPrice and genAsteriodPrice
+; (Galaxy/genData.a80) and its BuySell.a80, number for number.
+;
+; Which market depends on where the commander is.  At the station - or
+; in the sky, where the station's list can be looked at but nothing
+; bought - the station's: a price and a stock a good out of the
+; commodity table (build/market.mac) crossed with the system's economy
+; and the record's random byte P_RND, the stock in the record's
+; P_PRODUCT, where Legend keeps it, so that what has been bought stays
+; bought across a save.  At the hermit's rock the rock's own smaller
+; market: a stock of nought to seven, minerals, gold, platinum and gems
+; at a quarter of the price and alien items at three times, its stock in
+; AST_QTY in the resident.  At the generation ship the same stock, empty,
+; and prices of its own (MKT_GENSHIP).  At a military or service station
+; none.  The prices are
+; worked out again every time the screen is drawn - they are a function
+; of the seed; the stock is worked out once, on arrival (MKT_STOCK,
+; through MKT_ARRIVE), and moves as the commander trades.
+; =========================================================================
+MKT_PRICE:	.BLKW	NGOODS		; this market's prices, in tenths
+MKT_QTYP:	.WORD	P_PRODUCT	; and where its stock is
+MKT_OPEN:	.WORD	1		; 0 where nothing is sold
+MK_RESTOCK:	.WORD	0		; 1: write the stock too
+MK_I:		.WORD	0
+MK_P:		.WORD	0
+MK_G:		.WORD	0		; the good's gradient byte
+MK_K:		.WORD	0		; its low five bits times the economy
+MK_R:		.WORD	0		; P_RND & its mask
+
+; MKT_STOCK - arrival: a new random byte, and both markets stocked.
+MKT_STOCK:	CALL	RND_BYTE
+		MOVB	R0,P_RND
+		MOV	#1,MK_RESTOCK
+		MOV	#P_PRODUCT,MKT_QTYP
+		CALL	MKT_STATION
+		MOV	#MKT_PRICE,R0		; the resident keeps the station's
+		MOV	#ST_PRICE,R1		;   prices for HOLD_SELL
+		MOV	#NGOODS,R2
+1$:		MOV	(R0)+,(R1)+
+		SOB	R2,1$
+		MOV	#AST_QTY,MKT_QTYP
+		CALL	MKT_ASTEROID
+		CLR	MK_RESTOCK
+		RETURN
+
+; MKT_GEN - the prices of wherever the commander is, into MKT_PRICE, and
+; MKT_QTYP on its stock; MKT_OPEN cleared where there is no market.
+MKT_GEN:	MOV	#1,MKT_OPEN
+		CLR	MK_RESTOCK
+		MOV	#P_PRODUCT,MKT_QTYP
+		TST	DOCKED
+		BEQ	2$
+		MOV	DOCKED_AT,R0
+		BEQ	2$
+		CMP	R0,#BK_HERMIT
+		BNE	1$
+		MOV	#AST_QTY,MKT_QTYP
+		JMP	MKT_ASTEROID
+1$:		CMP	R0,#BK_GENSHIP		; the generation ship: the rock's
+		BNE	3$			;   stock, its own prices
+		MOV	#AST_QTY,MKT_QTYP
+		JMP	MKT_GENSHIP
+3$:		CLR	MKT_OPEN		; a military or a service station
+		RETURN
+2$:		JMP	MKT_STATION
+
+; MKT_GENSHIP - genGenShipPrice, the generation ship's market: the base
+; price, the base quantity and the random part, doubled, the gradient's
+; low five bits added (bit 7 set) or taken off without the economy, times
+; four.  Its stock is AST_QTY, emptied when the ship is met (MS_DEEP):
+; it sells nothing, and buys at these prices.
+MKT_GENSHIP:	CLR	MK_I
+		MOV	#GOODS,MK_P
+10$:		CALL	MK_TERMS
+		MOVB	G.PRICE(R5),R0
+		BIC	#177400,R0
+		MOVB	G.QUANT(R5),R1
+		BIC	#177400,R1
+		ADD	R1,R0
+		ADD	MK_R,R0
+		ASL	R0
+		MOV	MK_G,R1
+		BIC	#177740,R1
+		BIT	#200,MK_G
+		BNE	1$
+		NEG	R1
+1$:		ADD	R1,R0
+		ASL	R0
+		ASL	R0
+		CALL	MK_PUT
+		CALL	MK_NEXT
+		BCC	10$
+		RETURN
+
+; MK_TERMS - for the good at MK_P: MK_G, MK_K and MK_R.  Clobbers R0,R1,R5.
+MK_TERMS:	MOV	MK_P,R5
+		MOVB	G.GRAD(R5),R0
+		BIC	#177400,R0
+		MOV	R0,MK_G
+		BIC	#177740,R0		; bits 4-0, times the economy
+		MOV	R0,R1
+		MUL	SYS_ECON,R1		; R1 odd - low 16 bits
+		MOV	R1,MK_K
+		MOVB	G.MASK(R5),R0
+		BIC	#177400,R0
+		MOVB	P_RND,R1
+		BIC	#177400,R1
+		COM	R0
+		BIC	R0,R1			; R1 = rnd & mask
+		MOV	R1,MK_R
+		RETURN
+
+; MK_NEXT - on to the next good; C set when they are done.
+MK_NEXT:	ADD	#G.SIZE,MK_P
+		INC	MK_I
+		CMP	MK_I,#NGOODS
+		BLO	1$
+		SEC
+		RETURN
+1$:		CLC
+		RETURN
+
+; MK_PUT - the price in R0 and, if restocking, the stock in R1, for good
+; MK_I.  Clobbers R2, R3.
+MK_PUT:		MOV	MK_I,R2
+		ASL	R2
+		MOV	R0,MKT_PRICE(R2)
+		TST	MK_RESTOCK
+		BEQ	9$
+		MOV	MKT_QTYP,R3
+		ADD	R2,R3
+		MOV	R1,@R3
+9$:		RETURN
+
+; MKT_STATION - genStationPrice.  The price is the base byte plus the
+; random part, plus (or, for a good the economy makes cheaper, one more
+; than) the gradient times the economy, times four; the stock is the base
+; quantity plus the random part, minus one more than that product (or
+; plus it), kept to a byte, nothing if it went negative and never more
+; than 63.  Alien items are never in stock and eight times the price
+; until the third mission has them (P_M3 = 4).
+MKT_STATION:	CLR	MK_I
+		MOV	#GOODS,MK_P
+10$:		CALL	MK_TERMS
+		MOVB	G.PRICE(R5),R0		; the price
+		BIC	#177400,R0
+		ADD	MK_R,R0
+		BIT	#200,MK_G
+		BEQ	1$
+		SUB	MK_K,R0
+		DEC	R0
+		BR	2$
+1$:		ADD	MK_K,R0
+2$:		ASL	R0
+		ASL	R0
+		MOVB	G.QUANT(R5),R1		; the stock
+		BIC	#177400,R1
+		ADD	MK_R,R1
+		BIT	#200,MK_G
+		BEQ	3$
+		ADD	MK_K,R1
+		BR	4$
+3$:		SUB	MK_K,R1
+		DEC	R1
+4$:		BIC	#177400,R1
+		BIT	#200,R1
+		BEQ	5$
+		CLR	R1
+5$:		BIC	#177700,R1
+		CALL	MK_PUT
+		CALL	MK_NEXT
+		BCC	10$
+		CMPB	P_M3,#4			; alien items: for the mission only
+		BEQ	9$
+		ASL	MKT_PRICE+<16.*2>
+		ASL	MKT_PRICE+<16.*2>
+		ASL	MKT_PRICE+<16.*2>
+		TST	MK_RESTOCK
+		BEQ	9$
+		MOV	MKT_QTYP,R3
+		CLR	<16.*2>(R3)
+9$:		RETURN
+
+; MKT_ASTEROID - genAsteriodPrice, the hermit's market.  The stock is the
+; base quantity plus the random part, plus or minus the gradient's
+; product, to three bits; the price adds the base quantity's low five
+; bits as well (the original does), and afterwards minerals, gold,
+; platinum and gems are cut to a quarter - the two bits shifted out
+; added back swapped, exactly as the Z80 does it - and alien items
+; trebled.
+MKT_ASTEROID:	CLR	MK_I
+		MOV	#GOODS,MK_P
+10$:		CALL	MK_TERMS
+		MOVB	G.QUANT(R5),R1		; the stock
+		BIC	#177400,R1
+		ADD	MK_R,R1
+		BIT	#200,MK_G
+		BEQ	1$
+		ADD	MK_K,R1
+		BR	2$
+1$:		SUB	MK_K,R1
+2$:		BIC	#177770,R1
+		MOVB	G.PRICE(R5),R0		; the price
+		BIC	#177400,R0
+		ADD	MK_R,R0
+		MOVB	G.QUANT(R5),R2
+		BIC	#177740,R2
+		ADD	R2,R0
+		BIT	#200,MK_G
+		BEQ	3$
+		SUB	MK_K,R0
+		DEC	R0
+		BR	4$
+3$:		ADD	MK_K,R0
+4$:		ASL	R0
+		ASL	R0
+		CALL	MK_PUT
+		CALL	MK_NEXT
+		BCC	10$
+		MOV	#MKT_PRICE+<12.*2>,R4	; minerals to gems: a quarter
+		MOV	#4,R5
+20$:		MOV	@R4,R0
+		CLR	R3
+		BIT	#1,R0
+		BEQ	21$
+		BIS	#2,R3
+21$:		BIT	#2,R0
+		BEQ	22$
+		BIS	#1,R3
+22$:		CLC
+		ROR	R0
+		CLC
+		ROR	R0
+		ADD	R3,R0
+		MOV	R0,(R4)+
+		SOB	R5,20$
+		MOV	MKT_PRICE+<16.*2>,R0	; alien items: three times
+		ASL	R0
+		ADD	MKT_PRICE+<16.*2>,R0
+		MOV	R0,MKT_PRICE+<16.*2>
+		RETURN
+
+; =========================================================================
+; SCR_MARKET - Legend's market page on eighty columns: the 38 goods in
+; two columns of nineteen, each with its unit, the price, what the
+; station has and what the hold has; the purse and the hold's load along
+; the bottom.  Where nothing is sold it says so.
+; =========================================================================
+MK_X0	= 1			; the first column, and
+MK_X1	= 41.			;   the second
+MK_YH	= 20.			; the headings
+MK_Y0	= 34.			; the first row
+MK_STEP	= 12.			; a row: nineteen of them to a column
+MK_ROWS	= 19.
+MK_YCASH = 270.			; the purse and the load
+
+UNITNAMES:	.WORD	S_U_T, S_U_KG, S_U_G
+
+SCR_MARKET:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	#S_T_MARKET,R1
+		CALL	PUTS2
+
+		MOV	SYS_INDEX,R0		; the market is the station's: the
+		CALL	SYS_SELECT		;   system you are IN, not the one
+		CALL	MKT_GEN			;   the chart cursor is on
+		TST	MKT_OPEN
+		BNE	1$
+		MOV	#4,TX			; a base that does not trade
+		MOV	#40.,TY
+		MOV	#S_M_NOMARKET,R1
+		CALL	PUTS
+		JMP	80$
+
+1$:		MOV	#MK_X0,SCR_X		; the headings, over both columns
+2$:		MOV	SCR_X,TX
+		INC	TX
+		MOV	#MK_YH,TY
+		MOV	#S_H_GOODS,R1
+		CALL	PUTS
+		MOV	SCR_X,TX
+		ADD	#24.,TX
+		MOV	#S_H_PRICE,R1
+		CALL	PUTS
+		MOV	SCR_X,TX
+		ADD	#29.,TX
+		MOV	#S_H_STOCK,R1
+		CALL	PUTS
+		MOV	SCR_X,TX
+		ADD	#34.,TX
+		MOV	#S_H_HOLD,R1
+		CALL	PUTS
+		CMP	SCR_X,#MK_X1
+		BEQ	3$
+		MOV	#MK_X1,SCR_X
+		BR	2$
+
+3$:		CLR	SCR_I
+10$:		MOV	SCR_I,R1		; which column, which row
+		CLR	R0
+		DIV	#MK_ROWS,R0
+		MUL	#MK_STEP,R1		; R1 odd - low 16 bits
+		ADD	#MK_Y0,R1
+		MOV	R1,SCR_T
+		MOV	#MK_X0,SCR_X
+		TST	R0
+		BEQ	11$
+		MOV	#MK_X1,SCR_X
+11$:		MOV	SCR_X,TX		; the cursor
+		MOV	SCR_T,TY
+		MOV	#40,R0
+		CMP	SCR_I,MKT_SEL
+		BNE	12$
+		MOV	#76,R0			; ">"
+12$:		CALL	PUTC
+
+		MOV	SCR_I,R0		; the name
+		ASL	R0
+		MOV	GOODNAMES(R0),R1
+		CALL	PUTS
+
+		MOV	SCR_X,TX		; the unit
+		ADD	#19.,TX
+		MOV	SCR_I,R0
+		CALL	GOOD_UNIT
+		ASL	R0
+		MOV	UNITNAMES(R0),R1
+		CALL	PUTS
+
+		MOV	SCR_X,TX		; the price
+		ADD	#22.,TX
+		MOV	SCR_I,R0
+		ASL	R0
+		MOV	MKT_PRICE(R0),R0
+		MOV	#5,R1
+		CALL	PUT_TENTHSW
+
+		MOV	SCR_X,TX		; in stock
+		ADD	#30.,TX
+		MOV	SCR_I,R0
+		ASL	R0
+		ADD	MKT_QTYP,R0
+		MOV	@R0,R0
+		CALL	PUT_NUM3
+
+		MOV	SCR_X,TX		; in the hold
+		ADD	#34.,TX
+		MOV	SCR_I,R0
+		ASL	R0
+		MOV	CARGO(R0),R0
+		CALL	PUT_NUM3
+
+		INC	SCR_I
+		CMP	SCR_I,#NGOODS
+		BLO	10$
+
+80$:		MOV	#2,TX			; the purse and the load
+		MOV	#MK_YCASH,TY
+		MOV	#S_M_CASHL,R1
+		CALL	PUTS
+		CALL	PUTCASH
+		MOV	#S_M_CR,R1
+		CALL	PUTS
+		MOV	#40.,TX
+		MOV	#MK_YCASH,TY
+		MOV	#S_M_INHOLD,R1
+		CALL	PUTS
+		CALL	HOLD_USED
+		MOV	R0,SCR_T
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_M_OF,R1
+		CALL	PUTS
+		MOV	SCR_T,R0
+		ADD	P_FREECARGO,R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_U_T,R1
+		JMP	PUTS
+
+; PUT_NUM3 - R0 in three columns, a dash for nothing, as Legend prints
+; a quantity.
+PUT_NUM3:	TST	R0
+		BNE	1$
+		MOV	#40,R0
+		CALL	PUTC
+		MOV	#40,R0
+		CALL	PUTC
+		MOV	#55,R0			; "-"
+		JMP	PUTC
+1$:		MOV	#3,R1
+		JMP	PUTDEC
+
+; DATA_LABEL - put the label in R1 at the left of row R0, and leave the
+; cursor in the value column.
+DATA_LABEL:	MOV	R0,TY
+		MOV	#2,TX
+		CALL	PUTS
+		MOV	#24.,TX
+		RETURN
+
+
+; =========================================================================
+; BUY_ONE - buy one unit of good R5 (BuyProducts).  C set if it could not
+; be done: not docked, no market here, none in stock, no room for a
+; tonne, or no money.  R5 is kept.
+;
+; Written with memory temporaries rather than stack juggling on purpose:
+; every test here is followed immediately by its branch, because a MOV in
+; between would rewrite N and V and turn "the hold is full" into "the
+; hold is empty".
+; =========================================================================
+BUY_IDX:	.WORD	0		; the good, as a word index
+BUY_PRICE:	.WORD	0
+BUY_UNIT:	.WORD	0		; 0 if it takes a tonne of hold
+
+BUY_ONE:	TST	DOCKED			; the shelf is in the station;
+		BEQ	9$			;   the outfitter asks the same
+		TST	MKT_OPEN
+		BEQ	9$
+		MOV	R5,R0
+		ASL	R0
+		MOV	R0,BUY_IDX
+		ADD	MKT_QTYP,R0		; is any on offer?
+		TST	@R0
+		BEQ	9$
+		MOV	BUY_IDX,R0
+		MOV	MKT_PRICE(R0),BUY_PRICE
+		MOV	R5,R0			; does it take hold space?
+		CALL	GOOD_UNIT
+		MOV	R0,BUY_UNIT
+		BNE	1$			; kg and g ride free
+		TST	P_FREECARGO
+		BLE	9$
+1$:		MOV	BUY_PRICE,R0		; can it be paid for?
+		CALL	CASH_CAN
+		BCS	9$
+		MOV	BUY_PRICE,R0
+		CALL	CASH_SUB
+		MOV	BUY_IDX,R0
+		INC	CARGO(R0)
+		ADD	MKT_QTYP,R0		; and the shelf notices
+		DEC	@R0
+		TST	BUY_UNIT
+		BNE	2$
+		DEC	P_FREECARGO
+2$:		MOV	R5,R0
+		CALL	TRADE_LEGAL
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; TR_WAR - the war's deliveries (BuySell's goto006): at the front, a
+; lieutenant's food, medicine and water, a captain's firearms, battle
+; weapons, drones and the two fuels, count a unit each towards the
+; rank's task; the 256th completes it.  R5 = the good sold.
+TR_WAR:		MOVB	P_RANK,R0
+		BIC	#^C316,R0
+		MOV	#TW_LIST1,R1
+		MOV	#2,R2
+		CMP	R0,#204			; a lieutenant, serving
+		BEQ	1$
+		MOV	#TW_LIST2,R1
+		MOV	#4,R2
+		CMP	R0,#206			; a captain
+		BNE	9$
+1$:		MOVB	(R1)+,R0
+		BMI	9$
+		CMP	R0,R5
+		BNE	1$
+		MOV	R2,-(SP)
+		CALL	MS_COMBAT
+		MOV	(SP)+,R2
+		BCC	9$
+		INCB	P_WAR+3
+		BNE	9$
+		BISB	R2,P_WAR+2
+9$:		RETURN
+TW_LIST1:	.BYTE	0, 32., 37., -1		; ListForWar1
+TW_LIST2:	.BYTE	10., 22., 26., 28., 33., -1	; ListForWar2
+		.EVEN
+
+; =========================================================================
+; SELL_ONE - sell one unit of good R5 (SellProducts).  C set if there was
+; none, or nobody here to sell to.  R5 is kept.
+; =========================================================================
+SELL_ONE:	TST	DOCKED
+		BEQ	9$
+		TST	MKT_OPEN
+		BEQ	9$
+		MOV	R5,R0
+		ASL	R0
+		TST	CARGO(R0)
+		BEQ	9$
+		DEC	CARGO(R0)
+		MOV	R0,-(SP)
+		ADD	MKT_QTYP,R0		; back on the shelf, which holds
+		INC	@R0			;   65535 at most
+		BNE	1$
+		DEC	@R0
+1$:		MOV	(SP)+,R0
+		MOV	MKT_PRICE(R0),R0
+		CALL	CASH_ADD
+		MOV	R5,R0			; a tonne gives a tonne back
+		CALL	GOOD_UNIT
+		TST	R0
+		BNE	2$
+		INC	P_FREECARGO
+2$:		MOV	R5,R0
+		CALL	TRADE_LEGAL
+		CALL	TR_WAR
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; TRADE_ALL - Legend's BuySellAll, on ФИКС: everything of good R5 in the
+; hold is sold, and if there was nothing to sell, as much is bought as
+; the shelf, the hold and the purse allow.  C set if nothing changed
+; hands.
+; =========================================================================
+TA_N:		.WORD	0
+
+TRADE_ALL:	CLR	TA_N
+1$:		CALL	SELL_ONE
+		BCS	2$
+		INC	TA_N
+		BR	1$
+2$:		TST	TA_N
+		BNE	8$
+3$:		CALL	BUY_ONE
+		BCS	4$
+		INC	TA_N
+		BR	3$
+4$:		TST	TA_N
+		BEQ	9$
+8$:		CLC
+		RETURN
+9$:		SEC
+		RETURN

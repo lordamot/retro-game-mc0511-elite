@@ -1,0 +1,230 @@
+; Filled sun: cached half-widths, with only changed edge spans XORed.
+; Keeping unclipped widths also lets translation reuse the expensive
+; ellipse calculation whenever radius and vertical centre are unchanged.
+; SU_SPAN is initialized by SUN_FORGET in the dead PPU copy.
+SU_Y:		.WORD	0
+SU_END:		.WORD	0
+SU_P:		.WORD	0
+SU_L:		.WORD	0
+SU_R:		.WORD	0
+SU_OL:		.WORD	0
+SU_OR:		.WORD	0
+SU_OX:		.WORD	0
+SU_OY:		.WORD	0
+SU_RAD:		.WORD	0
+SU_CACHE:	.WORD	0
+SUN_FORGET:	MOV	#SU_SPAN,R0
+		MOV	#VIEW_H,R1
+1$:		MOV	#-1,(R0)+
+		SOB	R1,1$
+		CLR	SU_RAD
+		CLR	SU_OY
+		RETURN
+SUN_FILL:	CALL	SUN_VISIBLE
+		BCC	1$
+		CLR	PL_R
+		TST	SU_RAD
+		BNE	1$
+		RETURN			; empty before and after: no scanlines
+1$:		CLR	SU_CACHE
+		CMP	PL_R,SU_RAD
+		BNE	2$
+		CMP	PL_CY,SU_OY
+		BNE	2$
+		INC	SU_CACHE
+2$:		MOV	SU_OY,R0
+		SUB	SU_RAD,R0
+		MOV	PL_CY,R1
+		SUB	PL_R,R1
+		CMP	R0,R1
+		BLE	3$
+		MOV	R1,R0
+3$:		TST	R0
+		BGE	4$
+		CLR	R0
+4$:		MOV	R0,SU_Y
+		ASL	R0
+		ADD	#SU_SPAN,R0
+		MOV	R0,SU_P
+		MOV	SU_OY,R0
+		ADD	SU_RAD,R0
+		MOV	PL_CY,R1
+		ADD	PL_R,R1
+		CMP	R0,R1
+		BGE	5$
+		MOV	R1,R0
+5$:		CMP	R0,#VIEW_H-1
+		BLE	6$
+		MOV	#VIEW_H-1,R0
+6$:		MOV	R0,SU_END
+		CMP	SU_Y,R0
+		BLE	10$
+		JMP	90$
+10$:		MOV	@SU_P,R0
+		MOV	SU_OX,R1
+		CALL	SUN_BOUNDS
+		MOV	R0,SU_OL
+		MOV	R1,SU_OR
+		TST	SU_CACHE
+		BEQ	11$
+		MOV	@SU_P,R0
+		BR	20$
+11$:		TST	PL_R
+		BEQ	19$
+		MOV	SU_Y,R0
+		SUB	PL_CY,R0
+		BGE	12$
+		NEG	R0
+12$:		CMP	R0,PL_R
+		BHI	19$
+		MUL	#256.,R0
+		DIV	PL_R,R0
+		CLR	R1
+		CMP	R0,#256.
+		BHIS	13$
+		MOVB	SU_WIDTH(R0),R1
+		BIC	#177400,R1
+13$:		MOV	PL_RX,R0
+		MUL	R1,R0
+		DIV	#255.,R0
+		BR	20$
+19$:		MOV	#-1,R0
+20$:		MOV	R0,@SU_P
+		MOV	PL_CX,R1
+		CALL	SUN_BOUNDS
+		MOV	R0,SU_L
+		MOV	R1,SU_R
+		CALL	SUN_DIFF
+		ADD	#2,SU_P
+		INC	SU_Y
+		CMP	SU_Y,SU_END
+		BGT	90$
+		JMP	10$
+90$:		MOV	PL_CX,SU_OX
+		MOV	PL_CY,SU_OY
+		MOV	PL_R,SU_RAD
+		RETURN
+; C set when the entire ellipse is outside the space view.  Its
+; projected radius is bounded by BODY_RADIUS (including the nova).
+SUN_VISIBLE:	CMP	PL_CX,#-1000.
+		BLT	8$
+		CMP	PL_CX,#1640.
+		BGT	8$
+		CMP	PL_CY,#-600.
+		BLT	8$
+		CMP	PL_CY,#800.
+		BGT	8$
+		TST	PL_R
+		BEQ	8$
+		MOV	PL_CX,R0
+		ADD	PL_RX,R0
+		BVS	9$
+		BMI	8$
+		MOV	PL_CX,R0
+		SUB	PL_RX,R0
+		BVS	9$
+		CMP	R0,#SCRW
+		BGE	8$
+		MOV	PL_CY,R0
+		ADD	PL_R,R0
+		BVS	9$
+		BMI	8$
+		MOV	PL_CY,R0
+		SUB	PL_R,R0
+		BVS	9$
+		CMP	R0,#VIEW_H
+		BGE	8$
+9$:		CLC
+		RETURN
+8$:		SEC
+		RETURN
+; R0 half width (-1 empty), R1 centre -> clipped inclusive R0..R1.
+SUN_BOUNDS:	TST	R0
+		BMI	8$
+		MOV	R1,R2
+		ADD	R0,R1
+		BMI	8$
+		SUB	R0,R2
+		CMP	R2,#SCRW-1
+		BGT	8$
+		MOV	R2,R0
+		BGE	1$
+		CLR	R0
+1$:		CMP	R1,#SCRW-1
+		BLE	9$
+		MOV	#SCRW-1,R1
+9$:		RETURN
+8$:		CLR	R0
+		MOV	#-1,R1
+		RETURN
+SUN_DIFF:	CMP	SU_OL,SU_R
+		BGT	5$
+		CMP	SU_L,SU_OR
+		BGT	5$
+		MOV	SU_L,R0
+		MOV	SU_OL,R1
+		CMP	R0,R1
+		BEQ	2$
+		BLT	1$
+		MOV	R0,R2
+		MOV	R1,R0
+		MOV	R2,R1
+1$:		DEC	R1
+		CALL	SUN_LINE
+2$:		MOV	SU_R,R0
+		MOV	SU_OR,R1
+		CMP	R0,R1
+		BEQ	9$
+		BLT	3$
+		MOV	R0,R2
+		MOV	R1,R0
+		MOV	R2,R1
+3$:		INC	R0
+		BR	SUN_LINE
+5$:		MOV	SU_OL,R0
+		MOV	SU_OR,R1
+		CALL	SUN_LINE
+		MOV	SU_L,R0
+		MOV	SU_R,R1
+		BR	SUN_LINE
+9$:		RETURN
+SUN_LINE:	CMP	R0,R1
+		BGT	9$
+		SUB	R0,R1			; dx, always rightwards and flat
+		MOV	R0,R2
+		ASR	R2
+		ASR	R2
+		ASR	R2
+		MOV	SU_Y,R3
+		ASL	R3
+		ADD	ROWTAB(R3),R2
+		MOV	R2,LREC+4
+		BIC	#177770,R0
+		SWAB	R0
+		ASL	R0
+		ASL	R0
+		BIS	R1,R0
+		MOV	R0,LREC
+		CLR	LREC+2
+		MOV	#LREC,R4
+		JMP	RING_PUTR
+9$:		RETURN
+
+; round(255*sqrt(1-(i/256)^2)), i=0..255.  Endpoint 256 is zero.
+SU_WIDTH:
+		.BYTE	255., 255., 255., 255., 255., 255., 255., 255., 255., 255., 255., 255., 255., 255., 255., 255.
+		.BYTE	255., 254., 254., 254., 254., 254., 254., 254., 254., 254., 254., 254., 253., 253., 253., 253.
+		.BYTE	253., 253., 253., 253., 252., 252., 252., 252., 252., 252., 252., 251., 251., 251., 251., 251.
+		.BYTE	250., 250., 250., 250., 250., 249., 249., 249., 249., 249., 248., 248., 248., 248., 247., 247.
+		.BYTE	247., 247., 246., 246., 246., 246., 245., 245., 245., 244., 244., 244., 244., 243., 243., 243.
+		.BYTE	242., 242., 242., 241., 241., 241., 240., 240., 239., 239., 239., 238., 238., 238., 237., 237.
+		.BYTE	236., 236., 236., 235., 235., 234., 234., 233., 233., 233., 232., 232., 231., 231., 230., 230.
+		.BYTE	229., 229., 228., 228., 227., 227., 226., 226., 225., 225., 224., 224., 223., 223., 222., 221.
+		.BYTE	221., 220., 220., 219., 218., 218., 217., 217., 216., 215., 215., 214., 213., 213., 212., 212.
+		.BYTE	211., 210., 209., 209., 208., 207., 207., 206., 205., 204., 204., 203., 202., 201., 201., 200.
+		.BYTE	199., 198., 197., 197., 196., 195., 194., 193., 192., 192., 191., 190., 189., 188., 187., 186.
+		.BYTE	185., 184., 183., 182., 181., 180., 179., 178., 177., 176., 175., 174., 173., 172., 171., 170.
+		.BYTE	169., 168., 166., 165., 164., 163., 162., 160., 159., 158., 157., 155., 154., 153., 151., 150.
+		.BYTE	149., 147., 146., 144., 143., 141., 140., 138., 137., 135., 134., 132., 130., 129., 127., 125.
+		.BYTE	123., 122., 120., 118., 116., 114., 112., 110., 108., 106., 103., 101., 99., 96., 94., 91.
+		.BYTE	89., 86., 83., 80., 77., 74., 71., 67., 63., 59., 55., 50., 45., 39., 32., 23.

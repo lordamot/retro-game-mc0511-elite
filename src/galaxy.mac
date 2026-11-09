@@ -1,0 +1,430 @@
+; =========================================================================
+; galaxy.mac - the galaxies, generated rather than stored.
+;
+; Elite's galaxies are not data: 256 systems come out of a three-word
+; seed put through a Tribonacci step - w0,w1,w2 -> w1,w2,w0+w1+w2 - and
+; every property of a system is read off the bits of the seed it lands
+; on.  Four steps per system, so galaxy 1's system 7 is the same world
+; on every machine Elite has ever run on.
+;
+; Elite Legend has FORTY-EIGHT of them (SetGalaxyData_A in
+; Galaxy/GalaxyData.a80): a galaxy number's bits 2-0 are the 1985 twist
+; - every seed byte rotated left that many places, which is how the
+; eight galaxies were always made - and its bits 5-3 pick which of the
+; six seed bytes the seed starts on (GAL_BASE, the six bytes and then
+; the first five again, read at that offset).  Galaxy 0 is Lave's.
+; Legend's Raxxla galaxy, number 255, is phase 5's.  Which of them a
+; commander can look at and jump to is his drive's business (GAL_REACH,
+; GAL_JUMP): the standard drive goes to the next galaxy and is used up,
+; the military one reaches three either way and is not, the
+; experimental one reaches them all.
+;
+; The syllables the names are built from come out of the original's own
+; pair table (see docs/reference-sources.md), so this port's galaxy reads
+; in Russian while being, system for system, the galaxy every other
+; Elite has.
+; =========================================================================
+
+; galaxy 1's seed - the number every Elite starts from
+GAL1_W0	= 55112			; 0x5A4A
+GAL1_W1	= 1110			; 0x0248
+GAL1_W2	= 133523		; 0xB753
+
+GSEED:		.WORD	GAL1_W0, GAL1_W1, GAL1_W2	; this galaxy's seed
+NGALAXY	= 48.
+GAL_BASE:	.BYTE	74., 90., 72., 2., 83., 183.	; BaseGalaxyData: the six
+		.BYTE	74., 90., 72., 2., 83.		;   bytes, then five again
+		.EVEN
+CHART_GAL:	.WORD	0		; CurrentGalaxy: the galaxy the chart
+				;   shows and a drive that chooses goes to;
+				;   GALNUM's on arrival and per commander
+SSEED:		.WORD	0, 0, 0				; the working seed
+
+; the system the working seed describes
+SYS_X:		.WORD	0
+SYS_Y:		.WORD	0
+SYS_ECON:	.WORD	0
+SYS_GOVT:	.WORD	0
+SYS_TECH:	.WORD	0
+SYS_POP:	.WORD	0
+SYS_RADIUS:	.WORD	0
+SYS_NAME:	.BLKB	10.		; 0-terminated KOI-7
+		.EVEN
+; SYS_INDEX, where the commander is (7 is Lave), and GALNUM, 0..7, are
+; the record's P_PLANET and P_GALAXY (src/pilot.mac); GSEED is worked
+; out from GALNUM by GAL_SEEDOF and is not saved.
+SYS_SEED:	.WORD	0,0,0		; and the seed it was generated from
+
+; =========================================================================
+; TWEAK - one step of the sequence on SSEED.
+; =========================================================================
+TWEAK:		MOV	SSEED,R0
+		ADD	SSEED+2,R0
+		ADD	SSEED+4,R0	; 16-bit, deliberately wrapping
+		MOV	SSEED+2,SSEED
+		MOV	SSEED+4,SSEED+2
+		MOV	R0,SSEED+4
+		RETURN
+
+; =========================================================================
+; GAL_START - load the working seed from the galaxy seed.
+; =========================================================================
+GAL_START:	MOV	GSEED,SSEED
+		MOV	GSEED+2,SSEED+2
+		MOV	GSEED+4,SSEED+4
+		MOV	#1,SM_FIRST		; the next SYS_MAKE is system 0
+		RETURN
+
+; GAL_SPECIAL - SetGalaxyData_A for #FE and #FF: every byte of the seed
+; is #5C (the Targons', #FE) or #5D (Raxxla's, #FF), rotated left one
+; place more than the byte before.  In #FF system 0 is RAXXLA.
+GAL_SPECIAL:	MOV	#134,R1
+		CMP	R0,#255.
+		BNE	1$
+		INC	R1
+		INC	RAX_GAL
+1$:		MOV	#GSEED,R2
+		MOV	#6,R3
+2$:		MOVB	R1,(R2)+
+		ASLB	R1
+		ADCB	R1
+		SOB	R3,2$
+		RETURN
+
+RAX_GAL:	.WORD	0		; the seed is Raxxla's galaxy
+SM_FIRST:	.WORD	0		; SYS_MAKE's next is system 0
+RAX_NAME:	.ASCIZ	/RAXXLA/
+		.EVEN
+
+; =========================================================================
+; GAL_NEXT - move on to the next galaxy, round from the last to the
+; first (JumpToGalaxy's goto915).  Clobbers R0..R5.
+; =========================================================================
+GAL_NEXT:	INC	GALNUM
+		CMP	GALNUM,#NGALAXY
+		BLT	GAL_SEEDOF
+		CLR	GALNUM
+
+; GAL_SEEDOF - GSEED from GALNUM; GAL_SEEDN from the galaxy in R0
+; (SetGalaxyData_A): the six bytes from GAL_BASE at bits 5-3, each
+; rotated left bits 2-0 places.  Clobbers R0..R5.
+GAL_SEEDOF:	MOV	GALNUM,R0
+GAL_SEEDN:	CLR	RAX_GAL
+		CMP	R0,#254.		; the Targons' galaxy and Raxxla's:
+		BHIS	GAL_SPECIAL		;   no rotation of the base bytes
+		MOV	R0,R1
+		ASH	#-3,R1
+		BIC	#^C7,R1			; the byte the seed starts on
+		ADD	#GAL_BASE,R1
+		MOV	#GSEED,R2
+		MOV	#6,R3
+1$:		MOVB	(R1)+,(R2)+
+		SOB	R3,1$
+		BIC	#^C7,R0			; and the twist: each BYTE of the
+		BEQ	9$			;   seed rotated left, not the word,
+		MOV	R0,R5			;   which is a different galaxy
+2$:		CALL	GAL_ROT			;   entirely
+		SOB	R5,2$
+9$:		RETURN
+
+; =========================================================================
+; GAL_REACH - CheckCurrentGalaxy: R0 = a galaxy.  C clear if the drive
+; fitted can be pointed at it: the experimental one at any, the
+; military one at three either side of this one inside 0..47, the
+; standard one - which only ever goes to the next - at none, like no
+; drive or a broken one.  Keeps R0; clobbers R1.
+; =========================================================================
+GAL_REACH:	MOVB	P_GALDRIVE,R1
+		BIT	#DEV_OFF,R1		; none, or broken
+		BNE	8$
+		BIC	#^C3,R1
+		BEQ	8$			; the standard one chooses nothing
+		CMP	R1,#2			; the experimental one: anywhere
+		BEQ	7$
+		MOV	GALNUM,R1		; the military one: three either way
+		SUB	#3,R1
+		BGE	1$
+		CLR	R1
+1$:		CMP	R0,R1
+		BLT	8$
+		MOV	GALNUM,R1
+		ADD	#3,R1
+		CMP	R0,R1
+		BGT	8$
+7$:		TST	R0
+		BLT	8$
+		CMP	R0,#NGALAXY
+		BGE	8$
+		CLC
+		RETURN
+8$:		SEC
+		RETURN
+
+; GAL_ROT - rotate the seed on one galaxy.  Clobbers R0..R4.
+GAL_ROT:	MOV	#3,R2
+		MOV	#GSEED,R0
+1$:		MOV	@R0,R1
+		MOV	R1,R3		; low byte
+		BIC	#177400,R3
+		CALL	ROT8
+		MOV	R3,R4
+		MOV	R1,R3		; high byte
+		SWAB	R3
+		BIC	#177400,R3
+		CALL	ROT8
+		SWAB	R3
+		BIS	R4,R3
+		MOV	R3,(R0)+
+		SOB	R2,1$
+		RETURN
+
+; ROT8 - rotate the byte in R3 left one place.
+ROT8:		ASL	R3
+		BIT	#400,R3
+		BEQ	1$
+		BIC	#400,R3
+		BIS	#1,R3
+1$:		RETURN
+
+; =========================================================================
+; SYS_MAKE - read the system the working seed points at into the SYS_*
+; variables, and step the seed on to the next one.  Clobbers R0..R5.
+; =========================================================================
+SYS_MAKE:	MOV	SSEED,SYS_SEED		; the seed this system was made
+		MOV	SSEED+2,SYS_SEED+2	; from, kept: SSEED itself has
+		MOV	SSEED+4,SYS_SEED+4	; moved on by the time anyone
+					; asks, and the species and the
+					; description are read out of it
+		MOV	SSEED+2,R0	; government = bits 5..3 of w1
+		ASH	#-3,R0
+		BIC	#177770,R0
+		MOV	R0,SYS_GOVT
+
+		MOV	SSEED,R0	; economy = the top three bits of w0
+		SWAB	R0
+		BIC	#177770,R0
+		CMP	SYS_GOVT,#1	; anarchies and feudal states are
+		BGT	1$		;   never rich
+		BIS	#2,R0
+1$:		MOV	R0,SYS_ECON
+
+		MOV	SSEED+2,R0	; tech level
+		SWAB	R0
+		BIC	#177774,R0
+		MOV	SYS_ECON,R1
+		MOV	#7,R2
+		XOR	R2,R1		; economy ^ 7
+		ADD	R1,R0
+		MOV	SYS_GOVT,R1
+		ASR	R1
+		ADD	R1,R0
+		MOV	SYS_GOVT,R1
+		BIT	#1,R1
+		BEQ	2$
+		INC	R0
+2$:		MOV	R0,SYS_TECH
+
+		ASL	R0		; population = 4*tech + econ + govt + 1
+		ASL	R0
+		ADD	SYS_ECON,R0
+		ADD	SYS_GOVT,R0
+		INC	R0
+		MOV	R0,SYS_POP
+
+		MOV	SSEED+2,R0	; x from w1's high byte, y from w0's
+		SWAB	R0
+		BIC	#177400,R0
+		MOV	R0,SYS_X
+		MOV	SSEED,R0
+		SWAB	R0
+		BIC	#177400,R0
+		MOV	R0,SYS_Y
+
+		MOV	SSEED+4,R0	; radius
+		SWAB	R0
+		BIC	#177760,R0
+		ADD	#11.,R0
+		SWAB	R0		; * 256
+		ADD	SYS_X,R0
+		MOV	R0,SYS_RADIUS
+
+		; ---- the name: four steps, three or four syllables ------
+		MOV	SSEED,R5	; the long-name flag is bit 6 of w0,
+		BIC	#177677,R5	;   read before the seed moves
+		MOV	#SYS_NAME,R4
+		MOV	#4,R3
+10$:		MOV	SSEED+4,R0
+		SWAB	R0
+		BIC	#177740,R0	; (w2 >> 8) & 31
+		ASL	R0		; two bytes a syllable
+		MOV	R0,-(SP)
+		CALL	TWEAK		; the seed always steps four times
+		MOV	(SP)+,R0
+		CMP	R3,#1		; the fourth syllable only on a long name
+		BNE	11$
+		TST	R5
+		BEQ	12$
+11$:		MOVB	NAMEPAIRS(R0),(R4)+
+		MOVB	NAMEPAIRS+1(R0),(R4)+
+12$:		DEC	R3
+		BGT	10$
+		CLRB	@R4
+		TST	RAX_GAL			; GeneratePlanetName: #FF's first
+		BEQ	13$			;   system is Raxxla
+		TST	SM_FIRST
+		BEQ	13$
+		MOV	#RAX_NAME,R0
+		MOV	#SYS_NAME,R1
+14$:		MOVB	(R0)+,(R1)+
+		BNE	14$
+13$:		CLR	SM_FIRST
+		RETURN
+
+; =========================================================================
+; SYS_SELECT - fill the SYS_* variables for system R0 of this galaxy.
+; =========================================================================
+SYS_SELECT:	MOV	R0,-(SP)
+		CALL	GAL_START
+		MOV	(SP)+,R0
+		INC	R0		; system 0 needs one pass
+1$:		MOV	R0,-(SP)
+		CALL	SYS_MAKE
+		MOV	(SP)+,R0
+		DEC	R0
+		BGT	1$
+		RETURN
+
+; =========================================================================
+; SYS_DISTANCE - the distance from the current system to the one in
+; SYS_X/SYS_Y, in tenths of a light year, in R0.
+;
+; Elite measures with a cheap approximation of the hypotenuse and halves
+; the y axis first, because the chart is drawn twice as wide as it is
+; tall: dist = 4 * sqrt(dx^2 + (dy/2)^2).
+; =========================================================================
+HOME_X:		.WORD	0
+HOME_Y:		.WORD	0
+
+SYS_DISTANCE:	MOV	SYS_X,R0
+		SUB	HOME_X,R0
+		BGE	1$
+		NEG	R0
+1$:		MOV	SYS_Y,R1
+		SUB	HOME_Y,R1
+		BGE	2$
+		NEG	R1
+2$:		ASR	R1		; the chart's y is drawn at half scale
+
+		MOV	R0,R2		; R2:R3 = dx*dx
+		MUL	R0,R2
+		MOV	R2,R4
+		MOV	R3,R5
+		MOV	R1,R2		; R2:R3 = dy*dy
+		MUL	R1,R2
+		ADD	R5,R3		; add the two 32-bit products
+		ADC	R4
+		ADD	R2,R4
+
+		ASR	R4		; >> 2: dx can be 255 and dy 127, so the
+		ROR	R3		;   sum overflows 16 bits - quartering it
+		ASR	R4		;   first keeps ISQRT's operand positive
+		ROR	R3		;   and costs one bit of precision
+		MOV	R3,R0
+		CALL	ISQRT
+		ASL	R0		; undo the quartering: sqrt(4n) = 2*sqrt(n)
+		ASL	R0		; and Elite counts four tenths of a light
+		ASL	R0		;   year to the unit
+		RETURN
+
+; ISQRT - integer square root of R0 (0..32767), bit at a time.
+;
+; The trial bit starts at 4^7, not 2^15: it has to be an even power of
+; two for the method, and 0100000 would be NEGATIVE, so the ASR that
+; walks it down would shift in sign bits and never reach zero.
+ISQRT:		CLR	R1		; the root so far
+		MOV	#40000,R2	; the bit being tried, 4^7
+1$:		MOV	R1,R3
+		ADD	R2,R3
+		CMP	R0,R3
+		BLT	2$
+		SUB	R3,R0
+		ASR	R1
+		ADD	R2,R1
+		BR	3$
+2$:		ASR	R1
+3$:		ASR	R2
+		ASR	R2
+		BNE	1$
+		MOV	R1,R0
+		RETURN
+
+; =========================================================================
+; GAL_JUMP - JumpToGalaxy: the galaxy the chart shows (CHART_GAL) if the
+; drive reaches it and it is not this one, else the next galaxy - and
+; the standard drive is used up.  Then CURSYS = the system of it
+; nearest to HOME_X/HOME_Y, which the caller has set to where the chart
+; cursor was (SearchPlanetNearCursor): a galactic jump is a leap into a
+; strange neighbourhood rather than a move to a known address.  C set
+; with no drive fitted and working, and nothing changed.  Clobbers
+; R0..R5.
+; =========================================================================
+GJ_BESTD:	.WORD	0
+GJ_BESTI:	.WORD	0
+GJ_I:		.WORD	0
+
+GAL_JUMP:	BITB	#DEV_OFF,P_GALDRIVE	; fitted and working
+		BEQ	1$
+		SEC
+		RETURN
+1$:		MOV	CHART_GAL,R0		; the galaxy chosen on the chart,
+		CMP	R0,GALNUM		;   if the drive reaches it ...
+		BEQ	2$
+		CALL	GAL_REACH
+		BCC	GAL_LAND
+2$:		BITB	#3,P_GALDRIVE		; ... else the next one, and the
+		BNE	21$			;   standard drive is used up
+		MOVB	#DEV_NONE,P_GALDRIVE
+21$:		CALL	GAL_NEXT
+		MOV	GALNUM,R0
+
+; GAL_LAND - the rest of a galactic jump, into galaxy R0 whatever took the
+; ship there (the drive, the nova's escape, a portal): the missions and
+; the contracts it ends, and the landing near HOME_X/HOME_Y.  And no
+; interception: Legend rolls for the Targons in JumpToPlanet only, and
+; every galactic jump goes straight to HyperspaceJump (HYP_NOROLL).
+GAL_LAND:	MOV	#1,HYP_NOROLL
+		MOV	R0,GALNUM
+		CALL	GAL_SEEDOF
+		MOV	GALNUM,CHART_GAL
+		CALL	CT_REFUSEALL
+		CALL	GAL_NEAREST
+		CALL	MS_GALAXY		; the missions it ends, the landing
+		CLC				;   known
+		RETURN
+
+; GAL_NEAREST - SearchPlanetNearCursor: CURSYS and SYS_INDEX the system of
+; this galaxy nearest HOME_X/HOME_Y, and HOME_X/HOME_Y its own.  Clobbers
+; R0..R5.
+GAL_NEAREST:
+
+		MOV	#32767.,GJ_BESTD	; find the nearest system to
+		CLR	GJ_BESTI		; where the chart cursor was
+		CALL	GAL_START
+		CLR	GJ_I
+10$:		CALL	SYS_MAKE
+		CALL	SYS_DISTANCE		; measured from HOME_X/HOME_Y
+		CMP	R0,GJ_BESTD
+		BGE	20$
+		MOV	R0,GJ_BESTD
+		MOV	GJ_I,GJ_BESTI
+20$:		INC	GJ_I
+		CMP	GJ_I,#256.
+		BLT	10$
+
+		MOV	GJ_BESTI,R0		; and arrive there
+		MOV	R0,CURSYS
+		MOV	R0,SYS_INDEX
+		CALL	SYS_SELECT
+		MOV	SYS_X,HOME_X
+		MOV	SYS_Y,HOME_Y
+		RETURN

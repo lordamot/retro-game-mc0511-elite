@@ -1,0 +1,117 @@
+; =========================================================================
+; jdrive_fly.mac - the J-drive's frame, in the flight overlay
+; (src/ovl_fly.mac); its state is in src/jdrive.mac, resident.
+; =========================================================================
+
+; JDRIVE_STEP - once a flight frame, before FLY_CONTROLS.  Clobbers
+; everything.
+JDRIVE_STEP:	CLR	JD_SPEED
+		BICB	#DEV_RUN,P_INJECTORS
+		CLR	JD_LOCKED
+		BIT	#KB_JDRIVE,KEYS2
+		BNE	1$
+		CLR	JD_LAST
+		RETURN
+1$:		CALL	JD_MASSLOCK
+		BCC	JD_DRIVE
+		MOV	#1,JD_LOCKED
+		CMP	JD_LAST,#1		; straight off the drive: not yet
+		BEQ	9$
+		MOV	#2,JD_LAST
+		BITB	#DEV_OFF,P_INJECTORS
+		BNE	9$
+		TST	PFUEL
+		BEQ	9$
+		BISB	#DEV_RUN,P_INJECTORS
+		DEC	JD_FUELT
+		BNE	2$
+		MOV	#INJ_FRAMES,JD_FUELT
+		DEC	PFUEL
+2$:		MOV	#INJ_SPEED,JD_SPEED
+		BITB	#1,P_INJECTORS		; the military pair
+		BEQ	9$
+		MOV	#INJ_SPEED_MIL,JD_SPEED
+9$:		RETURN
+
+; the drive itself
+JD_DRIVE:	MOV	#1,JD_LAST
+		CALL	JD_CLEAR
+		BITB	#DEV_OFF,P_FUELCOLL	; the collector
+		BNE	3$
+		DEC	JD_COLLT
+		BNE	3$
+		MOV	#COLL_FRAMES,JD_COLLT
+		CMP	PFUEL,CKV_MAXFUEL
+		BHIS	3$
+		INC	PFUEL
+3$:		MOV	#UNIV,R5		; the bodies and the bays, nearer
+		MOV	#NUNIV,JD_I
+4$:		TST	U.TYPE(R5)
+		BEQ	5$
+		BIT	#UF_PLANET!UF_SUN!UF_DOCK,U.FLAGS(R5)
+		BEQ	5$
+		SUB	#JD_STEP,U.Z(R5)	; 32 bits: the borrow goes up
+		SBC	U.ZH(R5)
+		CMP	U.ZH(R5),#JD_FLOOR	; and not for ever behind you
+		BGE	5$
+		MOV	#JD_FLOOR,U.ZH(R5)
+		CLR	U.Z(R5)
+5$:		ADD	#U.SIZE,R5
+		DEC	JD_I
+		BGT	4$
+		RETURN
+
+; JD_CLEAR - ClearAroundObj: every slot that is not a body or a bay is
+; emptied, and with them the lock.  Clobbers R5, JD_I.
+JD_CLEAR:	CLR	MISS_LOCK
+		MOV	#UNIV,R5
+		MOV	#NUNIV,JD_I
+1$:		BIT	#UF_PLANET!UF_SUN!UF_DOCK,U.FLAGS(R5)
+		BNE	2$
+		CLR	U.TYPE(R5)
+2$:		ADD	#U.SIZE,R5
+		DEC	JD_I
+		BGT	1$
+		RETURN
+
+; JD_MASSLOCK - C set if something in the sky locks the drive.  Clobbers
+; R0..R5, JD_I.
+JD_MASSLOCK:	MOV	#UNIV,R5
+		MOV	#NUNIV,JD_I
+1$:		TST	U.TYPE(R5)
+		BEQ	7$
+		TST	U.EXPL(R5)		; a wreck locks nothing
+		BNE	7$
+		CALL	U_NEAR			; nor does anything past sixteen
+		BCS	7$			;   bits
+		MOV	#JD_BODY,R2
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)
+		BNE	2$
+		MOV	#BASE_U,R2
+		BIT	#UF_DOCK,U.FLAGS(R5)
+		BNE	2$
+		BIT	#UF_DROP,U.FLAGS(R5)	; a drop does not lock it, a rock
+		BNE	7$			;   does, and so does any ship
+		MOV	#JD_LOCK,R2
+2$:		MOV	U.X(R5),R0		; within R2 on every axis?
+		BGE	3$
+		NEG	R0
+3$:		CMP	R0,R2
+		BGE	7$
+		MOV	U.Y(R5),R0
+		BGE	4$
+		NEG	R0
+4$:		CMP	R0,R2
+		BGE	7$
+		MOV	U.Z(R5),R0
+		BGE	5$
+		NEG	R0
+5$:		CMP	R0,R2
+		BGE	7$
+		SEC
+		RETURN
+7$:		ADD	#U.SIZE,R5
+		DEC	JD_I
+		BGT	1$
+		CLC
+		RETURN

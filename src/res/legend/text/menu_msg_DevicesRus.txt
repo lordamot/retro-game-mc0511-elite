@@ -1,0 +1,55 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/Messages/DevicesRus.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+msgFuel+0|ТОПЛИВО
+msgFuel+1|РАКЕТА
+msgFuel+2|ВОЕННАЯ РАКЕТА
+msgFuel+3|ПАССАЖИРСКАЯ КАБИНА
+msgFuel+4|ДОПОЛНИТЕЛЬНЫЙ БАК
+msgFuel+5|РАСШИРЕННЫЙ ДОПОЛНИТЕЛЬНЫЙ БАК
+msgLasers+0|ИМПУЛЬСНЫЙ ЛАЗЕР
+msgLasers+1|ИМПУЛЬСНЫЙ ЛАЗЕР МК-2
+msgLasers+2|ЛУЧЕВОЙ ЛАЗЕР
+msgLasers+3|ЛУЧЕВОЙ ЛАЗЕР МК-2
+msgLasers+4|ВОЕННЫЙ ЛАЗЕР
+msgLasers+5|ЭКСПЕРИМЕНТАЛЬНЫЙ ЛАЗЕР
+msgLasers+6|ЛАЗЕР ТАРГОИДОВ
+msgLasers+7|ТЕХНОЛОГИЧЕСКИЙ ЛАЗЕР
+msgLasers+8|ДОПОЛНИТЕЛЬНЫЙ ГРУЗОВОЙ ОТСЕК
+msgLasers+9|МОДЕРНИЗИРОВАННЫЙ КОМПАС
+msgLasers+10|УСТРОЙСТВО ЦЕЛЕНАВЕДЕНИЯ
+msgLasers+11|АВТОМАТИЧЕСКАЯ СИСТЕМА РЕМОНТА
+msgLasers+12|СИСТЕМА ЖИЗНЕОБЕСПЕЧЕНИЯ ГРУЗОВ
+msgLasers+13|БЛОК НАВИГАЦИИ
+msgLasers+14|ЭКСПЕРИМЕНТАЛЬНЫЙ НАВИГАТОР
+msgLasers+15|ЭНЕРГОБЛОК
+msgLasers+16|ВОЕННЫЙ ЭНЕРГОБЛОК
+msgLasers+17|ЭНЕРГОБЛОК ТАРГОИДОВ
+msgLasers+18|ГИПЕРПРИВОД
+msgLasers+19|ВОЕННЫЙ ГИПЕРПРИВОД
+msgLasers+20|ЭКСПЕРИМЕНТАЛЬНЫЙ ГИПЕРПРИВОД
+msgLasers+21|СИСТЕМА П.Р.О.
+msgLasers+22|ВОЕННАЯ СИСТЕМА П.Р.О.
+msgLasers+23|ТОПЛИВНЫЙ ИНЖЕКТОР
+msgLasers+24|ВОЕННЫЙ ТОПЛИВНЫЙ ИНЖЕКТОР
+msgLasers+25|ЭНЕРГЕТИЧЕСКАЯ БОМБА
+msgLasers+26|КАСКАДНАЯ БОМБА
+msgLasers+27|АВТОАКТИВАЦИЯ П.Р.О.
+msgLasers+28|СИСТЕМА АВТОКАТАПУЛЬТИРОВАНИЯ
+msgLasers+29|АБОРДАЖНАЯ СИСТЕМА
+msgLasers+30|ВОЕННАЯ АБОРДАЖНАЯ СИСТЕМА
+msgLasers+31|ГЕНЕРАТОР ЩИТОВ
+msgLasers+32|ВОЕННЫЕ ЩИТЫ
+msgLasers+33|СИСТЕМА ОХЛАЖДЕНИЯ ЛАЗЕРА
+msgLasers+34|УСТРОЙСТВО МАСКИРОВКИ
+msgLasers+35|КОМПЬЮТЕР ТАРГОНОВ
+msgLasers+36|РУДНЫЙ ПРОЦЕССОР
+msgLasers+37|СПАСАТЕЛЬНАЯ КАПСУЛА
+msgLasers+38|ТОПЛИВНЫЙ КОЛЛЕКТОР
+msgLasers+39|ТОПЛИВОЗАПРАВЩИК/СБОРЩИК ГРУЗОВ
+msgLasers+40|СТЫКОВОЧНЫЙ КОМПЬЮТЕР
+msgLasers+41|СИСТЕМА АВТОСБОРА ГРУЗОВ
+msgLasers+42|СИСТЕМА СБРОСА ГРУЗОВ
+msgLasers+43|ДЕМОНТАЖ ПАССАЖИРСКОЙ КАБИНЫ
+msgLasers+44|РЕМОНТ КОРПУСА КОРАБЛЯ

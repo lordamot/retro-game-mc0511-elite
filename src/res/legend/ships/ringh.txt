@@ -1,0 +1,84 @@
+# d_RingH - extracted from orig/legend by tools/legend_ships.py;
+# object 6 of AdrDataShips, hull d_Ring.
+# `make extract` overwrites it.
+name RINGH
+index 6
+class 0
+speed 0
+energy 240
+bounty 0
+laser 0
+collide 160
+cargo 0
+launch 6
+dot 120
+rating 0
+flags 0
+flags2 0
+laservert 0
+type 7
+objflags 4
+shipnum 0
+radius 250
+vertex  -125  -216     0
+vertex   125  -216     0
+vertex  -125   216     0
+vertex   125   216     0
+vertex  -100  -173   -30
+vertex   100  -173   -30
+vertex  -100   173   -30
+vertex  -100   173    30
+vertex   100   173    30
+vertex   100  -173    30
+vertex  -100  -173    30
+vertex   100   173   -30
+vertex  -200     0   -30
+vertex  -200     0    30
+vertex   200     0    30
+vertex   200     0   -30
+vertex  -250     0     0
+vertex   250     0     0
+edge 0 4 31 1 0
+edge 4 5 31 11 0
+edge 5 1 31 10 0
+edge 1 0 31 8 0
+edge 16 12 31 2 1
+edge 12 4 31 11 1
+edge 0 16 31 9 1
+edge 16 2 31 3 2
+edge 2 6 31 12 2
+edge 6 12 31 11 2
+edge 7 2 31 4 3
+edge 16 13 31 9 3
+edge 13 7 31 7 3
+edge 8 3 31 5 4
+edge 3 2 31 12 4
+edge 7 8 31 7 4
+edge 14 17 31 6 5
+edge 17 3 31 13 5
+edge 8 14 31 7 5
+edge 14 9 31 7 6
+edge 9 1 31 8 6
+edge 1 17 31 10 6
+edge 10 9 31 8 7
+edge 13 10 31 9 7
+edge 10 0 31 9 8
+edge 5 15 31 11 10
+edge 15 17 31 13 10
+edge 6 11 31 12 11
+edge 11 15 31 13 11
+edge 3 11 31 13 12
+normal    0  -36  -52
+normal  -27  -18  -52
+normal  -27   18  -52
+normal  -27   18   52
+normal    0   36   52
+normal   27   18   52
+normal   27  -18   52
+normal    0    0   96
+normal    0  -36   52
+normal  -27  -18   52
+normal   27  -18  -52
+normal    0    0  -96
+normal    0   36  -52
+normal   27   18  -52

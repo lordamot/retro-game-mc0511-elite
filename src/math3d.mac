@@ -1,0 +1,734 @@
+; =========================================================================
+; math3d.mac - the fixed-point 3D pipeline.
+;
+; This is where the УКНЦ pulls ahead of the machines Elite was written
+; for.  The КМ1801ВМ2 has the PDP-11 EIS instructions - MUL, DIV and the
+; 32-bit shift ASHC - so a rotation is a real 16x16 -> 32 multiply with a
+; 32-bit accumulator, where the 6502 and Z80 versions had to approximate.
+; Ships keep their shape as they turn instead of shearing.
+;
+; Fixed point: orientation matrices are Q14 (1.0 = 16384), so the product
+; of two entries is Q28 and comes back with ASHC #-14.  World coordinates
+; are plain signed 16-bit units.
+; =========================================================================
+
+Q1	= 16384.		; 1.0 in Q14
+QSH	= -14.			; brings a Q28 product back to Q14
+
+; ---- the 32-bit accumulator --------------------------------------------
+; The words are still here because cargo.mac and dock.mac total their
+; own three products into them inline; nothing in this module does.
+ACCH:		.WORD	0
+ACCL:		.WORD	0
+
+; There used to be a 32-bit accumulator in memory here - MAC_CLR,
+; MAC_ADD and MAC_Q14, a CALL and three read-modify-writes per product.
+; MATVEC lost it first and was worth 12% of the frame; MAT_TURN, ROT2
+; and MAT_FIX, the last three callers, lost it in the same way, and
+; MAT_TURN went from 1575us a call to about a fifth of that.  Nothing
+; accumulates in memory any more, so the three routines are gone.
+;
+; Q28 -> Q14 is done by shifting the 32-bit pair LEFT by two and taking
+; the high word, which is the same sixteen bits ASHC #-14 leaves in the
+; low one: bits 14..29 of the product.  ASHC is a shift loop on this CPU
+; and costs by the bit - 23us against 6us for the four shifts.
+
+; =========================================================================
+; MATVEC - rotate the three-word vector at R4 by the 3x3 Q14 matrix at
+; R5, leaving x,y,z in VOUT.  The matrix is row-major:
+;
+;   x' = (m0*x + m1*y + m2*z) >> 14
+;   y' = (m3*x + m4*y + m5*z) >> 14
+;   z' = (m6*x + m7*y + m8*z) >> 14
+;
+; Clobbers R0..R5.
+; =========================================================================
+VOUT:		.WORD	0,0,0
+MV_SRC:		.WORD	0
+MV_MAT:		.WORD	0
+MV_ROW:		.WORD	0
+MV_CNT:		.WORD	0
+
+; Every row is written out, and so is every one of the nine products:
+; this is the hottest arithmetic in the program - nine of them per
+; vertex, per vertex, every frame - and the loop, the call and above all
+; the accumulator cost more than the multiplies did.
+;
+; The 32-bit total lives in R0:R1 rather than in ACCH:ACCL, so the three
+; instructions that take a product up - ADD, ADC, ADD - are
+; register-to-register instead of three read-modify-writes of memory,
+; and the shift back to Q14 is four single-bit shifts in place of a call
+; to MAC_Q14.  ASHC is a shift LOOP on this CPU and costs by the bit:
+; #-14 was measured at 23us against 6us for shifting the pair LEFT by two
+; and taking R0, which leaves exactly the same sixteen bits - bits 14..29
+; of the product.
+; R2 must stay EVEN for MUL to leave the full 32 bits in R2:R3, and R0
+; must stay even for ASHC to shift the pair; R4 walks the vector and is
+; wound back six bytes between rows, R5 walks straight down the matrix.
+;
+; The cursors MV_SRC and MV_MAT are gone with the loop; MATVEC_T below
+; still keeps its own.
+MATVEC:		MOV	(R5)+,R0		; first product starts the sum
+		MOV	(R4)+,R1
+		MUL	R1,R0
+		MOV	(R5)+,R2		; m1 * y
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		MOV	(R5)+,R2		; m2 * z
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		ASL	R1			; the Q28 total back to Q14
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		MOV	R0,VOUT
+		SUB	#6,R4			; back to the head of the vector
+
+		MOV	(R5)+,R0		; first product starts the sum
+		MOV	(R4)+,R1
+		MUL	R1,R0
+		MOV	(R5)+,R2		; m4 * y
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		MOV	(R5)+,R2		; m5 * z
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		ASL	R1			; the Q28 total back to Q14
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		MOV	R0,VOUT+2
+		SUB	#6,R4			; back to the head of the vector
+
+		MOV	(R5)+,R0		; first product starts the sum
+		MOV	(R4)+,R1
+		MUL	R1,R0
+		MOV	(R5)+,R2		; m7 * y
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		MOV	(R5)+,R2		; m8 * z
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		ASL	R1			; the Q28 total back to Q14
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		MOV	R0,VOUT+4
+
+		RETURN
+
+; =========================================================================
+; MV4SUM - dot product for a vector already four times over, as the
+; hull bank keeps its vertices (tools/ships_gen.py). The 32-bit total of
+; each row is then the Q14 answer in its HIGH word, and the four shifts a
+; row that MATVEC spends taking it there are not needed.  The same
+; sixteen bits either way - bits 14..29 of the total - so a hull drawn
+; through here is drawn exactly as it was. Result in R0; clobbers R0..R5.
+; =========================================================================
+.MACRO	MV4SUM
+		MOV	(R5)+,R0		; first product starts the sum
+		MOV	(R4)+,R1
+		MUL	R1,R0
+		MOV	(R5)+,R2
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		MOV	(R5)+,R2
+		MOV	(R4)+,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+.ENDM
+; VERT_PROJECT - hull vertex at R4, matrix at R5, SD_X/Y/Z translation.
+; Same wrapped Q14 transform and signed division as the former
+; MATVEC4 + PROJECT sequence; shared by hull edges and NPC beam muzzles.
+; Returns screen x/y in R0/R1, C clear; C set if near/overflow rejects it.
+; Clobbers R0..R5, leaves VOUT/PX/PY untouched, balances SP on every exit.
+; Z first avoids two row products when the vertex is behind the near plane.
+VERT_PROJECT:	ADD	#12.,R5
+		MV4SUM
+		ADD	SD_Z,R0
+		CMP	R0,#ZNEAR
+		BLT	9$
+		MOV	R0,-(SP)		; divisor, live across both rows
+		SUB	#18.,R5			; back to matrix row x
+		SUB	#6,R4
+		MV4SUM
+		ADD	SD_X,R0
+		MOV	#PROJ_DX,R2
+		MUL	R0,R2
+		MOV	(SP),R0
+		DIV	R0,R2
+		BVS	8$
+		ADD	#VIEW_XC,R2
+		MOV	R2,-(SP)		; projected x while y uses the registers
+		SUB	#6,R4
+		MV4SUM
+		ADD	SD_Y,R0
+		MOV	#PROJ_D,R2
+		MUL	R0,R2
+		MOV	2(SP),R0
+		DIV	R0,R2
+		BVS	7$
+		MOV	#VIEW_YC,R1
+		SUB	R2,R1
+		MOV	(SP)+,R0
+		TST	(SP)+
+		CLC
+		RETURN
+7$:		TST	(SP)+
+8$:		TST	(SP)+
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; MATVEC_T - rotate the three-word vector at R4 by the TRANSPOSE of the
+; 3x3 Q14 matrix at R5, leaving x,y,z in VOUT.
+;
+;   x' = (m0*x + m3*y + m6*z) >> 14
+;   y' = (m1*x + m4*y + m7*z) >> 14
+;   z' = (m2*x + m5*y + m8*z) >> 14
+;
+; A ship's matrix takes model space into camera space, so its transpose
+; takes camera space back into model space - and for an orthonormal
+; matrix the transpose costs nothing at all, being the same nine words
+; read down the columns instead of along the rows.  That is what lets
+; the backface test rotate ONE vector (the hull's centre) instead of
+; every face normal: three products a face rather than twelve.
+;
+; Clobbers R0..R5.
+; =========================================================================
+; Written out the same way MATVEC is, and for the same reason: the
+; total lives in R0:R1 instead of in memory.  The columns are reached by
+; indexed addressing off the matrix base - m[r][c] is at 6r+2c - so R5
+; never has to be walked down and wound back, and R4 stays on the head
+; of the vector throughout.
+MATVEC_T:	MOV	0(R5),R0		; first product starts the sum
+		MOV	0(R4),R1
+		MUL	R1,R0
+		MOV	6(R5),R2		; m3 * y
+		MOV	2(R4),R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		MOV	14(R5),R2		; m6 * z
+		MOV	4(R4),R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		ASL	R1			; the Q28 total back to Q14
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		MOV	R0,VOUT
+
+		MOV	2(R5),R0		; first product starts the sum
+		MOV	0(R4),R1
+		MUL	R1,R0
+		MOV	10(R5),R2		; m4 * y
+		MOV	2(R4),R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		MOV	16(R5),R2		; m7 * z
+		MOV	4(R4),R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		ASL	R1			; the Q28 total back to Q14
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		MOV	R0,VOUT+2
+
+		MOV	4(R5),R0		; first product starts the sum
+		MOV	0(R4),R1
+		MUL	R1,R0
+		MOV	12(R5),R2		; m5 * y
+		MOV	2(R4),R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		MOV	20(R5),R2		; m8 * z
+		MOV	4(R4),R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+		ASL	R1			; the Q28 total back to Q14
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		MOV	R0,VOUT+4
+		RETURN
+
+; =========================================================================
+; PROJECT - perspective-project the camera-space point R0 = x, R1 = y,
+; R2 = z into PX, PY.  Returns C set when the point cannot be drawn
+; (behind the eye, or so close that the division overflows).
+; Clobbers R0..R5: the three operands are kept in registers rather than
+; in PZ/PXT/PYT, which is three writes and three reads a vertex saved,
+; and every caller reloads what it needs afterwards.
+;
+; The УКНЦ's 640x288 pixels are tall and narrow - about 0.6 as wide as
+; high - so x is stretched by 5/3, otherwise every ship would look
+; squashed and the planet would be an egg.
+; =========================================================================
+PX:		.WORD	0
+PY:		.WORD	0
+
+ZNEAR	= 24.
+PROJ_D	= 384.			; focal length, in pixels
+PROJ_DX	= 640.			; and the same for x with the 5/3 aspect
+				; stretch already in it: 384 * 5 / 3
+
+PROJECT:	CMP	R2,#ZNEAR
+		BLT	9$			; behind the eye or too close
+		MOV	R2,R5			; z, the divisor for both
+		MOV	R1,R4			; y, held while x is worked out
+		MOV	R0,R3			; x
+
+		MOV	#PROJ_DX,R2		; x * D * 5/3 / z, in one go: the
+		MUL	R3,R2			; aspect stretch is a constant and
+		DIV	R5,R2			; folds into the focal length, so
+		BVS	9$			; this is one multiply and one
+		ADD	#VIEW_XC,R2		; divide a vertex instead of two of
+		MOV	R2,PX			; each - and it rounds once rather
+					; than twice
+		MOV	#PROJ_D,R2		; y * D / z, y growing downward
+		MOV	R4,R3
+		MUL	R3,R2
+		DIV	R5,R2
+		BVS	9$
+		MOV	#VIEW_YC,R3
+		SUB	R2,R3
+		MOV	R3,PY
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; MAT_IDENT - load the 3x3 matrix at R5 with the identity.
+; =========================================================================
+MAT_IDENT:	MOV	R5,R0
+		MOV	#9.,R1
+1$:		CLR	(R0)+
+		SOB	R1,1$
+		MOV	#Q1,@R5
+		MOV	#Q1,10(R5)		; offset 8. = element m4
+		MOV	#Q1,20(R5)		; offset 16. = element m8
+		RETURN
+
+; SHEAR - one shear of ROT2's three: DST -= or += (COEF * SRC) >> 14,
+; with SRC and DST registers holding the addresses and COEF the Q14
+; coefficient in memory.  Touches R2 and R3 only.
+.MACRO	SHEAR	SRC, COEF, DST, OP
+		MOV	@SRC,R2
+		MOV	COEF,R3
+		MUL	R3,R2			; R2:R3 = the product
+		ADD	#20000,R3		; round: half a unit of Q14 ...
+		ADC	R2
+		ASL	R3			; ... then Q28 -> Q14 on the pair
+		ROL	R2
+		ASL	R3
+		ROL	R2
+		OP	R2,@DST
+.ENDM
+
+; SHEAR32 - the same on a 32-bit pair: DST(32) OP= (COEF * SRC(32)) >> 14,
+; rounded.  SRC and DST are registers holding the address of the LOW
+; word; the high word is U.HI bytes on, which is how a slot keeps its
+; position (defs.mac).  CARRY is ADC for an ADD and SBC for a SUB.
+;
+; c*b for a 32-bit b = bh:bl is (c*bh) << 16 + c*bl with bl UNSIGNED, and
+; MUL is signed: so the low product gets c << 16 added back when bl had
+; its top bit set.  Then (c*b) >> 14 = (c*bl) >> 14 + (c*bh) << 2: the
+; first fits sixteen bits because the coefficients are small (sin and
+; tan/2 of the stick's angle, under 2^11 in Q14), the second is exact
+; in thirty-two.  Twelve instructions more than SHEAR; only positions
+; pay it, and only for the commander's turn.
+.MACRO	SHEAR32	SRC, COEF, DST, OP, CARRY, ?L
+		MOV	U.HI(SRC),R2		; bh
+		MOV	COEF,R3
+		MUL	R3,R2			; R2:R3 = c*bh
+		ASL	R3			; << 2
+		ROL	R2
+		ASL	R3
+		ROL	R2
+		MOV	R2,-(SP)		; the high part's contribution
+		MOV	R3,-(SP)
+		MOV	@SRC,R2			; bl, as MUL sees it: signed
+		MOV	COEF,R3
+		MUL	R3,R2
+		TST	@SRC
+		BPL	L			; (a generated label: `.+4` skipped
+		ADD	COEF,R2			;   into the middle of this two-word
+L:		ADD	#20000,R3		;   ADD, and a turn crashed the game)
+					; bl was unsigned: + c << 16; round
+		ADC	R2
+		ASL	R3			; (c*bl) >> 14, in R2
+		ROL	R2
+		ASL	R3
+		ROL	R2
+		MOV	R2,R3			; the delta, sign-extended ...
+		SXT	R2
+		ADD	(SP)+,R3		; ... plus the high contribution
+		ADC	R2
+		ADD	(SP)+,R2
+		OP	R3,@DST			; DST OP= delta, all 32 bits
+		CARRY	U.HI(DST)
+		OP	R2,U.HI(DST)
+.ENDM
+
+; =========================================================================
+; MAT_TURN - rotate the matrix at R5 about one axis by the angle in R0
+; (Q14, so 16384 would be a whole radian - the game uses a few hundred).
+; R1 picks the plane: 0 = roll (x,y), 2 = pitch (y,z), 4 = yaw (x,z).
+;
+; Each pair of the three goes through ROT2, which turns it exactly - see
+; there for the small-angle form this used to be, and what it cost.
+; The flight matrices are not renormalised, and with the turn exact and
+; its products rounded they do not need to be.  (MAT_FIX, a Newton step
+; back onto the unit sphere, kept the title's Cobra round until the
+; title became Legend's logo in 2026-09-25, and went with it.)
+; Clobbers R0..R5.
+; =========================================================================
+
+; Two entries, and the difference between them is the whole of which
+; way a hull is drawn.  The drawing computes camera = M.v, so a COLUMN
+; of M is one of the ship's own axes seen from the cockpit.
+;
+;   MAT_TURN   mixes two columns inside every row: M' = M.R, the ship
+;              turning about its OWN axis - the station's spin, the
+;              title Cobra, a ship rolling.
+;   MAT_TURN_R mixes two rows, column by column: M' = R.M, every axis
+;              vector turned by the same R the positions get - which is
+;              what the COMMANDER's roll and pitch have to do to a ship.
+;
+; The commander's turn used MAT_TURN, and so turned every hull about its
+; own axis instead of about the cockpit's: a ship with any orientation of
+; its own was drawn heading somewhere other than where it flew, by twice
+; the commander's turn.  Identity-oriented hulls hid it, and a station
+; faced head on (its spin and the roll share an axis) hid it too, which is
+; how docking kept working.
+
+; Both entries take R0 = k and work sin k and tan k/2 out once, for the
+; three pairs; the _P entries take them ready-made in RT_S and RT_T,
+; which is what UNIV_STEP does, once a frame for the whole sky, rather
+; than once a ship.
+MAT_TURN:	CALL	TURN_SET
+MAT_TURN_P:	MOV	#6,R0			; bytes between row pairs
+		MOV	#2,R2			; bytes between columns
+		BR	MT_GO
+MAT_TURN_R:	CALL	TURN_SET
+MAT_TURN_RP:	MOV	#2,R0			; bytes between column pairs
+		MOV	#6,R2			; bytes between rows
+MT_GO:		MOV	R5,R4
+		CMP	R1,#2
+		BEQ	20$
+		BGT	30$
+		ADD	R2,R5			; roll: x, y
+		BR	40$
+20$:		ADD	R2,R4			; pitch: y, z
+30$:		ASL	R2			; yaw: x, z (leave R4 at x)
+		ADD	R2,R5
+40$:		MOV	R0,R1			; step, preserved by SHEAR
+		MOV	#3,R0			; three pairs, also preserved
+50$:		SHEAR	R5, RT_T, R4, SUB
+		SHEAR	R4, RT_S, R5, ADD
+		SHEAR	R5, RT_T, R4, SUB
+		ADD	R1,R4
+		ADD	R1,R5
+		SOB	R0,50$
+		RETURN
+
+; =========================================================================
+; ROT2 - turn one pair of words: given R0 = &a and R1 = &b, and TURN_SET
+; called for the angle,
+;
+;     a  -= t*b        b  += s*a        a  -= t*b
+;
+; with t = tan(k/2) and s = sin k - three shears, which compose to the
+; rotation by k EXACTLY, and each of which is one multiply.
+;
+; It used to be the small-angle form a' = a - k*b, b' = b + k*a, which
+; is a rotation only to first order: every application multiplies the
+; pair by sqrt(1 + k*k), and at the stick's full deflection k is 0.122
+; radians, so a hard turn grew every distance in the sky by 0.74% a
+; FRAME.  A world at 28000 had gone past 32767 after about forty
+; frames of pitching, at which point its coordinates wrapped, the sun
+; and the world were no longer twenty degrees apart, and the sun sat
+; wherever the wrap had dropped it.  Renormalising was no answer: a
+; position vector cannot be renormalised at all, because nothing
+; remembers what its length was.
+;
+; Each product is ROUNDED before the shift down, not truncated: three
+; floors a pair a frame is a bias of a unit and a half a frame, which on
+; a Q14 matrix is nine percent in a hundred seconds of turning.
+; Clobbers R0..R5.
+; =========================================================================
+RT_S:		.WORD	0		; sin k, Q14
+RT_T:		.WORD	0		; tan k/2, Q14
+
+
+ROT2:		MOV	R0,R4			; &a
+		MOV	R1,R5			; &b
+		SHEAR	R5, RT_T, R4, SUB	; a -= t*b
+		SHEAR	R4, RT_S, R5, ADD	; b += s*a
+		SHEAR	R5, RT_T, R4, SUB	; a -= t*b
+		RETURN
+
+; ROT2L - ROT2 on a pair of 32-bit words: R0 = &a, R1 = &b, low words,
+; with the high words U.HI on.  The same three shears, so the same
+; exactness.  Clobbers R0..R5.
+ROT2L:		MOV	R0,R4
+		MOV	R1,R5
+		SHEAR32	R5, RT_T, R4, SUB, SBC	; a -= t*b
+		SHEAR32	R4, RT_S, R5, ADD, ADC	; b += s*a
+		SHEAR32	R5, RT_T, R4, SUB, SBC	; a -= t*b
+		RETURN
+
+; =========================================================================
+; TURN_SET - R0 = k, an angle in Q14: leave sin k in RT_S and tan k/2 in
+; RT_T for ROT2.  The series are good to a radian; the game's largest k
+; is 2000, an eighth of that.  Preserves R1 and R5.
+; =========================================================================
+TURN_SET:	MOV	R0,R2
+		MOV	R0,R3
+		MUL	R3,R2			; R2:R3 = k*k
+		ASL	R3
+		ROL	R2
+		ASL	R3
+		ROL	R2			; R2 = k*k, Q14
+		MOV	R0,R3
+		MUL	R3,R2			; R2:R3 = k*k*k, Q28
+		ASL	R3
+		ROL	R2
+		ASL	R3
+		ROL	R2			; R2 = k^3, Q14
+		MOV	R2,R4
+		MOV	R4,R3			; sets N for the SXT
+		SXT	R2
+		DIV	#6,R2			; k^3 / 6
+		MOV	R0,RT_S
+		SUB	R2,RT_S			; s = k - k^3/6
+		MOV	R4,R3
+		SXT	R2
+		DIV	#24.,R2			; k^3 / 24
+		MOV	R0,R3
+		ASR	R3			; k/2
+		ADD	R2,R3
+		MOV	R3,RT_T			; t = k/2 + k^3/24
+		RETURN
+
+; =========================================================================
+; VEC_TURN - turn the three-word vector at R5 by the angle R0 (Q14) in
+; the plane R1 picks: 0 = roll (x,y), 2 = pitch (y,z), 4 = yaw (x,z).
+; Clobbers R0..R5.
+; =========================================================================
+VT_V:		.WORD	0
+VT_IA:		.WORD	0
+VT_IB:		.WORD	0
+
+VEC_TURN:	CALL	TURN_SET
+VEC_TURN_P:	MOV	R5,VT_V
+		CMP	R1,#2
+		BEQ	20$
+		BGT	30$
+		MOV	#0,VT_IA
+		MOV	#2,VT_IB
+		BR	40$
+20$:		MOV	#2,VT_IA
+		MOV	#4,VT_IB
+		BR	40$
+30$:		MOV	#0,VT_IA
+		MOV	#4,VT_IB
+40$:		MOV	VT_V,R0
+		ADD	VT_IA,R0
+		MOV	VT_V,R1
+		ADD	VT_IB,R1
+		JMP	ROT2
+
+; VEC_TURN32_P - the same for a slot's POSITION: R5 = the slot, R1 the
+; plane, RT_S/RT_T set.  The low words sit at U.X/U.Y/U.Z two bytes
+; apart, as VEC_TURN expects, and ROT2L finds the high ones.
+VEC_TURN32_P:	ADD	#U.X,R5
+		MOV	R5,VT_V
+		CMP	R1,#2
+		BEQ	20$
+		BGT	30$
+		MOV	#0,VT_IA
+		MOV	#2,VT_IB
+		BR	40$
+20$:		MOV	#2,VT_IA
+		MOV	#4,VT_IB
+		BR	40$
+30$:		MOV	#0,VT_IA
+		MOV	#4,VT_IB
+40$:		MOV	VT_V,R0
+		ADD	VT_IA,R0
+		MOV	VT_V,R1
+		ADD	VT_IB,R1
+		JMP	ROT2L
+
+; =========================================================================
+; U_NEAR - R5 = a slot: C clear when all three of its coordinates fit in
+; sixteen bits, so that the low words U.X/U.Y/U.Z are the whole truth
+; and every 16-bit test in the game may use them; C set when it is
+; further off than that in some direction.  Nothing in the game reacts
+; to a ship beyond 32767 units except the frame's own motion, the
+; scanner (which shows nothing that far) and the compass (which uses
+; POS_NARROW): so a FAR ship is simply left alone.  Clobbers R0, R1.
+; =========================================================================
+U_NEAR:		MOV	U.X(R5),R0
+		SXT	R1
+		CMP	R1,U.XH(R5)
+		BNE	9$
+		MOV	U.Y(R5),R0
+		SXT	R1
+		CMP	R1,U.YH(R5)
+		BNE	9$
+		MOV	U.Z(R5),R0
+		SXT	R1
+		CMP	R1,U.ZH(R5)
+		BNE	9$
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; U_NEAR4 / U_NEAR1 - the same for a slot in R4 / R1.  Clobbers R0, R2.
+U_NEAR4:	MOV	U.X(R4),R0
+		SXT	R2
+		CMP	R2,U.XH(R4)
+		BNE	9$
+		MOV	U.Y(R4),R0
+		SXT	R2
+		CMP	R2,U.YH(R4)
+		BNE	9$
+		MOV	U.Z(R4),R0
+		SXT	R2
+		CMP	R2,U.ZH(R4)
+		BNE	9$
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+U_NEAR1:	MOV	U.X(R1),R0
+		SXT	R2
+		CMP	R2,U.XH(R1)
+		BNE	9$
+		MOV	U.Y(R1),R0
+		SXT	R2
+		CMP	R2,U.YH(R1)
+		BNE	9$
+		MOV	U.Z(R1),R0
+		SXT	R2
+		CMP	R2,U.ZH(R1)
+		BNE	9$
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; U_SXT - R5 = a slot whose low words were just written as 16-bit
+; numbers: make the high words agree.  Every routine that moves a NEAR
+; ship with 16-bit arithmetic - the AI's approach, a missile's chase, a
+; collision's push, the docking computer - ends with this, so that the
+; 32-bit position is whole again.  Preserves R0..R5.
+; U_SXT4 is the same for R4.
+; =========================================================================
+U_SXT:		MOV	R0,-(SP)
+		MOV	U.X(R5),R0
+		SXT	R0
+		MOV	R0,U.XH(R5)
+		MOV	U.Y(R5),R0
+		SXT	R0
+		MOV	R0,U.YH(R5)
+		MOV	U.Z(R5),R0
+		SXT	R0
+		MOV	R0,U.ZH(R5)
+		MOV	(SP)+,R0
+		RETURN
+
+U_SXT4:		MOV	R0,-(SP)
+		MOV	U.X(R4),R0
+		SXT	R0
+		MOV	R0,U.XH(R4)
+		MOV	U.Y(R4),R0
+		SXT	R0
+		MOV	R0,U.YH(R4)
+		MOV	U.Z(R4),R0
+		SXT	R0
+		MOV	R0,U.ZH(R4)
+		MOV	(SP)+,R0
+		RETURN
+
+; =========================================================================
+; POS_NARROW - R5 = a slot: its position brought into sixteen bits for
+; the renderer.  PN_X/PN_Y/PN_Z come back as the three low words of the
+; position shifted right, all by the same PN_SH, the smallest shift
+; that makes every one of them fit.  A near object costs three compares
+; and no shift; a far one is a direction and a distance the projection
+; divides anyway, and everything that consumes the narrowed vector -
+; PROJECT, the face test, the cone, the compass - is scale-free.  What
+; is NOT scale-free (a radius divided by z) reads PN_SH.  Clobbers
+; R0..R2.
+; =========================================================================
+PN_X:		.WORD	0,0		; low, high
+PN_Y:		.WORD	0,0
+PN_Z:		.WORD	0,0
+PN_SH:		.WORD	0
+
+POS_NARROW:	MOV	U.X(R5),PN_X
+		MOV	U.XH(R5),PN_X+2
+		MOV	U.Y(R5),PN_Y
+		MOV	U.YH(R5),PN_Y+2
+		MOV	U.Z(R5),PN_Z
+		MOV	U.ZH(R5),PN_Z+2
+		CLR	PN_SH
+1$:		MOV	#PN_X,R2
+		MOV	#3,R0
+2$:		MOV	(R2)+,R1		; low
+		SXT	R1			; what the high word would be
+		CMP	R1,(R2)+		;   if it fits
+		BNE	5$
+		SOB	R0,2$
+		RETURN
+5$:		ASR	PN_X+2			; halve all three, and again
+		ROR	PN_X
+		ASR	PN_Y+2
+		ROR	PN_Y
+		ASR	PN_Z+2
+		ROR	PN_Z
+		INC	PN_SH
+		BR	1$

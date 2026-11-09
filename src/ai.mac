@@ -1,0 +1,770 @@
+; =========================================================================
+; ai.mac - what the ships have on their minds, and who turns up, as Elite
+; Legend has it.
+;
+; This is Legend's INCLUDE/Engine/eObjMove.a80, eObjMoveAI.a80 and
+; eObjSetRndShip.a80 written for the port's slots (src/defs.mac, "The
+; rest of Legend's object record") and the port's 3D: a ship steers by
+; turning its own matrix (MAT_TURN) and flies along its nose
+; (UNIV_STEP), where Legend shears its three axis vectors a byte at a
+; time.  Each routine names the one it transliterates.  Where the port
+; already had a rule of Legend's in another module - a missile's chase,
+; an ECM's answer, a wreck's cargo, a collision - that module keeps it
+; and this one does not repeat it.
+;
+; The frame, per ship, is Legend's MoveAllObjects: on an odd counter it
+; chases its target (OBJ_CHASE), on an even one it reacts to you one
+; frame in four (OBJ_REACT); then its turn and throttle are applied
+; (OBJ_MOVE).  After every ship, MoveAllObjAI (AI_DECIDE) counts each
+; fighter's counter down and, at zero, has it shoot at a target in
+; range, pick a new one, or leave by hyperspace.
+;
+; The frame's half of this - AI_STEP and everything it calls, the
+; launches, SPAWN_TICK - is src/ai_fly.mac, in the flight overlay; what
+; stays here is the state, AI_SCAN, the spawner and SLOT_MIND, which a
+; launch or a jump reaches from outside the frame.
+;
+; Numbers are Legend's in the port's units: a sixteen-bit coordinate is
+; one to one (a collision distance is the same byte), see defs.mac.
+; =========================================================================
+
+AI_P:		.WORD	0		; the slot being worked on
+AI_I:		.WORD	0		; its index
+AI_SELF:	.WORD	0		; and its index plus one, which is how a
+				;   target names it
+AI_ATPL:	.WORD	0		; OBJ_STEER: 1 when the direction is yours
+AI_MASK:	.WORD	0
+FRAME_SET:	.WORD	1		; FrameSetObj: the frame the next ship is
+				;   born into, 1..3.  Ships of one frame do
+				;   not fight each other; 0 is the police's
+				;   and 3 the Targons'
+NACTIVE:	.WORD	0		; nActiveObj: ships under way, the drops,
+				;   the rocks and the bays aside
+PIRATE_FLAG:	.WORD	0		; PlayerPirate: a hostile trader or
+				;   policeman is in the sky, so everyone is
+AGGRESSOR:	.WORD	0		; PlayerAggressor: you shot someone who was
+				;   not a pirate - or arrived with a record
+MISS_OUT:	.WORD	0		; a missile of yours is in flight
+STN_NEAR:	.WORD	0		; the station's slot+1 while it is within
+				;   sixteen bits, else 0
+OBJ_SLOTS:	.BLKW	18.		; FindTypeObjSlot: a word pair per kind
+				;   0..7 and one for the drops: a slot+1 in
+				;   the low byte with its AI byte in the
+				;   high, then how many
+OS_DROPS = 8.*4
+ST_D:		.WORD	0,0,0		; the direction being steered to, in your
+ST_S:		.WORD	0,0,0		;   frame; and in the ship's own: side,
+				;   roof, nose
+ST_L:		.WORD	0		; its length, near enough
+ST_DIST:	.WORD	0		; and the distance it was, /512
+SP_TYPE:	.WORD	0
+SP_X:		.WORD	0
+SP_B:		.WORD	0
+SP_C:		.WORD	0
+SP_E:		.WORD	0
+SP_N:		.WORD	0
+SP_CONTRA:	.WORD	0
+NT_BITS:	.WORD	0
+TA_KIND:	.WORD	0
+TA_I:		.WORD	0
+TA_LEFT:		.WORD	0
+TA_T:		.WORD	0
+LA_WHAT:	.WORD	0
+SM_KIND:	.WORD	0
+
+; =========================================================================
+; AI_SCAN - the sky at a glance, before the frame: FindTypeObjSlot's
+; table, nActiveObj, whether the station is here, whether a missile of
+; yours is out, and PlayerPirate.  Clobbers R0..R5.
+; =========================================================================
+AI_SCAN:	CLR	NACTIVE
+		CLR	STN_NEAR
+		CLR	MISS_OUT
+		CLR	PIRATE_FLAG
+		MOV	#OBJ_SLOTS,R0
+		MOV	#18.,R1
+1$:		CLR	(R0)+
+		SOB	R1,1$
+		MOV	#UNIV,R5
+		CLR	R1
+10$:		TST	U.TYPE(R5)
+		BEQ	80$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)
+		BNE	80$
+		TST	U.EXPL(R5)
+		BNE	80$
+		BIT	#UF_MISSILE,U.FLAGS(R5)
+		BEQ	11$
+		BIT	#UF_HOSTILE,U.FLAGS(R5)	; a missile that is not hostile
+		BNE	20$			;   is yours
+		INC	MISS_OUT
+		BR	20$
+11$:		BIT	#UF_STATION,U.FLAGS(R5)
+		BEQ	13$
+		MOV	R1,-(SP)
+		CALL	U_NEAR
+		MOV	(SP)+,R1
+		BCS	20$
+		MOV	R1,STN_NEAR
+		INC	STN_NEAR
+		BR	20$
+13$:		BIT	#UF_DOCK!UF_DERELICT,U.FLAGS(R5)
+		BNE	20$
+		INC	NACTIVE
+		BIT	#UF_HOSTILE,U.FLAGS(R5)
+		BEQ	20$
+		BITB	#F2_LAWBITS,U.FL2(R5)	; a trader or a policeman that is
+		BEQ	20$			;   angry makes everyone angry
+		MOV	#1,PIRATE_FLAG
+20$:		MOV	#OS_DROPS,R2		; the table, by kind
+		BIT	#UF_DROP,U.FLAGS(R5)
+		BNE	21$
+		MOVB	U.TYP(R5),R2
+		BIC	#^C7,R2
+		ASL	R2
+		ASL	R2
+21$:		ADD	#OBJ_SLOTS,R2
+		MOV	R1,R0
+		INC	R0
+		MOV	R0,(R2)
+		MOVB	U.AIF(R5),1(R2)
+		INC	2(R2)
+80$:		ADD	#U.SIZE,R5
+		INC	R1
+		CMP	R1,#NUNIV
+		BLT	10$
+		RETURN
+
+; SLOT_OF - R0 = a slot+1: R4 = its address.  Clobbers R1.
+SLOT_OF:	MOV	R0,R1
+		DEC	R1
+		MUL	#U.SIZE,R1		; R1 is ODD: the low word only
+		ADD	#UNIV,R1
+		MOV	R1,R4
+		RETURN
+
+; NEAR_BOX - R5 = a slot within sixteen bits: C set if it is inside R2
+; on x and y and R3 on z.  Clobbers R0.
+NEAR_BOX:	MOV	U.X(R5),R0
+		BGE	1$
+		NEG	R0
+1$:		CMP	R0,R2
+		BHIS	8$
+		MOV	U.Y(R5),R0
+		BGE	2$
+		NEG	R0
+2$:		CMP	R0,R2
+		BHIS	8$
+		MOV	U.Z(R5),R0
+		BGE	3$
+		NEG	R0
+3$:		CMP	R0,R3
+		BHIS	8$
+		SEC
+		RETURN
+8$:		CLC
+		RETURN
+
+; AI_RND - a random byte in R0, with R5 kept.  Clobbers R1..R3.
+AI_RND:		MOV	R5,-(SP)
+		CALL	RND_BYTE
+		MOV	(SP)+,R5
+		RETURN
+
+; =========================================================================
+; SHIP_HURT - R5 = a ship you have just hit and not killed (FireLaser's
+; goto603..605, and a missile's).  It is hostile now; if it was not a
+; pirate you are an aggressor; you are its first target; and its faith
+; in its hull drops by fourteen, to six or seven at the last.  A drop
+; minds nothing.  Preserves R5.
+; =========================================================================
+SHIP_HURT:	BIT	#UF_DROP!UF_DOCK,U.FLAGS(R5)
+		BNE	9$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+		BITB	#AI_PIRATE,U.AIF(R5)
+		BNE	1$
+		MOV	#1,AGGRESSOR
+1$:		MOV	U.TARGET(R5),R0
+		BEQ	2$
+		MOV	R0,U.TGT1(R5)
+		CLR	U.TARGET(R5)
+2$:		MOVB	U.FL3(R5),R0
+		MOV	R0,R1
+		BIC	#^C177,R0
+		SUB	#14.,R0
+		BGE	3$
+		ADD	#14.,R0
+		BIC	#^C1,R0
+		ADD	#6,R0
+3$:		BIC	#177,R1
+		BIS	R0,R1
+		MOVB	R1,U.FL3(R5)
+9$:		RETURN
+
+; =========================================================================
+; LEGAL_KILL - R5 = a ship you have killed: what the law thinks of it,
+; by its kind (TablLegalStatus, v1.09), on the record with a floor of
+; nothing and a ceiling of everything.
+; =========================================================================
+LEGAL_TAB:	.WORD	112., 254., -30., 0, -50., -4., 0, 0
+LEGAL_KILL:	MOVB	U.TYP(R5),R1
+		BIC	#^C7,R1
+		ASL	R1
+		MOV	LEGAL_TAB(R1),R0
+		BEQ	9$
+		BMI	1$
+		ADD	R0,LEGAL
+		BCC	9$
+		MOV	#-1,LEGAL
+		RETURN
+1$:		NEG	R0
+		CMP	LEGAL,R0
+		BHIS	2$
+		CLR	LEGAL
+		RETURN
+2$:		SUB	R0,LEGAL
+9$:		RETURN
+
+; =========================================================================
+; SLOT_MIND - SetObjInSlot's part of a slot: called by UNIV_ADD with the
+; slot in R5 and the type in UN_TYPE.  The kind, the flags, the AI byte
+; - the frame it is born into, unless its header fixes one; whether the
+; station is near; and for a fighter whether it may cloak (only if you
+; have one, one in eight), collect (a roll against its own flags) and
+; leave (always with the station near, else one in four) - the counter,
+; its faith, and what it can launch, which a roll may leave at nothing.
+; A rock or a drop has nobody aboard and tumbles.  Preserves R2..R4 and
+; leaves R0 = the type, as UNIV_ADD's contract needs.
+; =========================================================================
+SLOT_MIND:	MOV	R2,-(SP)
+		MOV	R3,-(SP)
+		MOV	R4,-(SP)
+		MOV	UN_TYPE,R0
+		MOV	#SS_TYPE,R1
+		CALL	SHIP_STAT
+		MOVB	R0,U.TYP(R5)
+		BIC	#^C7,R0
+		MOV	R0,SM_KIND
+		CMP	R0,#KD_POLICE
+		BNE	1$
+		BIS	#UF_POLICE,U.FLAGS(R5)
+1$:		MOV	UN_TYPE,R0
+		MOV	#SS_FLAGS,R1
+		CALL	SHIP_STAT
+		MOVB	R0,U.FL2(R5)
+		BIT	#4,R0
+		BEQ	2$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+2$:		BIT	#200,R0
+		BEQ	3$
+		BIS	#UF_POD,U.FLAGS(R5)
+3$:		MOV	UN_TYPE,R0
+		MOV	#SS_OBJFLAGS,R1
+		CALL	SHIP_STAT
+		MOV	R0,R2
+		BIT	#4,R2
+		BNE	4$
+		BIC	#3,R2
+		BIS	FRAME_SET,R2
+4$:		BIC	#AI_NEARBAY,R2
+		TST	STN_NEAR
+		BEQ	5$
+		BIS	#AI_NEARBAY,R2
+5$:		BIT	#AI_ATTACK,R2
+		BEQ	8$
+		BIT	#AI_CLOAK,R2
+		BEQ	6$
+		BIC	#AI_CLOAK,R2
+		BITB	#DEV_NONE,P_CLOAK
+		BNE	6$
+		CALL	AI_RND
+		BIT	#160,R0
+		BNE	6$
+		BIS	#AI_CLOAK,R2
+6$:		BIT	#AI_COLLECT,R2
+		BEQ	7$
+		CALL	AI_RND
+		BIT	R2,R0
+		BNE	7$
+		BIC	#AI_COLLECT,R2
+7$:		BIT	#AI_HYPER,R2
+		BEQ	8$
+		TST	STN_NEAR
+		BNE	8$
+		CALL	AI_RND
+		BIT	#6,R0
+		BEQ	8$
+		BIC	#AI_HYPER,R2
+8$:		MOVB	R2,U.AIF(R5)
+		MOVB	#AI_COUNT0,U.CNT(R5)
+		MOV	#176,U.AI3(R5)		; its faith, and no throttle
+		CLR	U.TURN(R5)
+		MOV	UN_TYPE,R0		; what it can launch
+		MOV	#SS_LAUNCH,R1
+		CALL	SHIP_STAT
+		BIC	#^C7,R0
+		MOV	R0,U.LAUNCH(R5)
+		BEQ	10$
+		CALL	AI_RND
+		BIT	#3,R0
+		BNE	9$
+		CLR	U.LAUNCH(R5)
+		BR	10$
+9$:		MOV	RATING_L,R1		; PilotRating1 in with the roll
+		SWAB	R1
+		BIS	R1,R0
+		COM	R0
+		BIC	R0,U.LAUNCH(R5)
+10$:		CMP	SM_KIND,#KD_ROCK		; a rock or a drop: nobody aboard
+		BEQ	11$
+		CMP	SM_KIND,#KD_STATIC
+		BNE	12$
+		CMP	UN_TYPE,#SH_TARGLETH
+		BEQ	12$
+		BITB	#AI_PIRATE,U.AIF(R5)	; from the slot: AI_RND has had R2
+		BEQ	12$			;   since (a station was a drop on a
+		BIS	#UF_DROP,U.FLAGS(R5)	;   coin toss, 2026-09-24)
+11$:		BIS	#UF_DERELICT,U.FLAGS(R5)
+		MOVB	#64.,U.TLR(R5)		; and it tumbles
+12$:		MOV	(SP)+,R4
+		MOV	(SP)+,R3
+		MOV	(SP)+,R2
+		MOV	UN_TYPE,R0
+		RETURN
+
+; =========================================================================
+; TYPE_AVAIL - R0 = a type: R0 = it if its hull is in this system's set,
+; else another of its kind that is, from a random one on, else 0 (Z
+; set).  Legend spawns from its whole roster; the port can only draw
+; what HULL_SYSTEM brought in.  A kind is the three kind bits with bit
+; 7 of the AI byte (a drop), so a canister stands in for a plate; a bay
+; and the Targlet are not substituted.  Clobbers R1..R3.
+; =========================================================================
+TYPE_AVAIL:	MOV	R0,R1
+		ASL	R1
+		TST	SHIP_TABLE-2(R1)
+		BNE	9$
+		MOV	R0,-(SP)
+		MOV	#SS_OBJFLAGS,R1		; a drop stands in for a drop, a
+		CALL	SHIP_STAT		;   bay for nothing: the kind
+		BIC	#^C200,R0		;   carries bit 7 of the AI byte
+		MOV	R0,TA_KIND
+		MOV	(SP)+,R0
+		MOV	#SS_TYPE,R1
+		CALL	SHIP_STAT
+		BIC	#^C7,R0
+		BIS	R0,TA_KIND
+		CMP	R0,#KD_STATIC
+		BNE	1$
+		CMP	TA_KIND,#KD_STATIC	; a bay, the Targlet
+		BEQ	8$
+1$:		MOV	R5,-(SP)
+		CALL	RND_BYTE
+		MOV	(SP)+,R5
+		MOV	R0,R3
+		CLR	R2
+		DIV	#NSHIPS,R2		; R3 = a start
+		MOV	R3,TA_I
+		MOV	#NSHIPS,TA_LEFT
+2$:		MOV	TA_I,R0
+		INC	R0
+		MOV	R0,TA_T
+		MOV	R0,R1
+		ASL	R1
+		TST	SHIP_TABLE-2(R1)
+		BEQ	3$
+		CMP	R0,#SH_TARGLETH
+		BEQ	3$
+		MOV	#SS_OBJFLAGS,R1
+		CALL	SHIP_STAT
+		BIC	#^C200,R0
+		MOV	R0,-(SP)
+		MOV	TA_T,R0
+		MOV	#SS_TYPE,R1
+		CALL	SHIP_STAT
+		BIC	#^C7,R0
+		BIS	(SP)+,R0
+		CMP	R0,TA_KIND
+		BNE	3$
+		MOV	TA_T,R0
+		RETURN
+3$:		INC	TA_I
+		CMP	TA_I,#NSHIPS
+		BLT	4$
+		CLR	TA_I
+4$:		DEC	TA_LEFT
+		BGT	2$
+8$:		CLR	R0
+9$:		TST	R0
+		RETURN
+
+; =========================================================================
+; SPAWN_LEGEND - SetObjInSlot's placing: R0 = a type, born SPAWN_Z ahead
+; - a hostile one as far to the side, either way, and a peaceful one
+; within SPAWN_SIDE * 256 of the line, seven times in eight - at half
+; its speed, with SLOT_MIND's mind.  C set if it could not be.  R5 = the
+; slot.  Clobbers everything.
+; =========================================================================
+SPAWN_LEGEND:	CALL	TYPE_AVAIL
+		BEQ	8$
+		MOV	R0,SP_TYPE
+		MOV	#SS_FLAGS,R1
+		CALL	SHIP_STAT
+		BIT	#4,R0
+		BNE	1$
+		CALL	AI_RND
+		CMP	R0,#340
+		BHIS	1$
+		CALL	SP_NEAR1
+		MOV	R0,SP_X
+		CALL	SP_NEAR1
+		BR	2$
+1$:		CALL	SP_ASIDE1
+		MOV	R0,SP_X
+		CALL	SP_ASIDE1
+2$:		MOV	R0,R2
+		MOV	SP_X,R1
+		MOV	#SPAWN_Z,R3
+		MOV	#-1,R4
+		MOV	SP_TYPE,R0
+		JMP	UNIV_ADD
+8$:		SEC
+		RETURN
+
+SP_NEAR1:	CALL	AI_RND
+		MOV	R0,-(SP)
+		CALL	AI_RND
+		BIC	#^CSPAWN_SIDE,R0
+		SWAB	R0
+		BIS	(SP)+,R0
+		BR	SP_SIGN
+SP_ASIDE1:	CALL	AI_RND
+		ADD	#SPAWN_Z,R0
+SP_SIGN:	MOV	R0,-(SP)
+		CALL	AI_RND
+		ASR	R0			; C = its low bit
+		MOV	(SP)+,R0		; (MOV leaves C alone)
+		BCC	1$
+		NEG	R0
+1$:		RETURN
+
+; =========================================================================
+; SPAWN_FWD - rndSetObjForward: R0 = a type, adrift on the line ahead,
+; within seven of 256 either way and up.  C set if it could not be.
+; =========================================================================
+SPAWN_FWD:	CALL	TYPE_AVAIL
+		BEQ	8$
+		MOV	R0,SP_TYPE
+		CALL	AI_RND
+		BIC	#^CSPAWN_SIDE,R0
+		SWAB	R0
+		MOV	R0,SP_X
+		CALL	AI_RND
+		BIC	#^CSPAWN_SIDE,R0
+		SWAB	R0
+		MOV	R0,R2
+		MOV	SP_X,R1
+		MOV	#SPAWN_Z,R3
+		MOV	#-1,R4
+		MOV	SP_TYPE,R0
+		CALL	UNIV_ADD
+		BCS	8$
+		BIS	#UF_DERELICT,U.FLAGS(R5)
+		CLC
+		RETURN
+8$:		SEC
+		RETURN
+
+; =========================================================================
+; SPAWN_RND - SetRndShip: what the system sends.  Not in witchspace.
+; Off a roll, less the contraband aboard ((slaves + narcotics) * 2 +
+; firearms + nerve gas, at most 255): under the contraband, or under
+; 80, a ship - a pirate if bit 3 of the roll is set, if the government
+; lets one through (an anarchy always; else rnd & 7 has to reach it);
+; exactly 80 a field of wreckage - a derelict and four to seven bits of
+; alloy and cargo; 81 to 89 a rock, the big one one time in sixteen;
+; 90 up nothing.  The asteroid field far from the world, the war, the
+; missions' ships and the Targon station are not here.  Clobbers
+; everything.
+; =========================================================================
+SPAWN_RND:	TST	WITCH
+		BEQ	10$
+		JMP	MS_DEEP			; deep space (src/mission.mac)
+10$:		CMPB	P_M5,#3			; the plans under way: two
+		BLO	13$			;   Targons, every time
+		CALL	SPAWN_TARGON		;   (rndSetTargon2)
+		JMP	SPAWN_TARGON
+13$:		CALL	AI_RND			; the war's galaxy while it spreads:
+		CMP	R0,#370			;   a Targon, seven rolls in eight
+		BHIS	14$
+		CMPB	P_GALAXY,P_WAR+1
+		BNE	15$
+		TSTB	P_WAR
+		BPL	15$
+		JMP	SPAWN_TARGON
+15$:		CALL	AST_FIELD
+		BCC	14$
+		RETURN
+14$:		MOV	P_CARGO+<3*2>,R0	; the contraband
+		ADD	P_CARGO+<6*2>,R0
+		ASL	R0
+		ADD	P_CARGO+<10.*2>,R0
+		ADD	P_CARGO+<34.*2>,R0
+		CMP	R0,#377
+		BLOS	1$
+		MOV	#377,R0
+1$:		MOV	R0,SP_CONTRA
+		CALL	MS_SPAWN		; the missions' ships first
+		BCC	11$			;   (src/mission.mac)
+		RETURN
+11$:		CALL	AI_RND
+		SUB	SP_CONTRA,R0
+		BCS	20$
+		CMP	R0,#132
+		BLO	12$
+		RETURN
+12$:		CMP	R0,#120
+		BLO	20$
+		BEQ	30$
+		MOV	#SH_ASTEROIDHA,SP_TYPE	; a rock
+		CALL	AI_RND
+		CMP	R0,#360
+		BLO	2$
+		INC	SP_TYPE
+2$:		MOV	SP_TYPE,R0
+		JMP	SPAWN_FWD
+30$:		CALL	AI_RND			; the wreckage: a hull nobody flies
+		BIC	#^C37,R0
+		ADD	#SH_TARGONH,R0
+		CALL	SPAWN_FWD
+		BCS	9$
+		CALL	AI_RND
+		BIC	#^C3,R0
+		ADD	#4,R0
+		MOV	R0,SP_N
+31$:		CALL	AI_RND
+		BIC	#^C7,R0
+		ADD	#SH_ALLOYS1H,R0
+		CALL	SPAWN_FWD
+		BCS	9$
+		DEC	SP_N
+		BGT	31$
+		RETURN
+20$:		MOV	R0,SP_B			; a ship, if the government lets
+		BIC	#^C7,R0			;   one through
+		MOV	R0,SP_E
+		CMPB	P_M3,#4			; mission 3's Targon station: a
+		BNE	23$			;   Targon; while it is only
+		JMP	SPAWN_TARGON		;   issued, a Python trader
+23$:		CMPB	P_M3,#1
+		BNE	24$
+		MOV	#SH_PYTHONHT,R0
+		JMP	SPAWN_SHIP
+24$:
+		MOVB	P_GOV,R2
+		BIC	#^C7,R2
+		BEQ	21$
+		INC	SP_E
+		CMP	R2,SP_E
+		BHIS	9$
+21$:		BIT	#10,SP_B
+		BEQ	40$
+		CALL	AI_RND			; a pirate
+		BIC	#^C77,R0
+		MOV	#SH_TARGONH,R1
+		TST	R0
+		BEQ	22$
+		MOV	#SH_FERDELANCEH,R1
+		SUB	#8.,R0
+		BCS	22$
+		MOV	#SH_ASPH,R1
+		SUB	#16.,R0
+		BCS	22$
+		MOV	#SH_COBRAMK3HP,R1
+		SUB	#8.,R0
+		BCS	22$
+		MOV	#SH_COBRAMK1HP,R1
+		SUB	#8.,R0
+		BCS	22$
+		MOV	#SH_PYTHONHP,R1
+		SUB	#8.,R0
+		BCS	22$
+		BIC	#^C1,R0
+		ADD	#SH_ANACONDAHP,R0
+		MOV	R0,R1
+22$:		MOV	R1,R0
+		JMP	SPAWN_SHIP
+40$:		CALL	AI_RND			; a trader - or a pack of
+		MOV	R0,SP_B			;   fighters, a hermit's rock, a
+		BIC	#^C7,R0			;   Viper or a Targon
+		CMP	R0,SP_E
+		BLO	SPAWN_TRADE1
+		JMP	SPAWN_PACK
+9$:		RETURN
+
+; SPAWN_TRADE - goto618's ship: the roll turned left three picks a
+; hermit's rock or a Viper (its low three bits under 2), a Targon (2),
+; or one of the traders, 0x20..0x2C.  SPAWN_TRADE1 takes the roll in
+; SP_B.  Clobbers everything.
+SPAWN_TRADE:	CALL	AI_RND
+		MOV	R0,SP_B
+SPAWN_TRADE1:	MOV	SP_B,R0			; the roll turned left three
+		MOV	R0,R1
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		ASL	R0
+		ASL	R0
+		ASL	R0
+		BIC	#^C377,R0
+		BIS	R1,R0
+		MOV	R0,SP_C
+		BIC	#^C7,R0
+		CMP	R0,#2
+		BHIS	2$
+		MOV	#SH_VIPERH,R0
+		BIT	#20,SP_C
+		BEQ	3$
+		MOV	#SH_ASTEROIDHO,R0
+3$:		JMP	SPAWN_SHIP
+2$:		BNE	4$
+		JMP	SPAWN_TARGON
+4$:		MOV	SP_C,R0			; the traders, 0x20..0x2C
+		MOV	R0,R1
+		ASL	R0
+		ASL	R0
+		BIC	#^C14,R0
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		BIC	#^C3,R1
+		BIS	R1,R0
+		ADD	#SH_TRANPORTERH,R0
+		CMP	R0,#SH_TRANPORTERH+13.
+		BLO	3$
+		SUB	#5,R0
+		BR	3$
+
+; SPAWN_SHIP - rndSetShipInIX: R0 = a type, born with an ECM one time in
+; five, always for a Targon.  C set if it could not be.
+SPAWN_SHIP:	CALL	SPAWN_LEGEND
+		BCS	9$
+		CMP	SP_TYPE,#SH_TARGONH
+		BEQ	1$
+		CALL	AI_RND
+		CMP	R0,#63
+		BHIS	8$
+1$:		BISB	#F3_ECM,U.FL3(R5)
+8$:		CLC
+9$:		RETURN
+
+; SPAWN_TARGON - rndSetTargon, the plain one: a Targon, or a Targon 6.
+SPAWN_TARGON:	CALL	AI_RND			; rndSetTargon: after mission 6,
+		MOV	R0,SP_B			;   or in its third part, a cruiser
+		MOVB	P_M6,R1			;   one roll in 32 and a spy one in
+		BIC	#177400,R1		;   eight; in its first part a spy
+		BITB	#100,P_MCOMPLETE	;   one in eight
+		BNE	3$
+		ASR	R1
+		BEQ	1$
+		DEC	R1
+		BEQ	4$
+		ASR	R1
+		BCS	1$
+3$:		CMP	R0,#370
+		BLO	4$
+		MOV	#SH_TARGONINTH,R0
+		BR	SPAWN_SHIP
+4$:		CMP	R0,#340
+		BLO	1$
+		MOV	#SH_TARGONSPYH,R0
+		BR	SPAWN_SHIP
+1$:		MOV	SP_B,R0			; the plain one: a Targon, or a
+		BIC	#^C200,R0		;   Targon 6
+		BEQ	2$
+		MOV	#1,R0
+2$:		ADD	#SH_TARGONH,R0
+		BR	SPAWN_SHIP
+
+; SPAWN_PACK - rndSet2_4Krait: two to four of a Sidewinder, a Krait and
+; an Adder, in one frame.
+SPAWN_PACK:	CALL	AI_RND
+		BIC	#^C3,R0
+		INC	R0
+		ASR	R0
+		ADD	#2,R0
+		MOV	R0,SP_N
+1$:		CALL	AI_RND
+		BIC	#^C3,R0
+		INC	R0
+		ASR	R0
+		ADD	#SH_SIDEWINDERH,R0
+		CALL	SPAWN_LEGEND
+		BCS	9$
+		DEC	SP_N
+		BGT	1$
+9$:		RETURN
+
+; Launch decoding is resident to leave room in the flight overlay.
+; LA_TYPE - a launch code in R0 to a type in R0, 0 for none.
+LA_TYPE:	CMP	R0,#6
+		BLO	1$
+		CMP	R0,#14
+		BHIS	2$
+		CMP	R0,#10
+		BHIS	1$
+2$:		MOV	R0,R1			; 6, 7 and 12 up: the number itself
+		BIC	#^C20,R1
+		ASL	R1
+		BIC	#^C17,R0
+		BIS	R1,R0
+		BIS	#20,R0
+		INC	R0
+		RETURN
+1$:		ASL	R0
+		MOV	LA_TAB(R0),-(SP)	; a jump through the table: the
+		RETURN				;   assembler will not take JMP @Rn
+LA_TAB:		.WORD	LA_NONE, LA_VIPER, LA_TRADER, LA_TARGLET, LA_TARGON
+		.WORD	LA_FIGHTER, LA_NONE, LA_NONE, LA_GECKO, LA_T4, LA_PYTH
+LA_NONE:	CLR	R0
+		RETURN
+LA_VIPER:	MOV	#SH_VIPERH,R0
+		RETURN
+LA_TARGLET:	MOV	#SH_TARGLETH,R0
+		RETURN
+LA_TRADER:	CALL	AI_RND
+		BIC	#^C7,R0
+		ADD	#SH_TRANPORTERH,R0
+		RETURN
+LA_TARGON:	CALL	AI_RND
+		BIC	#^C1,R0
+		ADD	#SH_TARGONH,R0
+		RETURN
+LA_FIGHTER:	CALL	AI_RND
+		BIC	#^C3,R0
+		INC	R0
+		ASR	R0
+		ADD	#SH_SIDEWINDERH,R0
+		RETURN
+LA_GECKO:	CALL	AI_RND
+		BIC	#^C3,R0
+		INC	R0
+		ASR	R0
+		ADD	#SH_GECKOH,R0
+		RETURN
+LA_T4:		CALL	AI_RND
+		BIC	#^C3,R0
+		MOV	R0,R1
+		ASL	R0
+		ADD	R1,R0
+		ADD	#SH_TRANPORTERH,R0
+		RETURN
+LA_PYTH:	CALL	AI_RND
+		BIC	#^C3,R0
+		ADD	#SH_PYTHONHT,R0
+		RETURN

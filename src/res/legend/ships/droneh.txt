@@ -1,0 +1,52 @@
+# d_DroneH - extracted from orig/legend by tools/legend_ships.py;
+# object 61 of AdrDataShips, hull d_Drone.
+# `make extract` overwrites it.
+name DRONEH
+index 61
+class 1
+speed 31
+energy 17
+bounty 0
+laser 255
+collide 16
+cargo 67
+launch 0
+dot 8
+rating 50
+flags 1
+flags2 4
+laservert 0
+type 7
+objflags 164
+shipnum 0
+radius 50
+vertex     4    20    -7
+vertex     4   -20    -7
+vertex     4    12    39
+vertex     4   -12    39
+vertex     4     0    50
+vertex   -12     0     0
+vertex    -3     5    -4
+vertex    -3    -5    -4
+vertex     1   -10    -6
+vertex     1    10    -6
+edge 0 2 31 1 0
+edge 2 4 31 5 0
+edge 4 3 31 4 0
+edge 3 1 31 3 0
+edge 1 0 31 2 0
+edge 0 5 31 2 1
+edge 5 2 31 5 1
+edge 1 5 31 3 2
+edge 3 5 31 4 3
+edge 4 5 31 5 4
+edge 6 7 28 2 2
+edge 7 8 28 2 2
+edge 8 9 28 2 2
+edge 9 6 28 2 2
+normal   96    0    0
+normal  -49   40    7
+normal  -26    0  -58
+normal  -49  -40    7
+normal  -58  -16   18
+normal  -58   16   18

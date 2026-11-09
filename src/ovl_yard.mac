@@ -1,0 +1,964 @@
+; =========================================================================
+; ovl_yard.mac - the yard: Elite Legend's Buy Ships and Select Ships
+; menus (orig/legend/.../INCLUDE/Menu/BuyShips.a80) laid out for eighty
+; columns.  AN OVERLAY (src/ovl.list), called through its first word
+; with R0 = 0 to draw, R0 = 1 for its keys, and R0 = 2 on arrival in a
+; system to decide which ships are for sale there (YD_STOCK).  Screen
+; 6 in СТОП's cycle.
+;
+; Two lists share the screen, ВВОД switching between them (Legend
+; toggles them by pressing the menu key again).  The first is the yard:
+; the ships for sale at this station - GenerateShipOnStation rolls them
+; on arrival from the catalogue's economy and tech floors, its chance
+; byte and its mission gate, into the record's P_YARD - each with its
+; date, hold, speed and price (PrnDataSelectShip).  ФИКС buys one
+; (BuyShip): the hold is sold to the station, the ship being flown is
+; packed into a free berth (P_SHIPS, Legend's lenPilotShip format, 18
+; bytes) or, with all nineteen taken, sold for what it is worth with
+; its fittings (CalcPriceShip), and the new one is flown out bare - no
+; fuel, no guns, no devices - to the pilot's page.
+;
+; The second is the commander's berths: where each stored ship is
+; (galaxy and planet), and two things to do with it - ПРОДАТЬ for its
+; fitted price, and either ВЫБРАТЬ, which swaps it for the one being
+; flown (SelectShip) when it is berthed here, or ДОСТАВИТЬ, which has
+; it brought here for eight times the distance in tenths within a
+; galaxy or 2475.3 Cr a galaxy across them (CalcPriceDeliver).  Right
+; moves the cursor from the list onto those two, left brings it back.
+;
+; The yard opens at the main station only, and not while the third
+; mission has turned it Thargoid (TestNumShips).  Raxxla's delivery
+; rule is not here yet: it is phase 5's.  SetCocpitVars is COCKPIT_SET
+; (src/cockpit.mac).
+; =========================================================================
+
+		JMP	OVLY_ENTRY		; the overlay's entry, at OVL_BASE
+
+YD_X0	= 1			; the list's cursor
+YD_XN	= 3			; and its names
+YD_Y0	= 20.			; the first row
+YD_STEP	= 12.			; nineteen system-font rows
+YD_XD	= 40.			; the panel: the name, then the data
+YD_XO	= 38.			; the option cursor
+YD_YD	= 20.			; the panel's name row
+YD_YD1	= 40.			; and its first data row
+YD_YOPT	= 90.			; the two options
+YD_YMSG	= 256.
+YD_YCASH = 270.
+
+SHIP_LEN = P_RND-P_SHIP		; the record's ship: P_SHIP to the last device
+
+; state
+YD_MODE:	.WORD	0		; 0 the yard, 1 the berths (NumShipsMenu)
+YD_SEL:		.WORD	0		; the row (NumShip)
+YD_OPT:		.WORD	0		; 0 on the list, 1 sell, 2 select/deliver
+YD_N:		.WORD	0		; rows in the list
+YD_LIST:	.BLKB	NYARD+1		; the yard index or berth of each row
+YD_PL:		.WORD	0		; the ship's price (priceShip)
+YD_PH:		.WORD	0
+YD_DL:		.WORD	0		; the delivery price (priceDeliver)
+YD_DH:		.WORD	0
+YD_MSG:		.WORD	0
+YD_I:		.WORD	0
+YD_T:		.WORD	0
+YD_PACKED:	.BLKB	SLOT_LEN	; a ship packed (TempDataShip)
+YD_TEMP:	.BLKB	SHIP_LEN	; a berthed ship unpacked, to price it
+		.EVEN
+
+OVLY_ENTRY:	TST	R0
+		BNE	1$
+		CLR	YD_MODE			; entered: the yard, the top row
+		CLR	YD_SEL
+		CLR	YD_OPT
+		CLR	YD_MSG
+		JMP	YD_DRAW
+1$:		CMP	R0,#2
+		BNE	OVLY_KEYS
+		JMP	YD_STOCK
+
+; =========================================================================
+; The keys (RightBuyShip, LeftBuyShip, DownBuyShip, UpBuyShip,
+; SelectSelShip), tested in KEYS_EDGE where it lies.
+; =========================================================================
+OVLY_KEYS:	CALL	YD_OPEN
+		BCS	9$
+		BIT	#K_ENTER,KEYS_EDGE	; the other list
+		BEQ	1$
+		COM	YD_MODE
+		BIC	#177776,YD_MODE
+		CLR	YD_SEL
+		CLR	YD_OPT
+		CLR	YD_MSG
+1$:		BIT	#K_UP,KEYS_EDGE
+		BEQ	2$
+		TST	YD_OPT
+		BEQ	11$
+		CMP	YD_OPT,#1		; on the options: up to the first
+		BEQ	2$
+		DEC	YD_OPT
+		BR	2$
+11$:		TST	YD_SEL			; on the list: no wrap
+		BEQ	2$
+		DEC	YD_SEL
+2$:		BIT	#K_DOWN,KEYS_EDGE
+		BEQ	3$
+		TST	YD_OPT
+		BEQ	21$
+		CMP	YD_OPT,#2
+		BEQ	3$
+		INC	YD_OPT
+		BR	3$
+21$:		MOV	YD_SEL,R0
+		INC	R0
+		CMP	R0,YD_N
+		BGE	3$
+		MOV	R0,YD_SEL
+3$:		BIT	#K_RIGHT,KEYS_EDGE	; onto the options, berths only
+		BEQ	4$
+		TST	YD_MODE
+		BEQ	4$
+		TST	YD_N
+		BEQ	4$
+		TST	YD_OPT
+		BNE	4$
+		MOV	#1,YD_OPT
+4$:		BIT	#K_LEFT,KEYS_EDGE	; and back
+		BEQ	5$
+		CLR	YD_OPT
+5$:		BIT	#K_FIRE,KEYS_EDGE
+		BEQ	6$
+		CALL	YD_FIRE
+		CALL	TILL
+6$:		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN!K_FIRE!K_ENTER,KEYS_EDGE
+		BEQ	9$
+		JMP	YD_DRAW
+9$:		RETURN
+
+TILL:		BCS	1$
+		MOV	#FX_OPTION,R0
+		BR	2$
+1$:		MOV	#FX_KEY,R0
+2$:		JMP	SFX_PLAY
+
+; YD_OPEN - TestNumShips' first half: C set where there is no yard - in
+; flight, at any bay but the station, or while the station is the
+; Thargoids'.
+YD_OPEN:	TST	DOCKED
+		BEQ	9$
+		MOV	DOCKED_AT,R0
+		BEQ	1$
+		CMP	R0,#BK_STATION
+		BNE	9$
+1$:		CMPB	P_M3,#4
+		BEQ	9$
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; YD_DRAW - the whole screen: the list on the left, the panel for the
+; ship under the cursor on the right, the purse along the bottom.
+; =========================================================================
+YD_DRAW:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	#S_T_BUYSHIPS,R1
+		TST	YD_MODE
+		BEQ	1$
+		MOV	#S_T_SELSHIPS,R1
+1$:		CALL	PUTS2
+
+		MOV	#4,TX
+		MOV	#40.,TY
+		TST	DOCKED
+		BNE	2$
+		MOV	#S_M_DOCKED,R1
+		JMP	PUTS
+2$:		CALL	YD_OPEN
+		BCC	3$
+		MOV	#S_Y_NOYARD,R1
+		JMP	PUTS
+
+3$:		CALL	YD_LISTUP		; the rows
+		TST	YD_N
+		BNE	4$
+		MOV	#S_Y_NOSHIPS,R1
+		CALL	PUTS
+		BR	80$
+4$:		CMP	YD_SEL,YD_N
+		BLO	5$
+		MOV	YD_N,YD_SEL
+		DEC	YD_SEL
+5$:		CLR	YD_I
+10$:		MOV	YD_I,R1
+		MUL	#YD_STEP,R1		; R1 odd - low 16 bits
+		ADD	#YD_Y0,R1
+		MOV	R1,YD_T
+		MOV	#YD_X0,TX
+		MOV	YD_T,TY
+		MOV	#40,R0
+		CMP	YD_I,YD_SEL
+		BNE	11$
+		TST	YD_OPT			; the cursor sits on the options
+		BNE	11$			;   when it is there
+		MOV	#76,R0			; ">"
+11$:		CALL	PUTC
+		MOV	#YD_XN,TX
+		MOV	YD_I,R0
+		CALL	YD_ROWSHIP		; R0 = the ship's number
+		CALL	YD_SHIPNAME
+		CALL	PUTS
+		INC	YD_I
+		CMP	YD_I,YD_N
+		BLO	10$
+
+		MOV	#YD_XD,TX		; the panel: the name
+		MOV	#YD_YD,TY
+		MOV	YD_SEL,R0
+		CALL	YD_ROWSHIP
+		CALL	YD_SHIPNAME
+		CALL	PUTS2
+		TST	YD_MODE
+		BNE	50$
+		CALL	YD_PANEL_YARD
+		BR	80$
+50$:		CALL	YD_PANEL_BERTH
+
+80$:		MOV	YD_MSG,R1		; the message line: a message, or
+		BNE	81$			;   how to reach the other list
+		MOV	#S_Y_HINT,R1
+81$:		MOV	#2,TX
+		MOV	#YD_YMSG,TY
+		CALL	PUTS
+		MOV	#2,TX			; the purse
+		MOV	#YD_YCASH,TY
+		MOV	#S_Y_CASHL,R1
+		CALL	PUTS
+		CALL	PUTCASH
+		MOV	#S_Y_CR,R1
+		CALL	PUTS
+		MOV	SYS_INDEX,R0		; SYS_* back on the system we are
+		JMP	SYS_SELECT		;   in, if the panel named another
+
+; YD_PANEL_YARD - PrnDataSelectShip: date, hold, speed and price of the
+; ship for sale under the cursor; the price is kept for ФИКС.
+YD_PANEL_YARD:	MOV	YD_SEL,R0
+		CALL	YD_ROWSHIP
+		DEC	R0
+		MOV	R0,YD_T			; the catalogue index
+		ASL	R0
+		MOV	#YD_YD1,R1
+		MOV	#S_Y_DATE,R2
+		CALL	YD_LABEL
+		MOV	YD_T,R0
+		ASL	R0
+		MOV	SHIP_DATE(R0),R0
+		BEQ	1$
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_Y_AD,R1
+		BR	2$
+1$:		MOV	#S_Y_NONE,R1
+2$:		CALL	PUTS
+
+		MOV	#YD_YD1+12.,R1
+		MOV	#S_Y_TONS,R2
+		CALL	YD_LABEL
+		MOV	YD_T,R0
+		ASL	R0
+		MOV	SHIP_TONS(R0),R0
+		BEQ	3$
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_Y_T,R1
+		BR	4$
+3$:		MOV	#S_Y_NONE,R1
+4$:		CALL	PUTS
+
+		MOV	#YD_YD1+24.,R1
+		MOV	#S_Y_SPEED,R2
+		CALL	YD_LABEL
+		MOV	YD_T,R0
+		MOVB	SHIP_SPEED(R0),R0
+		BIC	#177400,R0
+		BEQ	5$
+		MOV	R0,-(SP)
+		MOV	#60,R0			; "0."
+		CALL	PUTC
+		MOV	#56,R0
+		CALL	PUTC
+		MOV	(SP)+,R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_Y_LM,R1
+		BR	6$
+5$:		MOV	#S_Y_NONE,R1
+6$:		CALL	PUTS
+
+		MOV	#YD_YD1+36.,R1
+		MOV	#S_Y_PRICE,R2
+		CALL	YD_LABEL
+		MOV	YD_T,R0
+		ASL	R0
+		ASL	R0
+		MOV	SHIP_PRICE(R0),YD_PL
+		MOV	SHIP_PRICE+2(R0),YD_PH
+		MOV	YD_PH,R0
+		MOV	YD_PL,R1
+		CALL	PUT_CR32
+		MOV	#S_Y_CR,R1
+		JMP	PUTS
+
+; YD_PANEL_BERTH - PrnDataSellShip: where the berthed ship under the
+; cursor is, and the two options with their prices.
+YD_PANEL_BERTH:	MOV	#YD_YD1,TY
+		MOV	#YD_XD+4,TX
+		MOV	#S_Y_WHERE,R1
+		CALL	PUTS
+		MOV	#YD_YD1+12.,R1
+		MOV	#S_Y_GALAXY,R2
+		CALL	YD_LABEL
+		CALL	YD_SLOT			; R5 = the berth
+		MOVB	1(R5),R0		; its galaxy, 1..8 to the pilot
+		BIC	#177400,R0
+		INC	R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#YD_YD1+24.,R1
+		MOV	#S_Y_PLANET,R2
+		CALL	YD_LABEL
+		CALL	YD_SLOTSYS		; SYS_* = the berth's system
+		MOV	#SYS_NAME,R1
+		CALL	PUTS
+
+		MOV	#YD_XO,TX		; sell
+		MOV	#YD_YOPT,TY
+		MOV	#40,R0
+		CMP	YD_OPT,#1
+		BNE	1$
+		MOV	#76,R0
+1$:		CALL	PUTC
+		MOV	#YD_XD,TX
+		MOV	#S_Y_SELL,R1
+		CALL	PUTS
+		CALL	YD_SLOT
+		MOV	R5,R4
+		MOV	#YD_TEMP,R5
+		CALL	YD_UNPACK		; priced as it stands
+		MOV	#YD_TEMP,R5
+		CALL	YD_SHIPPRICE
+		MOV	YD_PH,R0
+		MOV	YD_PL,R1
+		CALL	PUT_CR32
+		MOV	#S_Y_CR2,R1
+		CALL	PUTS
+
+		MOV	#YD_XO,TX		; select, or deliver
+		MOV	#YD_YOPT+12.,TY
+		MOV	#40,R0
+		CMP	YD_OPT,#2
+		BNE	2$
+		MOV	#76,R0
+2$:		CALL	PUTC
+		MOV	#YD_XD,TX
+		CALL	YD_DELIVERY		; the price of bringing it here
+		MOV	YD_DL,R0
+		BIS	YD_DH,R0
+		BNE	3$
+		MOV	#S_Y_SELECT,R1
+		JMP	PUTS
+3$:		MOV	#S_Y_DELIVER,R1
+		CALL	PUTS
+		MOV	YD_DH,R0
+		MOV	YD_DL,R1
+		CALL	PUT_CR32
+		MOV	#S_Y_CR2,R1
+		JMP	PUTS
+
+; YD_LABEL - the label in R2 on panel row R1, the cursor left after it.
+YD_LABEL:	MOV	R1,TY
+		MOV	#YD_XD,TX
+		MOV	R2,R1
+		JMP	PUTS
+
+; YD_SHIPNAME - R0 = a ship's number, 1..20; returns R1 = its name.
+YD_SHIPNAME:	DEC	R0
+		ASL	R0
+		MOV	SHIPNAMES(R0),R1
+		RETURN
+
+; the yard's ships, by number - 1
+SHIPNAMES:	.WORD	S_SN_01, S_SN_02, S_SN_03, S_SN_04, S_SN_05
+		.WORD	S_SN_06, S_SN_07, S_SN_08, S_SN_09, S_SN_10
+		.WORD	S_SN_11, S_SN_12, S_SN_13, S_SN_14, S_SN_15
+		.WORD	S_SN_16, S_SN_17, S_SN_18, S_SN_19, S_SN_20
+
+; =========================================================================
+; The lists.  YD_LISTUP walks the yard or the berths (TestNumShips'
+; count and GetNumShipCurs' walk, done once) into YD_LIST: a row is the
+; index of a yard entry or a berth.  YD_ROWSHIP gives row R0's ship
+; number; YD_SLOT the berth (R5) under the cursor.
+; =========================================================================
+YD_LISTUP:	CLR	YD_N
+		CLR	YD_I
+1$:		MOV	YD_I,R0
+		CALL	YD_ENTRY
+		TSTB	(R5)
+		BEQ	2$
+		MOV	YD_N,R1
+		MOVB	YD_I,YD_LIST(R1)
+		INC	YD_N
+2$:		INC	YD_I
+		CMP	YD_I,#NYARD
+		BLO	1$
+		RETURN
+
+; YD_ENTRY - R0 = an index; returns R5 = the yard byte or the berth.
+YD_ENTRY:	TST	YD_MODE
+		BNE	1$
+		MOV	R0,R5
+		ADD	#P_YARD,R5
+		RETURN
+1$:		MOV	R0,R5
+		MUL	#SLOT_LEN,R5		; R5 odd - low 16 bits
+		ADD	#P_SHIPS,R5
+		RETURN
+
+YD_ROWSHIP:	MOVB	YD_LIST(R0),R0
+		CALL	YD_ENTRY
+		MOVB	(R5),R0
+		BIC	#177400,R0
+		RETURN
+
+YD_SLOT:	MOV	YD_SEL,R0
+		MOVB	YD_LIST(R0),R0
+		JMP	YD_ENTRY
+
+; YD_SLOTSYS - SYS_* = the system the berthed ship under the cursor is
+; at, in whichever galaxy: the seed is turned to that galaxy and back.
+; Clobbers R0..R5.
+YD_SLOTSYS:	CALL	YD_SLOT
+		MOVB	1(R5),R0
+		BIC	#177400,R0
+		MOVB	2(R5),R1
+		BIC	#177400,R1
+		MOV	R1,-(SP)
+		CMP	R0,P_GALAXY
+		BEQ	1$
+		MOV	P_GALAXY,-(SP)
+		MOV	R0,P_GALAXY
+		CALL	GAL_SEEDOF
+		MOV	2(SP),R0
+		CALL	SYS_SELECT
+		MOV	(SP)+,P_GALAXY
+		CALL	GAL_SEEDOF
+		TST	(SP)+
+		RETURN
+1$:		MOV	(SP)+,R0
+		JMP	SYS_SELECT
+
+; YD_DELIVERY - CalcPriceDeliver: into YD_DH:YD_DL, nought when the ship
+; is berthed here.  Clobbers R0..R5.
+YD_DELIVERY:	CLR	YD_DL
+		CLR	YD_DH
+		CALL	YD_SLOT
+		MOVB	1(R5),R0
+		BIC	#177400,R0
+		MOVB	2(R5),R1
+		BIC	#177400,R1
+		CMP	R0,P_GALAXY
+		BNE	1$
+		CMP	R1,P_PLANET
+		BNE	2$
+		RETURN
+1$:		SUB	P_GALAXY,R0		; galaxies apart: 2475.3 Cr each
+		BGE	11$
+		NEG	R0
+11$:		MUL	#24753.,R0		; R0 even: R0:R1 is the product
+		MOV	R1,YD_DL
+		MOV	R0,YD_DH
+		RETURN
+2$:		CALL	YD_SLOTSYS		; in this galaxy: eight times the
+		CALL	SYS_DISTANCE		;   distance in tenths
+		ASL	R0
+		ASL	R0
+		ASL	R0
+		MOV	R0,YD_DL
+		RETURN
+
+; =========================================================================
+; YD_FIRE - ФИКС: buy the ship under the cursor, or on the berths, sell
+; it, select it or have it delivered (SelectSelShip).  C set on a
+; refusal.
+; =========================================================================
+YD_FIRE:	CLR	YD_MSG
+		TST	YD_N
+		BEQ	YD_NO
+		TST	YD_MODE
+		BNE	1$
+		JMP	YD_BUY
+1$:		CMP	YD_OPT,#1
+		BLO	YD_NO			; on the list: nothing to fire
+		BEQ	YD_SELL
+		JMP	YD_SELECT
+YD_NO:		SEC
+		RETURN
+YD_YES:		CLC
+		RETURN
+
+; YD_PAY - YD_PH:YD_PL out of the purse, or C set and the message.
+YD_PAY:		MOV	YD_PH,R0
+		MOV	YD_PL,R1
+		CALL	CASH_PAY32
+		BCC	1$
+		MOV	#S_Y_NOCASH,YD_MSG
+1$:		RETURN
+
+; SellShip: the berthed ship goes for its fitted price and the berth
+; empties; with none left the yard's list comes back.
+YD_SELL:	CALL	YD_SLOT
+		MOV	R5,R4
+		MOV	#YD_TEMP,R5
+		CALL	YD_UNPACK
+		MOV	#YD_TEMP,R5
+		CALL	YD_SHIPPRICE
+		MOV	YD_PH,R0
+		MOV	YD_PL,R1
+		CALL	CASH_ADD32
+		CALL	YD_SLOT
+		CLRB	(R5)
+		CLR	YD_OPT
+		MOV	#S_Y_SOLD,YD_MSG
+		CALL	YD_LISTUP
+		TST	YD_N
+		BNE	1$
+		CLR	YD_MODE
+		CLR	YD_SEL
+1$:		BR	YD_YES
+
+; SelectShip / DeliverShip: berthed here, it is swapped for the ship
+; being flown; elsewhere, it is brought here for the delivery price.
+YD_SELECT:	CALL	YD_DELIVERY
+		MOV	YD_DL,R0
+		BIS	YD_DH,R0
+		BEQ	1$
+		MOV	YD_DL,YD_PL
+		MOV	YD_DH,YD_PH
+		CALL	YD_PAY
+		BCS	YD_NO
+		CALL	YD_SLOT
+		MOVB	P_GALAXY,1(R5)
+		MOVB	P_PLANET,2(R5)
+		MOV	#S_Y_DELIVERED,YD_MSG
+		BR	YD_YES
+1$:		CALL	YD_CHANGE		; the hold sold, the ship packed
+		CALL	YD_SLOT
+		MOV	R5,R4
+		MOV	#P_SHIP,R5
+		CALL	YD_UNPACK		; the berthed one is flown
+		CALL	YD_SLOT
+		MOV	#YD_PACKED,R4		; and the old one takes its berth
+		MOV	#SLOT_LEN,R0
+2$:		MOVB	(R4)+,(R5)+
+		SOB	R0,2$
+		BR	YD_FLOWN
+
+; BuyShip: paid for, the old ship berthed or sold, the new one bare.
+YD_BUY:		CALL	YD_PAY
+		BCS	YD_NO
+		CALL	YD_CHANGE
+		MOV	#P_SHIPS,R5		; a free berth (GetFreeShipSlot)
+		MOV	#NYARD,R1
+1$:		TSTB	(R5)
+		BEQ	2$
+		ADD	#SLOT_LEN,R5
+		SOB	R1,1$
+		MOV	#P_SHIP,R5		; none: the old ship is sold for
+		CALL	YD_SHIPPRICE		;   what it carries
+		MOV	YD_PH,R0
+		MOV	YD_PL,R1
+		CALL	CASH_ADD32
+		BR	3$
+2$:		MOV	#YD_PACKED,R4		; or berthed
+		MOV	#SLOT_LEN,R0
+21$:		MOVB	(R4)+,(R5)+
+		SOB	R0,21$
+3$:		CALL	YD_SLOT			; out of the yard, and flown bare
+		MOVB	(R5),R0
+		BIC	#177400,R0
+		CLRB	(R5)
+		MOV	R0,P_SHIP
+		CLRB	P_WEAR
+		CLR	P_FUEL
+		MOVB	#DEV_NONE,P_TANKS
+		CLR	P_MISSILES
+		CLR	P_MISSTYPE
+		CLRB	P_CABINS
+		MOV	#LAS_NONE,P_LASERS
+		MOV	#LAS_NONE,P_LASERS+2
+		MOV	#LAS_NONE,P_LASERS+4
+		MOV	#LAS_NONE,P_LASERS+6
+		CALL	DEVICES_NONE
+
+; YD_FLOWN - a different ship under the pilot: the hold it has, and the
+; pilot's page (Cmd_L_PilotInfo_Prog).
+YD_FLOWN:	CALL	COCKPIT_SET		; SetCocpitVars: the limits are
+		CALL	CAPACITY		;   the new ship's
+		MOV	R0,P_FREECARGO
+		MOV	#7,SCREEN
+		JMP	SCR_SHOW
+
+; YD_CHANGE - what leaving a ship costs: the hold sold to the station
+; (SellAllProducts), the first mission's cargo forgotten, and the ship
+; packed into YD_PACKED (PackShipPilot2Temp), and the passengers'
+; contracts are torn up with their cabins (RefuseAllContracts, v1.09).
+YD_CHANGE:	CALL	CT_REFUSEPASS
+		CALL	HOLD_SELL
+		CLRB	P_M1+1
+		MOV	#P_SHIP,R4
+		MOV	#YD_PACKED,R5
+		JMP	YD_PACK
+
+; =========================================================================
+; YD_STOCK - GenerateShipOnStation, on arrival: yard entry i holds ship
+; i + 1 when the system's tech level reaches the ship's, its economy is
+; no poorer than the ship's ceiling, a random byte falls under the
+; ship's chance, and the missions it waits on are done.  Raxxla, where
+; everything is for sale, is not tested for.  Clobbers everything.
+; =========================================================================
+YD_STOCK:	CLR	YD_I
+1$:		MOV	YD_I,R2
+		CLRB	P_YARD(R2)
+		MOVB	SHIP_ECOTECH(R2),R0
+		BIC	#177400,R0
+		MOV	R0,R1
+		BIC	#177740,R1		; bits 4-0: the tech level
+		CMPB	P_TECH,R1
+		BLO	5$
+		ASH	#-5,R0			; bits 7-5: the economy ceiling
+		CMPB	R0,P_ECO
+		BLO	5$
+		CALL	RND_BYTE		; (clobbers R5)
+		MOV	YD_I,R2
+		CMPB	R0,SHIP_CHANCE(R2)
+		BHIS	5$
+		MOVB	SHIP_MISSION(R2),R0
+		BIC	#177400,R0
+		MOVB	P_MCOMPLETE,R1
+		BIC	R1,R0
+		BNE	5$
+		MOV	R2,R0
+		INC	R0
+		MOVB	R0,P_YARD(R2)
+5$:		INC	YD_I
+		CMP	YD_I,#NYARD
+		BLO	1$
+		RETURN
+
+; =========================================================================
+; YD_SHIPPRICE - CalcPriceShip_HL: what the ship at R5 (the record's
+; layout, P_SHIP first) is worth with what is bolted to it, into
+; YD_PH:YD_PL - the catalogue price, the tank, the missiles, the cabins,
+; the guns and every device at their station prices, a broken device
+; at half, and the whole reduced by the wear as the service station
+; charges for it (CalcCashRepairShip).  Clobbers R0..R4.
+; =========================================================================
+YD_SHIPPRICE:	MOV	P_SHIP-P_SHIP(R5),R0
+		DEC	R0
+		ASL	R0
+		ASL	R0
+		MOV	SHIP_PRICE(R0),YD_PL
+		MOV	SHIP_PRICE+2(R0),YD_PH
+		MOVB	P_TANKS-P_SHIP(R5),R1	; the tank, whole or not
+		BMI	1$
+		MOV	#4,R0
+		BIT	#100,R1
+		BEQ	11$
+		INC	R0
+11$:		CLR	R1
+		CALL	YD_ADDROW
+1$:		MOV	P_MISSILES-P_SHIP(R5),R2
+		BEQ	2$
+12$:		MOV	#1,R0
+		CLR	R1
+		CALL	YD_ADDROW
+		SOB	R2,12$
+2$:		MOV	P_MISSTYPE-P_SHIP(R5),R2
+		BEQ	3$
+13$:		MOV	#2,R0
+		CLR	R1
+		CALL	YD_ADDROW
+		SOB	R2,13$
+3$:		MOVB	P_CABINS-P_SHIP(R5),R2
+		BIC	#177400,R2
+		BEQ	4$
+14$:		MOV	#3,R0
+		CLR	R1
+		CALL	YD_ADDROW
+		SOB	R2,14$
+4$:		CLR	R3			; the four guns
+15$:		MOV	R3,R2
+		ASL	R2
+		ADD	R5,R2
+		MOV	P_LASERS-P_SHIP(R2),R0
+		BIT	#200,R0
+		BNE	16$
+		BIC	#177770,R0
+		ADD	#6,R0
+		CLR	R1
+		CALL	YD_ADDROW
+16$:		INC	R3
+		CMP	R3,#4
+		BLO	15$
+		CLR	R3			; the devices, by the row table
+20$:		MOVB	YD_DEVROW(R3),R0
+		BIC	#177400,R0
+		BEQ	26$			; (the unused byte)
+		MOV	R3,R2
+		ADD	R5,R2
+		MOVB	P_DEVICES-P_SHIP(R2),R1
+		BIC	#177400,R1
+		BIT	#200,R1
+		BNE	26$			; not aboard
+		MOVB	YD_DEVKIND(R3),R2
+		BEQ	25$			; plain: its row, whole
+		CMP	R2,#1
+		BNE	21$
+		BIT	#1,R1			; the navigation array: the
+		BEQ	25$			;   experimental one is a row on
+		INC	R0
+		BR	25$
+21$:		CMP	R2,#2
+		BNE	22$
+		MOV	R1,R2			; typed: the type's row, and
+		BIC	#177774,R2		;   half if broken
+		ADD	R2,R0
+		BR	23$
+22$:		BIC	#177477,R1		; halvable: bit 6 only
+		BR	24$
+23$:		BIC	#177477,R1
+24$:		CALL	YD_ADDROW
+		BR	26$
+25$:		CLR	R1
+		CALL	YD_ADDROW
+26$:		INC	R3
+		CMP	R3,#NDEVICES
+		BLO	20$
+
+		MOVB	P_WEAR-P_SHIP(R5),R0	; less the wear's share
+		BIC	#177400,R0
+		MOV	#255.,R1
+		SUB	R0,R1
+		ASH	#-4,R1
+		INC	R1
+		MOV	YD_PL,R2
+		MOV	YD_PH,R3
+30$:		CLC
+		ROR	R3
+		ROR	R2
+		SOB	R1,30$
+		SUB	R2,YD_PL
+		SBC	YD_PH
+		SUB	R3,YD_PH
+		RETURN
+
+; YD_ADDROW - equipment row R0's station price onto the total, halved
+; if R1 has DEV_BROKEN set (incPriceShipHL).  Keeps R2..R5.
+YD_ADDROW:	ASL	R0
+		ASL	R0
+		MOV	EQL_PRICE(R0),-(SP)
+		MOV	EQL_PRICE+2(R0),R0
+		BIT	#DEV_BROKEN,R1
+		BEQ	1$
+		CLC
+		ROR	R0
+		ROR	(SP)
+1$:		ADD	(SP)+,YD_PL
+		ADC	YD_PH
+		ADD	R0,YD_PH
+		RETURN
+
+; a device's first equipment row (0: not priced), and how the row is
+; picked: 0 plain and whole, 1 the navigation array (bit 0 picks the
+; row), 2 typed (bits 1-0 pick the row) and halved when broken, 3
+; halved when broken
+YD_DEVROW:	.BYTE	14., 15., 16., 17., 18., 0, 19.
+		.BYTE	21., 24., 27., 29., 31., 33., 34., 35.
+		.BYTE	37., 38., 39., 40., 41., 42., 43., 44., 45., 46., 47., 48.
+YD_DEVKIND:	.BYTE	0, 0, 0, 0, 0, 0, 1
+		.BYTE	2, 2, 2, 2, 2, 2, 2, 2
+		.BYTE	3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3
+		.EVEN
+
+; =========================================================================
+; YD_PACK - PackShipPilot2_HLDE: the ship at R4 (the record's layout)
+; into the 18 bytes at R5, Legend's lenPilotShip format: the eight
+; single bytes, the guns two to a byte (type in the top three bits,
+; then the absent bit, for the front and the left; the same in the low
+; nibble for the rear and the right), then the 27 devices in seven
+; bytes - PACK_DEVICES (src/drone.mac, which packs a captured ship
+; the same way): the six plain devices' absent bits and the
+; navigation array's absent and type bits in one byte, the eight typed
+; devices four bits each (absent, broken, type bit 0, type bit 1), and
+; the twelve others two bits each (absent, broken).  YD_UNPACK is the
+; reverse (SetShipPilot).  Both clobber R0..R3 and leave R4, R5 past
+; what they read and wrote.
+; =========================================================================
+YD_PACK:	MOVB	P_SHIP-P_SHIP(R4),(R5)+
+		MOVB	P_GALAXY-P_SHIP(R4),(R5)+
+		MOVB	P_PLANET-P_SHIP(R4),(R5)+
+		MOVB	P_WEAR-P_SHIP(R4),(R5)+
+		MOVB	P_FUEL-P_SHIP(R4),(R5)+
+		MOVB	P_TANKS-P_SHIP(R4),(R5)+
+		MOV	P_MISSTYPE-P_SHIP(R4),R0
+		ASH	#4,R0
+		BIS	P_MISSILES-P_SHIP(R4),R0
+		MOVB	R0,(R5)+
+		MOVB	P_CABINS-P_SHIP(R4),(R5)+
+		MOV	P_LASERS-P_SHIP(R4),R0		; front and rear
+		MOV	P_LASERS+2-P_SHIP(R4),R1
+		CALL	YD_PACKGUNS
+		MOV	P_LASERS+4-P_SHIP(R4),R0	; left and right
+		MOV	P_LASERS+6-P_SHIP(R4),R1
+		CALL	YD_PACKGUNS
+		ADD	#P_DEVICES-P_SHIP,R4
+		JMP	PACK_DEVICES		; and the devices (src/drone.mac)
+
+; YD_PACKGUNS - the guns in R0 and R1 into one byte at R5.
+YD_PACKGUNS:	CALL	YD_GUNNIB
+		ASH	#4,R0
+		MOV	R0,R2
+		MOV	R1,R0
+		CALL	YD_GUNNIB
+		BIS	R2,R0
+		MOVB	R0,(R5)+
+		RETURN
+
+; YD_GUNNIB - a gun in R0 to its nibble: type << 1, absent in bit 0.
+; Clobbers R3, and only R3: the caller keeps the first nibble in R2.
+YD_GUNNIB:	MOV	R0,R3
+		BIC	#177770,R0
+		ASL	R0
+		BIT	#200,R3
+		BEQ	1$
+		INC	R0
+1$:		RETURN
+
+YD_UNPACK:	MOVB	(R4)+,R0
+		BIC	#177400,R0
+		MOV	R0,P_SHIP-P_SHIP(R5)
+		MOVB	(R4)+,R0
+		BIC	#177400,R0
+		MOV	R0,P_GALAXY-P_SHIP(R5)
+		MOVB	(R4)+,R0
+		BIC	#177400,R0
+		MOV	R0,P_PLANET-P_SHIP(R5)
+		MOVB	(R4)+,P_WEAR-P_SHIP(R5)
+		MOVB	(R4)+,R0
+		BIC	#177400,R0
+		MOV	R0,P_FUEL-P_SHIP(R5)
+		MOVB	(R4)+,P_TANKS-P_SHIP(R5)
+		MOVB	(R4)+,R0
+		BIC	#177400,R0
+		MOV	R0,R1
+		BIC	#177760,R1
+		MOV	R1,P_MISSILES-P_SHIP(R5)
+		ASH	#-4,R0
+		MOV	R0,P_MISSTYPE-P_SHIP(R5)
+		MOVB	(R4)+,P_CABINS-P_SHIP(R5)
+		MOVB	(R4)+,R0		; front and rear
+		BIC	#177400,R0
+		CALL	YD_UNGUNS
+		MOV	R1,P_LASERS-P_SHIP(R5)
+		MOV	R2,P_LASERS+2-P_SHIP(R5)
+		MOVB	(R4)+,R0		; left and right
+		BIC	#177400,R0
+		CALL	YD_UNGUNS
+		MOV	R1,P_LASERS+4-P_SHIP(R5)
+		MOV	R2,P_LASERS+6-P_SHIP(R5)
+		MOV	R5,-(SP)
+		ADD	#P_DEVICES-P_SHIP,R5
+		MOVB	(R4)+,R0		; six plain, and the array
+		BIC	#177400,R0
+		MOV	#6,R2
+1$:		CLR	R1
+		ASL	R0
+		BIT	#400,R0
+		BEQ	11$
+		MOV	#200,R1
+11$:		MOVB	R1,(R5)+
+		SOB	R2,1$
+		CLR	R1			; the array: absent, then its type
+		ASL	R0
+		BIT	#400,R0
+		BEQ	12$
+		MOV	#200,R1
+12$:		ASL	R0
+		BIT	#400,R0
+		BEQ	13$
+		INC	R1
+13$:		MOVB	R1,(R5)+
+		MOV	#4,R3			; eight typed
+2$:		MOVB	(R4)+,R0
+		BIC	#177400,R0
+		MOV	#2,R2
+21$:		CLR	R1
+		ASL	R0			; absent
+		BIT	#400,R0
+		BEQ	22$
+		BIS	#200,R1
+22$:		ASL	R0			; broken
+		BIT	#400,R0
+		BEQ	23$
+		BIS	#100,R1
+23$:		ASL	R0			; type bit 0
+		BIT	#400,R0
+		BEQ	24$
+		BIS	#1,R1
+24$:		ASL	R0			; type bit 1
+		BIT	#400,R0
+		BEQ	25$
+		BIS	#2,R1
+25$:		MOVB	R1,(R5)+
+		SOB	R2,21$
+		SOB	R3,2$
+		MOV	#3,R3			; twelve plain
+3$:		MOVB	(R4)+,R0
+		BIC	#177400,R0
+		MOV	#4,R2
+31$:		CLR	R1
+		ASL	R0
+		BIT	#400,R0
+		BEQ	32$
+		BIS	#200,R1
+32$:		ASL	R0
+		BIT	#400,R0
+		BEQ	33$
+		BIS	#100,R1
+33$:		MOVB	R1,(R5)+
+		SOB	R2,31$
+		SOB	R3,3$
+		MOV	(SP)+,R5
+		RETURN
+
+; YD_UNGUNS - the byte in R0 to two guns: R1 from the high nibble, R2
+; from the low.  Clobbers R0, R3.
+YD_UNGUNS:	MOV	R0,R2
+		BIC	#177760,R2
+		ASH	#-4,R0
+		CALL	YD_UNGUN
+		MOV	R0,R1
+		MOV	R2,R0
+		CALL	YD_UNGUN
+		MOV	R0,R2
+		RETURN
+
+; YD_UNGUN - a nibble in R0 (type << 1, absent in bit 0) to a gun: the
+; type, or LAS_NONE.
+YD_UNGUN:	MOV	R0,R3
+		ASR	R0
+		BIT	#1,R3
+		BEQ	1$
+		MOV	#LAS_NONE,R0
+1$:		RETURN

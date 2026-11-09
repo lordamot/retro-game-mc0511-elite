@@ -1,0 +1,108 @@
+; =========================================================================
+; drone.mac - the boarding drone, as Elite Legend has it.
+;
+; Legend's Grappling Drone (PilotGrapplingDrone, АБОРДАЖНАЯ СИСТЕМА in
+; the shop) is a device that fires the drones the market sells as goods
+; (G_DRONE, a tonne each) at a ship whose crew has bailed out: the space
+; bar, with "8" on АБОРДАЖНЫЙ ДРОН and a lock on a wreck that can be
+; boarded (KB_BOARD in its header) with nobody aboard (UF_DERELICT: it
+; fired its capsule, SHIP_DROP), sends one off from under the hull at
+; DRONE_SPEED (MissileFire's goto795, SetPlayerDrone).  It is a slot of
+; its own, marked yours (KB_PLAYER, with KB_DRONE for what it is), and
+; the AI flies it (src/ai.mac): on an odd counter it chases its target
+; and never reacts (MoveAllObjects' goto728), and inside AI_RAM of the
+; wreck (MoveObjToTarget's goto740) the boarding is decided and the
+; drone is spent whatever came of it.  With its target gone it is a
+; container that tumbles (goto729).
+;
+; The boarding (BoardingShip): a roll under BD_FREE of 256 takes the
+; ship whatever the drone; else only the naval drone (bit 0 of the
+; device byte) has a chance, a second roll under BD_NAVAL.  Taken, the
+; ship is rolled up as found - worn, near dry, a front gun, its devices
+; mostly gone or broken (genDataCaptShip) - into a free berth of the
+; commander's nineteen (GetFreeShipSlot), in the packed form the yard
+; keeps them in (PackShipPilot2_HLDE, YD_PACK in src/ovl_yard.mac), and
+; the wreck leaves by hyperspace to be found there.  No berth free is a
+; failed boarding.  Not here: the Targon spy and the cruiser, whose
+; numbers are 64 and up and whose capture is the sixth mission's
+; (phase 5), and Legend's 96 and 48 of 256 for them.
+;
+; The two rolls are words a check can poke, not immediates: a chance of
+; four in 256 cannot be waited for.
+; =========================================================================
+
+BD_FREE:	.WORD	4		; the roll: under this it is taken whatever
+				;   the drone (BoardingShip's #04 of 256)
+BD_NAVAL:	.WORD	8.		; and under this with the naval drone (#08)
+BD_N:		.WORD	0		; the ship's yard number
+BD_T:		.WORD	0		; the wreck's slot
+BD_C:		.WORD	0		; a device's chance of being absent
+BD_I:		.WORD	0
+
+; =========================================================================
+; PACK_DEVICES - the devices' half of PackShipPilot2_HLDE (YD_PACK,
+; src/ovl_yard.mac, has the rest): the 27 device bytes at R4, in the
+; record's layout, into seven bytes at R5 - the six plain devices'
+; absent bits and the navigation array's absent and type bits in one
+; byte, the eight typed devices four bits each (absent, broken, type
+; bit 0, type bit 1), and the twelve others two bits each (absent,
+; broken).  Resident because the yard's overlay packs with it too.
+; Clobbers R0..R3 and leaves R4, R5 past what they read and wrote.
+; =========================================================================
+PACK_DEVICES:	CLR	R0			; six absent bits
+		MOV	#6,R2
+1$:		MOVB	(R4)+,R1
+		ASL	R0
+		BIT	#200,R1
+		BEQ	11$
+		INC	R0
+11$:		SOB	R2,1$
+		MOVB	(R4)+,R1		; the navigation array
+		ASL	R0
+		BIT	#200,R1
+		BEQ	12$
+		INC	R0
+12$:		ASL	R0
+		BIT	#1,R1
+		BEQ	13$
+		INC	R0
+13$:		MOVB	R0,(R5)+
+		MOV	#4,R3			; eight typed, two to a byte
+2$:		CLR	R0
+		MOV	#2,R2
+21$:		MOVB	(R4)+,R1
+		ASL	R0
+		BIT	#200,R1
+		BEQ	22$
+		INC	R0
+22$:		ASL	R0
+		BIT	#100,R1
+		BEQ	23$
+		INC	R0
+23$:		ASL	R0
+		BIT	#1,R1
+		BEQ	24$
+		INC	R0
+24$:		ASL	R0
+		BIT	#2,R1
+		BEQ	25$
+		INC	R0
+25$:		SOB	R2,21$
+		MOVB	R0,(R5)+
+		SOB	R3,2$
+		MOV	#3,R3			; twelve plain, four to a byte
+3$:		CLR	R0
+		MOV	#4,R2
+31$:		MOVB	(R4)+,R1
+		ASL	R0
+		BIT	#200,R1
+		BEQ	32$
+		INC	R0
+32$:		ASL	R0
+		BIT	#100,R1
+		BEQ	33$
+		INC	R0
+33$:		SOB	R2,31$
+		MOVB	R0,(R5)+
+		SOB	R3,3$
+		RETURN

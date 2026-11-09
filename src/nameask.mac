@@ -1,0 +1,145 @@
+; =========================================================================
+; nameask.mac - the name prompt and the slot reader, assembled into every
+; overlay that asks who is flying: the commander chooser (src/ovl_cmdr.mac)
+; and the access menu (src/ovl_save.mac).  See src/ovl.list.
+;
+; NAME_ASK clears the screen and asks for a new name; NAME_EDIT asks on
+; a screen the caller has drawn, starting from the name the record
+; already has (Legend's InputNamePilot edits the name in place).  Both
+; read the raw scancode the PPU publishes through NM_LOOKUP in
+; src/name.mac, which stays in the resident because the charts'
+; FIND_ASK reads it too.
+;
+; The prompt is the original's own: " ИМЯ? " sits at 0xFA0F in
+; orig/ELITE.SCL, which is as good a sign as any that the Russian build
+; asked the same question.
+; =========================================================================
+
+NM_LAST:	.WORD	0	; the code already dealt with
+NM_LEN:		.WORD	0
+
+; =========================================================================
+; NAME_ASK - put the question up on a clean screen and read an answer
+; into CMDR_NAME, from nothing.
+;
+; ВВОД finishes, backspace rubs out, and anything else that maps to a
+; character is appended until there are NAME_MAX of them.  An empty
+; answer is the name every Elite starts with, so a commander always has
+; one.
+; =========================================================================
+NM_X	= 24.			; where the answer is typed, in byte columns
+NM_Y	= 120.
+
+NAME_ASK:	MOV	PP_LASTKEY,NM_LAST	; before the prompt, for the same
+					; reason CMDR_CHOOSE does it
+		CLR	R0			; the slot list is still up: wipe it,
+		MOV	#SCRH,R1		; or the question and the answer are
+		CLR	R2			; typed over the top of it and read
+		CALL	FILL_LINES		; as nothing at all
+		MOV	#CMDR_NAME,R0		; a clean slate
+		MOV	#NAME_MAX,R1
+1$:		CLRB	(R0)+
+		SOB	R1,1$
+		CLRB	(R0)
+		MOV	#NM_Y,R0
+		JMP	NAME_EDIT
+
+; =========================================================================
+; NAME_EDIT - the same prompt on pixel row R0, starting from the name in
+; CMDR_NAME, which is what ВВОД keeps if nothing is typed.  Blocks until
+; ВВОД.  Clobbers everything.
+; =========================================================================
+NM_ROW:		.WORD	0
+
+NAME_EDIT:	MOV	R0,NM_ROW
+		MOV	PP_LASTKEY,NM_LAST
+		CLR	NM_LEN			; how long the name already is
+		MOV	#CMDR_NAME,R1
+2$:		TSTB	(R1)+
+		BEQ	3$
+		INC	NM_LEN
+		CMP	NM_LEN,#NAME_MAX
+		BLO	2$
+3$:		MOV	#16.,TX
+		MOV	NM_ROW,TY
+		MOV	#S_M_NAME,R1
+		CALL	PUTS
+		CALL	NAME_SHOW
+
+10$:		CALL	VSYNC
+		MOV	PP_LASTKEY,R0
+		CMP	R0,NM_LAST		; the same key still down
+		BEQ	10$
+		MOV	R0,NM_LAST
+		BIT	#200,R0			; a release names a row, not a key
+		BNE	10$
+		CMP	R0,#153			; ВВОД: that is the name
+		BEQ	80$
+		CMP	R0,#132			; backspace
+		BNE	20$
+		TST	NM_LEN
+		BEQ	10$
+		DEC	NM_LEN
+		MOV	#CMDR_NAME,R1
+		ADD	NM_LEN,R1
+		CLRB	(R1)
+		CALL	NAME_SHOW
+		BR	10$
+
+20$:		CMP	NM_LEN,#NAME_MAX	; full: nothing more goes in
+		BGE	10$
+		CALL	NM_LOOKUP
+		TST	R0
+		BEQ	10$
+		MOV	#CMDR_NAME,R1
+		ADD	NM_LEN,R1
+		MOVB	R0,(R1)
+		INC	NM_LEN
+		MOV	#CMDR_NAME,R1
+		ADD	NM_LEN,R1
+		CLRB	(R1)
+		CALL	NAME_SHOW
+		BR	10$
+
+80$:		TST	NM_LEN			; nothing typed: take the name every
+		BNE	9$			; Elite starts with
+		MOV	#S_M_JAMESON,R1
+		MOV	#CMDR_NAME,R0
+81$:		MOVB	(R1)+,(R0)+
+		BNE	81$
+9$:		RETURN
+
+
+; NAME_SHOW - draw what has been typed so far, with the rest blanked.
+NAME_SHOW:	MOV	#NM_X,R0
+		MOV	NM_ROW,R1
+		MOV	#NAME_MAX+1,R2
+		CALL	TEXT_CLEAR
+		MOV	#NM_X,TX
+		MOV	NM_ROW,TY
+		MOV	#CMDR_NAME,R1
+		JMP	PUTS
+
+
+; =========================================================================
+; SLOT_NAME - R0 = a slot; returns R1 pointing at that commander's name
+; and C clear, or C set if the sector holds no commander of ours.  The
+; first half of the record's first sector - the sign, the layout number
+; and the name are all in it - lands in SCRATCH, which is where the
+; write probe keeps its own workings and is free otherwise.
+; =========================================================================
+SLOT_NAME:	MOV	#SCRATCH,R1
+		MOV	#128.,R2
+		CALL	SLOT_READ
+		BCS	9$
+		CMP	SCRATCH,#PILOT_SIGN
+		BNE	9$
+		CMP	SCRATCH+2,#PILOT_VERS
+		BNE	9$
+		MOV	#SCRATCH+<P_NAME-PILOT>,R1
+		TSTB	(R1)			; a commander with no name is an
+		BEQ	9$			; empty slot as far as this goes
+		CLC
+		RETURN
+9$:		SEC
+		RETURN

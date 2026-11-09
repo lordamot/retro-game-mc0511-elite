@@ -1,0 +1,22 @@
+# d_BoaHt2 - extracted from orig/legend by tools/legend_ships.py;
+# object 43 of AdrDataShips, hull d_Boa.
+# `make extract` overwrites it.
+name BOAHT2
+index 43
+class 2
+speed 36
+energy 250
+bounty 0
+laser 112
+collide 80
+cargo 5
+launch 75
+dot 56
+rating 768
+flags 136
+flags2 0
+laservert 0
+type 8
+objflags 116
+shipnum 4
+geometry BOAHT1

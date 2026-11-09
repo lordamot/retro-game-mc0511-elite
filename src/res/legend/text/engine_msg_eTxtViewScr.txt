@@ -1,0 +1,80 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Engine/Messages/eTxtViewScr.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+adrTxtViewScr+0|{dw mProd_00}{dw mProd_01}{dw mProd_02}{dw mProd_03}{dw mProd_04}{dw mProd_05}{dw mProd_06}{dw mProd_07}{dw mProd_08}{dw mProd_09}{dw mProd_10}{dw mProd_11}{dw mProd_12}{dw mProd_13}{dw mProd_14}{dw mProd_15}{dw mProd_16}{dw mProd_17}{dw mProd_18}{dw mProd_19}{dw mProd_20}{dw mProd_21}{dw mProd_22}{dw mProd_23}{dw mProd_24}{dw mProd_25}{dw mProd_26}{dw mProd_27}{dw mProd_28}{dw mProd_29}{dw mProd_30}{dw mProd_31}{dw mProd_32}{dw mProd_33}{dw mProd_34}{dw mProd_35}{dw mProd_36}{dw mProd_37}{dw txtRightOn1}{dw txtRightOn2}{dw txtRightOn3}{dw txtFuelOff}{dw txtProd_00}{dw txtProd_01}{dw txtProd_02}{dw txtProd_03}{dw txtProd_04}{dw txtProd_05}{dw txtProd_06}{dw txtProd_07}{dw txtProd_08}{dw txtProd_09}{dw txtProd_10}{dw txtProd_11}{dw txtProd_12}{dw txtProd_13}{dw txtProd_14}{dw txtProd_15}{dw txtProd_16}{dw txtProd_17}{dw txtProd_18}{dw txtProd_19}{dw txtProd_20}{dw txtProd_21}{dw txtProd_22}{dw txtProd_23}{dw txtProd_24}{dw txtProd_25}{dw txtProd_26}{dw txtProd_27}{dw txtProd_28}{dw txtProd_29}{dw txtProd_30}{dw txtProd_31}{dw txtProd_32}{dw txtProd_33}{dw txtProd_34}{dw txtProd_35}{dw txtProd_36}{dw txtProd_37}{dw txtUntMissile}{dw txtIncMissile}{dw txtMissileJam}{dw txtFuelOn}{dw txtDockingOn}{dw txtEnergyLow}{dw txtMission3}{dw txtMission1}{dw txtBonus}{dw txtFoundProd}{dw txtDestroy}{dw txtCloackDev}{dw txtAlienComp}{dw txtJumpRange}{dw txtJumpDest}{dw txtJumpGalaxy}{dw txtNoCash}{dw txtCashJump}{dw txtBoardShip}{dw txtNotBoard}{dw txtRefuel}{dw txtWarInvasion}{dw txtDamage}{dw mEquip_00}{dw mEquip_01}{dw mEquip_02}{dw mEquip_03}{dw mEquip_04}{dw mEquip_05}{dw mEquip_06}{dw mEquip_07}{dw mEquip_08}{dw mEquip_09}{dw mEquip_10}{dw mEquip_11}{dw mEquip_12}{dw mEquip_13}{dw mEquip_14}{dw mEquip_15}{dw mEquip_16}{dw mEquip_17}{dw mEquip_18}{dw mEquip_19}{dw txtDestroy3}{dw txtDestroy1}{dw txtHijack}{dw txtAnomaly}{dw txtAutopilot}{dw txtPirateSt}{dw txtDenied}
+txtCommander+0|Commander!
+txtRightOn1+0|Right{nFlgPrn_2xx}{nFlgPrn_xx1}On{nFlgPrn_2xx}{nFlgPrn_xx1}{nFlgPrn_xx1}{dw txtCommander}
+txtRightOn2+0|Congratulations {nFlgPrn_xx1}{dw txtCommander}
+txtRightOn3+0|Wonderful Game {nFlgPrn_xx1}{dw txtCommander}
+txtFuelOff+0|Топливо{nPrnGalNum}|!
+txtDestroy+0|{nFlgPrn_2xx}{nFlgPrn_xx1}Утрачен
+txtDestroy1+0|{nPrnGalNum}Zо
+txtDestroy3+0|{nPrnGalNum}Zы
+txtDestroy4+0|{nPrnGalNum}Zа
+txtUntMissile+0|Цель{nFlgPrn_2xx}{nFlgPrn_xx1}потеряна
+txtIncMissile+0|Запущена{nFlgPrn_2xx}{nFlgPrn_xx1}ракета
+txtMissileJam+0|Ракета{nFlgPrn_2xx}{nFlgPrn_xx1}блокирована
+txtFuelOn+0|Сбор{nFlgPrn_2xx}{nFlgPrn_xx1}топлива
+txtDockingOn+0|Ожидание{nFlgPrn_2xx}{nFlgPrn_xx1}стыковки
+txtEnergyLow+0|Низкий{nFlgPrn_2xx}{nFlgPrn_xx1}уровень{nFlgPrn_2xx}{nFlgPrn_xx1}энергии
+txtMission3+0|MAYDAY!{nFlgPrn_2xx}{nFlgPrn_xx1}{nFlgPrn_xx1}{dw plNameMission3}{nFlgPrn_2xx}{nFlgPrn_xx1}захвачена!
+txtMission1+0|MAYDAY!{nFlgPrn_2xx}{nFlgPrn_xx1}Станция{nFlgPrn_2xx}{nFlgPrn_xx1}в{nFlgPrn_2xx}{nFlgPrn_xx1}опасности!
+txtCloackDev+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Система{nFlgPrn_2xx}{nFlgPrn_xx1}Маскировки
+txtAlienComp+0|{nFlgPrn_2xx}{#FF}Система{nFlgPrn_2xx}{nFlgPrn_xx1}Управления{nFlgPrn_2xx}{nFlgPrn_xx1}Дронами
+txtGameOver+0|Игра{nFlgPrn_2xx}{nFlgPrn_xx1}Окончена
+txtElite+0|---- E L I T E (Demo) ----
+txtElite+0|---- E L I T E ----
+txtLoadNew+0|Загрузить игру (Y/N)?
+txtPressSpace+0|{'Нажмите "Пробел"'}
+txtJumpRange+0|Недостаточно{nFlgPrn_2xx}{nFlgPrn_xx1}Топлива
+txtJumpDest+0|Гиперпрыжок{nFlgPrn_2xx}{nFlgPrn_xx1}--{nFlgPrn_2xx}{nFlgPrn_xx1}{nFlgPrn_xx1}{dw plNameDest}
+txtJumpGalaxy+0|Межгалактический{nFlgPrn_2xx}{nFlgPrn_xx1}прыжок
+txtNoCash+0|Нехватает{nFlgPrn_2xx}{nFlgPrn_xx1}Денег
+txtCashJump+0|Оплачено{nFlgPrn_2xx}{nFlgPrn_xx1}250{nFlgPrn_2xx}{nFlgPrn_xx1}Кр
+txtBoardShip+0|Корабль{nFlgPrn_2xx}{nFlgPrn_xx1}Захвачен
+txtNotBoard+0|Корабль{nFlgPrn_2xx}{nFlgPrn_xx1}Захватить{nFlgPrn_2xx}{nFlgPrn_xx1}Не{nFlgPrn_2xx}{nFlgPrn_xx1}Удалось
+txtRefuel+0|Дозаправлен
+txtDamage+0|Повреждено:
+txtProd_00+0|{nPrnGalNum}
+txtProd_00+1|{nPrnGalNum}|
+txtProd_01+0|{nPrnGalNum}{nFlgPrn_xx1}{nPrnGalNum}Z
+txtProd_02+0|{nPrnGalNum}{nFlgPrn_2xx}{nPrnGalNum}{
+txtProd_03+0|{nPrnGalNum}{nPrnGalNum}{nPrnGalNum}{
+txtProd_04+0|{nPrnGalNum}{nPlanetDest}{nPrnGalNum}{
+txtProd_05+0|{nPrnGalNum}{nPrnPlanetPresent}{nPrnGalNum}{
+txtProd_06+0|{nPrnGalNum}{nFlgPrn_1xx}{nPrnGalNum}{
+txtProd_07+0|{nPrnGalNum}{nPrnPilotName}{nPrnGalNum}{
+txtProd_08+0|{nPrnGalNum}{nFlgPrn0xx}{nPrnGalNum}{
+txtProd_09+0|{nPrnGalNum}{nClearDescrMsg}{nPrnGalNum}{
+txtProd_10+0|{nPrnGalNum}{nPrnRndPairChr}{nPrnGalNum}|
+txtProd_11+0|{nPrnGalNum}{nPrnPlDestCase}{nPrnGalNum}{
+txtProd_12+0|{nPrnGalNum}{nCloseDescrMsg}{nFlgPrn_xx1}{dw txtDestroy4}
+txtProd_13+0|{nPrnGalNum}{nPause24I}{nPrnGalNum}|
+txtProd_14+0|{nPrnGalNum}{nSetAdrMsg,1{dw txtDestroy4},0}
+txtProd_15+0|{nPrnGalNum}{#0F}{nPrnGalNum}{
+txtProd_16+0|{nPrnGalNum}{nSetCrdXY,3,123}
+txtProd_17+0|{nPrnGalNum}{nSetCrdX,3}{
+txtProd_18+0|{nPrnGalNum}{nNamePackage}{nFlgPrn_xx1}{dw txtDestroy4}
+txtProd_19+0|{nPrnGalNum}{nNamePassenger}{nPrnGalNum}{
+txtProd_20+0|{nPrnGalNum}{nTravelTime}{nPrnGalNum}|
+txtProd_21+0|{nPrnGalNum}{nNameGoods}{nPrnGalNum}{
+txtProd_22+0|{nPrnGalNum}{nSetPixCrdY,3}|
+txtProd_23+0|{nPrnGalNum}{nSetZnkCrd}{nPrnGalNum}{
+txtProd_24+0|{nPrnGalNum}{nSetPixCrdX,3}{
+txtProd_25+0|{nPrnGalNum}{nNumGoods}{nPrnGalNum}|
+txtProd_26+0|{nPrnGalNum}{nDest}{nPrnGalNum}Z
+txtProd_27+0|{nPrnGalNum}{nWithin}{nPrnGalNum}{
+txtProd_28+0|{nPrnGalNum}{nFee}{nPrnGalNum}|
+txtProd_29+0|{nPrnGalNum}{nAdvance}{nPrnGalNum}{
+txtProd_30+0|{nPrnGalNum}{nPlanetOccup}{nPrnGalNum}Z
+txtProd_31+0|{nPrnGalNum}{#1F}{nPrnGalNum}{
+txtProd_32+0|{nPrnGalNum} {nPrnGalNum}{
+txtProd_33+0|{nPrnGalNum}!{nPrnGalNum}|
+txtProd_34+0|{nPrnGalNum}"{nPrnGalNum}Z
+txtProd_35+0|{nPrnGalNum}#{nPrnGalNum}{
+txtProd_36+0|{nPrnGalNum}${nPrnGalNum}|
+txtProd_37+0|{nPrnGalNum}%{nFlgPrn_xx1}{dw txtDestroy4}
+txtHijack+0|Угонщик Уничтожен
+txtAutopilot+0|Работает Автопилот
+txtPirateSt+0|Станция не отвечает

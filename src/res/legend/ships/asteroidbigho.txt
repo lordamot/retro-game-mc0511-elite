@@ -1,0 +1,22 @@
+# d_AsteroidBigHo - extracted from orig/legend by tools/legend_ships.py;
+# object 64 of AdrDataShips, hull d_AsteroidBig.
+# `make extract` overwrites it.
+name ASTEROIDBIGHO
+index 64
+class 2
+speed 62
+energy 254
+bounty 0
+laser 80
+collide 128
+cargo 1
+launch 85
+dot 114
+rating 512
+flags 161
+flags2 0
+laservert 0
+type 0
+objflags 80
+shipnum 0
+geometry ASTEROIDBIGHA

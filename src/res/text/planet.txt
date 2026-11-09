@@ -1,0 +1,63 @@
+# The words a world is described with, out of orig/ELITE.SCL.
+# Written by tools/planet_extract.py - `make extract` rewrites it.
+#
+# group | address in the original | its stem there | what is printed
+#
+# The stems are checked against the image by `make verify`; the
+# endings are written out here because Russian needs them and the
+# original assembles them from a suffix table this port does not
+# copy.  The original draws Ч on the J position and Э on '3', so
+# 'JERN' is ЧЕРН - see tools/planet_extract.py.
+#
+# A few stems keep a leading lowercase Latin byte ('h ', 'q ')
+# and one keeps trailing spaces: they are in the original's own
+# string and are left verbatim so the round-trip is exact.  The
+# colour list really does have six slots with one of them empty
+# - the world whose seed picks it is described without a colour.
+
+size	0xf2fe	РОГ	РОГАТЫЕ
+size	0xf302	СИЛЬН	СИЛЬНЫЕ
+size	0xf307	СЛАБ	СЛАБЫЕ
+colour	0xf30b	ЗЕЛЕН	ЗЕЛЕНЫЕ
+colour	0xf30f	КРАС	КРАСНЫЕ
+colour	0xf313	ЖЕЛТЕ	ЖЕЛТЫЕ
+colour	0xf318	КОРИЧ	КОРИЧНЕВЫЕ
+colour	0xf31d	ЧЕРН	ЧЕРНЫЕ
+colour	0xf322		
+trait	0xf324	ЛИПКИЕ	ЛИПКИЕ
+trait	0xf32a	УСАТ	УСАТЫЕ
+trait	0xf32f	ЯДОВИТ	ЯДОВИТЫЕ
+trait	0xf335	КРАСИВ	КРАСИВЫЕ
+trait	0xf33b	ЖИР	ЖИРНЫЕ
+trait	0xf33f	МОХН	МОХНАТЫЕ
+kind	0xf344	ЗМЕИ	ЗМЕИ
+kind	0xf349	ЖАБЫ	ЖАБЫ
+kind	0xf34e	ПТИЦЫ	ПТИЦЫ
+kind	0xf353	КАЛЬМАРЫ	КАЛЬМАРЫ
+kind	0xf359	ОРЛЫ	ОРЛЫ
+kind	0xf35d	ГУМОНОИДЫ	ГУМАНОИДЫ
+kind	0xf366	ТИГРЫ	ТИГРЫ
+kind	0xf36b	ТАРАКАН	ТАРАКАНЫ
+hazard	0xf6fe	h ЦУНАМИ	ЦУНАМИ
+hazard	0xf707	q ЗЕМЛЯТРЕС	ЗЕМЛЕТРЯСЕНИЯ
+hazard	0xf711	q СОЛНЕЧН БУРИ	СОЛНЕЧНЫЕ БУРИ
+hazard	0xf9c4	ВУЛКАНЫ	ВУЛКАНЫ
+hazard	0xf9a7	ОБЛАКА ПЫЛИ	ОБЛАКА ПЫЛИ
+hazard	0xf9b1	АИСБЕРГ	АЙСБЕРГИ
+hazard	0xf747	ГРОЗЫ	ГРОЗЫ
+hazard	0xf6ec	q ВОИНЫ   	ВОЙНЫ
+sight	0xf79b	КАЗИНО	КАЗИНО
+sight	0xf790	НОЧЬ ЖИЗНЬ	НОЧНАЯ ЖИЗНЬ
+sight	0xf741	РАСТЕНИЯ	РАСТЕНИЯ
+sight	0xf74c	НАРОД	НАРОД
+sight	0xf6a9	ТУРИСТ	ТУРИСТЫ
+sight	0xf1de	КОЛОНИЯ РАБОВ	КОЛОНИЯ РАБОВ
+sight	0xf778	БОГАТ	БОГАТСТВА
+quality	0xf950	ДРЕВН	ДРЕВНИЕ
+quality	0xf956	НЕОБЫЧН	НЕОБЫЧНЫЕ
+quality	0xf95e	ЭКСЦЕНТР	ЭКСЦЕНТРИЧНЫЕ
+quality	0xf89e	ЖУТК 	ЖУТКИЕ
+quality	0xf8c5	ЖЕСТОКИЕ 	ЖЕСТОКИЕ
+quality	0xf8cf	УЖАСТН 	УЖАСНЫЕ
+quality	0xf898	ЗАБАВ	ЗАБАВНЫЕ
+quality	0xf8bc	СЛУЧАИНЫЕ	СЛУЧАЙНЫЕ

@@ -1,0 +1,91 @@
+# d_Fighter1H - extracted from orig/legend by tools/legend_ships.py;
+# object 57 of AdrDataShips, hull d_Fighter1.
+# `make extract` overwrites it.
+name FIGHTER1H
+index 57
+class 4
+speed 39
+energy 144
+bounty 245
+laser 224
+collide 50
+cargo 2
+launch 2
+dot 23
+rating 528
+flags 140
+flags2 1
+laservert 0
+type 10
+objflags 240
+shipnum 14
+radius 80
+vertex     0     0    80
+vertex    20     7    20
+vertex   -20     7    20
+vertex    20    -7    20
+vertex   -20    -7    20
+vertex    40    12   -20
+vertex   -40    12   -20
+vertex    40   -12   -20
+vertex   -40   -12   -20
+vertex    60    15   -40
+vertex   -60    15   -40
+vertex    60   -15   -40
+vertex   -60   -15   -40
+vertex    30    10   -35
+vertex   -30    10   -35
+vertex    30   -10   -35
+vertex   -30   -10   -35
+vertex     0     8   -32
+vertex     0    -8   -32
+vertex   -30     0   -35
+vertex    30     0   -35
+vertex   -50     8   -37
+vertex    50     8   -37
+vertex   -50    -8   -37
+vertex    50    -8   -37
+vertex     0    -8    20
+vertex     5   -10     0
+vertex    -5    -9    10
+vertex     0   -11   -15
+edge 1 0 31 7 0
+edge 2 0 31 7 1
+edge 3 0 31 8 0
+edge 4 0 31 8 1
+edge 5 1 31 7 2
+edge 6 2 31 7 3
+edge 7 3 31 8 2
+edge 8 4 31 8 3
+edge 9 5 31 7 4
+edge 10 6 31 7 5
+edge 11 7 31 8 4
+edge 12 8 31 8 5
+edge 11 9 31 6 4
+edge 13 9 31 7 6
+edge 12 10 31 6 5
+edge 14 10 31 7 6
+edge 15 11 31 8 6
+edge 13 17 31 7 6
+edge 14 17 31 7 6
+edge 12 16 31 8 6
+edge 15 18 31 8 6
+edge 18 16 31 8 6
+edge 27 26 14 8 8
+edge 26 25 14 8 8
+edge 28 27 14 8 8
+edge 21 19 14 6 6
+edge 23 19 14 6 6
+edge 22 20 14 6 6
+edge 24 20 14 6 6
+edge 24 22 14 6 6
+edge 23 21 14 6 6
+normal   24    0   18
+normal  -24    0   18
+normal   24    0   12
+normal  -24    0   12
+normal   10    0   10
+normal  -10    0   10
+normal    0    0  -40
+normal    0   10    1
+normal    0  -10    1

@@ -1,0 +1,637 @@
+; =========================================================================
+; ovl_charts.mac - the two charts.  AN OVERLAY (src/ovl.list): read into
+; OVL_BASE when SCREEN names a chart, and called through its first word
+; with R0 = 0 to draw the chart SCREEN names, R0 = 1 to act on the keys
+; in KEYS_EDGE.  Nothing here runs while the sky is moving: a chart
+; stops the flight loop, and the window is free again the moment the
+; cockpit comes back.
+;
+; The galaxy chart plots 256 systems where they lie, the short chart
+; names the near ones, ФИКС jumps to the system under the cursor and
+; ВВОД asks for one by name (FIND_ASK).  Everything is redrawn from the
+; seed; nothing is stored.
+;
+; The galaxy chart shows CHART_GAL (Legend's CurrentGalaxy, its Maps/
+; GlobalMap), which "1" and "2" walk down and up through the galaxies
+; the drive fitted reaches (GAL_REACH: none for the standard drive,
+; three either way for the military one, all for the experimental);
+; the seed is set to it for the drawing and the search and put back
+; after, so the flight code always finds this galaxy's.  ФИКС on a
+; system of another galaxy is the galactic drive to that system
+; (GAL_HOP), as is ФИКС on the system you are already in.  "9" on
+; either chart is the experimental drive's jump to Raxxla (RAX_JUMP).
+;
+; "3" on the galaxy chart turns it into Legend's LIST of the galaxy's
+; systems (PrnListPlanet), twenty a page, with each one's distance,
+; travel time, tech level and government - with a navigation array
+; fitted and whole, and for another galaxy only the experimental one
+; (Cmd_I_GlobalMap); "3" again is the chart.  In the list the arrows
+; walk the cursor a system and a page at a time.  The travel time is
+; CalcTravelTime's: the fuel squared over ten inside a jump, six times
+; the fuel beyond it - and beyond it nothing without an array.
+; =========================================================================
+
+		JMP	OVLC_ENTRY		; the overlay's entry, at OVL_BASE
+
+SCR_I:		.WORD	0
+SCR_T:		.WORD	0
+CH_LIST:	.WORD	0		; NumMapPage: 0 the chart, 1 the list
+CH_TIME:	.WORD	0		; the cursor system's travel time, tenths
+				;   of an hour, as the list worked it out
+				;   (for the checks)
+
+OVLC_ENTRY:	TST	R0
+		BNE	OVLC_KEYS
+		CMP	SCREEN,#2
+		BEQ	1$
+		JMP	SCR_CHART
+1$:		JMP	SCR_SHORT
+
+; the chart keys: the arrows walk the cursor, ФИКС jumps, ВВОД asks for
+; a name; the page is redrawn after any of them
+OVLC_KEYS:	MOV	KEYS_EDGE,R0		; the cursor, on either chart
+		TST	CH_LIST			; in the list: a system and a page
+		BEQ	2$			;   at a time
+		BIT	#K_RIGHT,R0
+		BEQ	31$
+		ADD	#20.,CURSYS
+31$:		BIT	#K_LEFT,R0
+		BEQ	41$
+		SUB	#20.,CURSYS
+41$:		BIT	#K_UP,R0
+		BEQ	51$
+		DEC	CURSYS
+51$:		BIT	#K_DOWN,R0
+		BEQ	6$
+		INC	CURSYS
+		BR	6$
+2$:		BIT	#K_RIGHT,R0
+		BEQ	3$
+		INC	CURSYS
+3$:		BIT	#K_LEFT,R0
+		BEQ	4$
+		DEC	CURSYS
+4$:		BIT	#K_UP,R0
+		BEQ	5$
+		ADD	#16.,CURSYS
+5$:		BIT	#K_DOWN,R0
+		BEQ	6$
+		SUB	#16.,CURSYS
+6$:		BIC	#177400,CURSYS		; wrap inside the galaxy
+		BIT	#K_FIRE,R0		; ФИКС jumps to the marked system
+		BEQ	61$			; - or, with the cursor left on
+		CMP	CHART_GAL,GALNUM	; the system you are already in,
+		BNE	66$			; or on a system of another
+		CMP	CURSYS,SYS_INDEX	; galaxy, fires the galactic
+		BNE	62$			; drive
+66$:		JMP	GAL_HOP
+62$:		JMP	HYPER_JUMP
+61$:		BIT	#K_CLOAK,R0		; "9": the experimental drive to
+		BEQ	70$			;   Raxxla (Legend's R on the jump)
+		JMP	RAX_JUMP
+70$:		BIT	#K_ENTER,R0		; ВВОД asks for a name instead of
+		BEQ	64$			; walking the cursor there
+		MOV	CHART_GAL,R0		; in the galaxy the chart shows
+		CALL	GAL_SEEDN
+		CALL	FIND_ASK
+		CALL	GAL_SEEDOF
+		BR	65$
+64$:		CMP	SCREEN,#1		; on the galaxy chart, "1" and "2"
+		BNE	67$			;   look at the galaxy before and
+		BIT	#K_ECM,KEYS_EDGE	;   after, as far as the drive
+		BEQ	68$			;   reaches
+		MOV	CHART_GAL,R0
+		INC	R0
+		CALL	GAL_REACH
+		BCS	68$
+		MOV	R0,CHART_GAL
+		BR	69$
+68$:		BIT	#K_VIEW,KEYS_EDGE
+		BEQ	60$
+		MOV	CHART_GAL,R0
+		DEC	R0
+		CALL	GAL_REACH
+		BCS	60$
+		MOV	R0,CHART_GAL
+69$:		CALL	LIST_MAY		; another galaxy's list wants the
+		BCC	65$			;   experimental array: else back
+		CLR	CH_LIST			;   to the chart
+		BR	65$
+60$:		BIT	#K_BOMB,KEYS_EDGE	; "3": the list, and back
+		BEQ	67$
+		TST	CH_LIST
+		BEQ	71$
+		CLR	CH_LIST
+		BR	65$
+71$:		CALL	LIST_MAY
+		BCS	9$
+		MOV	#1,CH_LIST
+		BR	65$
+67$:		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN,KEYS_EDGE
+		BEQ	9$
+65$:
+		CMP	SCREEN,#2		; redraw whichever chart is up
+		BEQ	63$
+		JMP	SCR_CHART
+63$:		JMP	SCR_SHORT
+9$:		RETURN
+
+; LIST_MAY - C clear if the list may be shown: an array fitted and
+; whole, and for another galaxy the experimental one.  Clobbers R0.
+LIST_MAY:	BITB	#DEV_OFF,P_ADVNAV
+		BNE	8$
+		CMP	CHART_GAL,GALNUM
+		BEQ	7$
+		BITB	#1,P_ADVNAV
+		BEQ	8$
+7$:		CLC
+		RETURN
+8$:		SEC
+		RETURN
+
+; =========================================================================
+; SCR_CHART - the galaxy: 256 systems plotted where they lie, with the
+; cursor round the one being looked at - or, with CH_LIST set, listed
+; (SCR_LIST).  Nothing is stored - every dot comes back out of the seed.
+; =========================================================================
+CH_XSH	= 1			; x 0..255 -> 0..639: doubled, then +1/4
+CH_YSH	= 2			; y 0..255 -> 0..190: quartered, near enough
+
+SCR_CHART:	TST	CH_LIST
+		BEQ	SCR_MAP
+		JMP	SCR_LIST
+SCR_MAP:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	#S_T_CHART,R1
+		CALL	PUTS2
+		MOV	CHART_GAL,R0		; which galaxy, counted from one
+		INC	R0
+		MOV	#1,R1
+		CALL	PUTDEC
+
+		MOV	CHART_GAL,R0		; its seed, for the drawing
+		CALL	GAL_SEEDN
+		CALL	GAL_START
+		CLR	SCR_I
+10$:		CALL	SYS_MAKE
+		MOV	SYS_X,R0
+		CALL	CH_PX
+		MOV	R0,-(SP)
+		MOV	SYS_Y,R1
+		CALL	CH_PY
+		MOV	R1,-(SP)
+		MOV	2(SP),R0
+		CALL	PLOT
+		TST	(SP)+
+		TST	(SP)+
+		INC	SCR_I
+		CMP	SCR_I,#256.
+		BLT	10$
+
+		CMP	CHART_GAL,GALNUM	; how far the tank reaches: only
+		BNE	11$			;   in the galaxy you are in
+		CALL	CHART_RANGE
+11$:
+		MOV	CURSYS,R0		; the cursor, and the name
+		CALL	SYS_SELECT
+		MOV	SYS_X,R0
+		CALL	CH_PX
+		MOV	R0,SCR_T
+		MOV	SYS_Y,R1
+		CALL	CH_PY
+		MOV	SCR_T,R0
+		CALL	CROSSHAIR
+
+		MOV	#2,TX			; the name and how far it is
+		MOV	#176.,TY
+		MOV	#SYS_NAME,R1
+		CALL	PUTS2
+		CMP	CHART_GAL,GALNUM	; a distance means nothing across
+		BNE	12$			;   galaxies (CalcFuelForJump's 0)
+		MOV	#2,TX
+		MOV	#190.,TY
+		MOV	#S_DISTANCE,R1
+		CALL	PUTS
+		CALL	SYS_DISTANCE
+		MOV	#5,R1
+		CALL	PUTDEC
+12$:		JMP	GAL_SEEDOF		; and this galaxy's seed again
+
+; =========================================================================
+; SCR_LIST - PrnListPlanet: the page of twenty systems the cursor is on,
+; in the galaxy's own order, with the cursor's row marked: the name,
+; then in this galaxy the fuel to it and the travel time (LS_TRAVEL),
+; then the tech level and the government.  The last page has sixteen.
+; =========================================================================
+LS_Y0	= 32.			; the first row, under the heading
+LS_STEP	= 12.			; a row
+LS_ROWS	= 20.			; rows to a page (Legend's b = 20)
+LS_FIRST:	.WORD	0		; NumFirstPlanet: the page's first system
+LS_I:		.WORD	0		; the one being drawn
+LS_N:		.WORD	0
+LS_Y:		.WORD	0
+LS_D:		.WORD	0		; its distance, tenths of a light year
+GOVTNAMES:	.WORD	S_G_ANARCHY, S_G_FEUDAL, S_G_MULTIGOV, S_G_DICTATOR
+		.WORD	S_G_COMMUNIST, S_G_CONFED, S_G_DEMOCRACY, S_G_CORPORATE
+
+SCR_LIST:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	#S_T_LIST,R1		; ГАЛАКТИКА n: СПИСОК СИСТЕМ
+		CALL	PUTS2
+		MOV	CHART_GAL,R0
+		INC	R0
+		MOV	#1,R1
+		CALL	PUTDEC
+		MOV	#S_T_LIST2,R1
+		CALL	PUTS2
+		MOV	#2,TX
+		MOV	#17.,TY
+		MOV	#S_L_HEAD,R1
+		CALL	PUTS
+
+		MOV	CURSYS,R1		; the page: twenty from the first
+		CLR	R0			;   multiple of twenty at or under
+		DIV	#LS_ROWS,R0		;   the cursor
+		MOV	CURSYS,R0
+		SUB	R1,R0
+		MOV	R0,LS_FIRST
+		CLR	CH_TIME
+		MOV	CHART_GAL,R0		; the seed, stepped to the page
+		CALL	GAL_SEEDN
+		CALL	GAL_START
+		MOV	LS_FIRST,R2
+		BEQ	2$
+1$:		MOV	R2,-(SP)
+		CALL	SYS_MAKE
+		MOV	(SP)+,R2
+		SOB	R2,1$
+2$:		MOV	LS_FIRST,LS_I
+		MOV	#LS_ROWS,LS_N
+		MOV	#LS_Y0,LS_Y
+3$:		CMP	LS_I,#256.
+		BGE	9$
+		CALL	SYS_MAKE
+		CMP	LS_I,CURSYS		; the cursor's row
+		BNE	4$
+		CLR	TX
+		MOV	LS_Y,TY
+		MOV	#'>,R0
+		CALL	PUTC
+4$:		MOV	#2,TX
+		MOV	LS_Y,TY
+		MOV	#SYS_NAME,R1
+		CALL	PUTS			; single width: PUTS2 doubles
+		CMP	CHART_GAL,GALNUM	; the fuel and the time: only in
+		BNE	5$			;   this galaxy (CalcFuelForJump)
+		MOV	#14.,TX
+		CALL	SYS_DISTANCE
+		MOV	R0,LS_D
+		MOV	#4,R1
+		CALL	PUT_TENTHSW
+		CALL	LS_TRAVEL
+		CMP	LS_I,CURSYS
+		BNE	41$
+		MOV	R0,CH_TIME
+41$:		TST	R0			; nothing for a time it cannot say
+		BEQ	5$
+		MOV	#22.,TX
+		MOV	#5,R1
+		CALL	PUT_TENTHSW
+5$:		MOV	#30.,TX
+		MOV	SYS_TECH,R0
+		INC	R0
+		MOV	#2,R1
+		CALL	PUTDEC
+		MOV	#34.,TX
+		MOV	SYS_GOVT,R0
+		ASL	R0
+		MOV	GOVTNAMES(R0),R1
+		CALL	PUTS
+		ADD	#LS_STEP,LS_Y
+		INC	LS_I
+		DEC	LS_N
+		BGT	3$
+9$:		JMP	GAL_SEEDOF		; and this galaxy's seed again
+
+; LS_TRAVEL - CalcTravelTime: R0 = the hours to the system at LS_D
+; tenths of a light year, in tenths: the fuel squared over ten within
+; a jump, six times the fuel beyond it with an array fitted and whole,
+; else 0.  Clobbers R0, R1.
+LS_TRAVEL:	MOV	LS_D,R0
+		CMP	R0,PFUEL
+		BHI	1$
+		MOV	R0,R1
+		MUL	R0,R1			; R1 is ODD: the low word, which
+		CLR	R0			;   4900 fits
+		DIV	#10.,R0
+		RETURN
+1$:		BITB	#DEV_OFF,P_ADVNAV
+		BNE	2$
+		MOV	R0,R1			; six times: (2d + d) * 2
+		ASL	R0
+		ADD	R1,R0
+		ASL	R0
+		RETURN
+2$:		CLR	R0
+		RETURN
+
+; =========================================================================
+; CHART_RANGE - the circle round home that says what the tank will reach.
+;
+; SYS_DISTANCE measures sqrt(dx^2 + <dy/2>^2)/2 in galaxy units, and the
+; chart draws x at 2.25 and y at 0.5, so what is a circle out there is an
+; ellipse here: 4.5 chart pixels of x and 2 of y per tenth of a light
+; year.  Everything inside it can be reached on what is in the tank,
+; which is the one thing the chart could not say before - the distance
+; was there, but only for the system the cursor happened to be on.
+; =========================================================================
+CR_RX:		.WORD	0
+CR_RY:		.WORD	0
+CR_CX:		.WORD	0
+CR_CY:		.WORD	0
+CR_N:		.WORD	0
+CR_T:		.WORD	0		; the half-width PL-style scaling uses
+
+CHART_RANGE:	TST	PFUEL
+		BEQ	9$
+		MOV	PFUEL,R0		; 4.5 pixels of x a tenth: four and
+		ASL	R0			; a half is x4 + x/2
+		ASL	R0
+		MOV	PFUEL,R1
+		ASR	R1
+		ADD	R1,R0
+		MOV	R0,CR_RX
+		MOV	PFUEL,R0		; and two of y
+		ASL	R0
+		MOV	R0,CR_RY
+
+		MOV	HOME_X,R0
+		CALL	CH_PX
+		MOV	R0,CR_CX
+		MOV	HOME_Y,R1
+		CALL	CH_PY
+		MOV	R1,CR_CY
+
+		MOV	#CIRCTAB,R4		; thirty-two chords: it is drawn
+		MOV	#32.,CR_N		; once a screen, not once a frame
+		MOV	CR_CX,R0
+		ADD	CR_RX,R0
+		MOV	R0,LX0
+		MOV	CR_CY,LY0
+10$:		MOV	(R4)+,R3		; cos
+		MOV	CR_RX,CR_T
+		CALL	CR_SCALE
+		ADD	CR_CX,R3
+		MOV	R3,LX1
+		MOV	(R4)+,R3		; sin
+		MOV	CR_RY,CR_T
+		CALL	CR_SCALE
+		ADD	CR_CY,R3
+		MOV	R3,LY1
+		MOV	R4,-(SP)
+		CALL	DRAW_LINE
+		MOV	(SP)+,R4
+		MOV	LX1,LX0
+		MOV	LY1,LY0
+		DEC	CR_N
+		BGT	10$
+9$:		RETURN
+
+; CR_SCALE - R3 = a table entry in units of 256, CR_T = a half-width;
+; returns R3 = the product shifted back down.  The full 32 bits, because
+; a full tank draws an ellipse 315 pixels across and 256*315 is not a
+; sixteen-bit number.
+CR_SCALE:	MOV	CR_T,R2
+		MUL	R3,R2			; R2 is EVEN: R2:R3 is the product
+		ASHC	#-8.,R2
+		RETURN
+
+; CH_PX / CH_PY - a system's chart position.  R0 in, R0 out / R1, R1.
+CH_PX:		ASL	R0			; x*2 + x/4, so 255 lands near 637
+		MOV	R0,-(SP)
+		ASR	R0
+		ASR	R0
+		ASR	R0
+		ADD	(SP)+,R0
+		RETURN
+CH_PY:		ASR	R1			; y/2, clear of the heading
+		ADD	#20.,R1
+		RETURN
+
+; CROSSHAIR - a small box round (R0, R1).
+CROSSHAIR:	MOV	R0,SCR_T
+		MOV	R1,-(SP)
+		SUB	#8.,R0
+		MOV	R0,LX0
+		MOV	SCR_T,R0
+		ADD	#8.,R0
+		MOV	R0,LX1
+		MOV	@SP,LY0
+		MOV	@SP,LY1
+		CALL	DRAW_LINE
+		MOV	SCR_T,LX0
+		MOV	SCR_T,LX1
+		MOV	@SP,R1
+		SUB	#6.,R1
+		MOV	R1,LY0
+		MOV	(SP)+,R1
+		ADD	#6.,R1
+		MOV	R1,LY1
+		JMP	DRAW_LINE
+
+; =========================================================================
+; SCR_SHORT - the near neighbours, by name.
+;
+; The galaxy chart puts 256 systems on one screen and can only mark
+; them; this shows the handful within a few light years and says what
+; they are called, which is the difference between knowing where you are
+; and knowing where you could go.  The original has its own name for it -
+; КРАТКАЯ КАРТА, which is what the token table at 0xF11A calls it.
+;
+; x runs four pixels to the galaxy unit and y one to two, which puts a
+; four light year circle across the width of the view.
+; =========================================================================
+SH_DX	= 40.			; how far out it reaches, in galaxy units:
+SH_DY	= 80.			; about three light years, which is a
+				; neighbourhood rather than a crowd
+SH_CX:		.WORD	0		; where the system being drawn lands
+SH_CY:		.WORD	0
+
+SCR_SHORT:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	#S_T_SHORT,R1
+		CALL	PUTS2
+
+		CALL	GAL_START
+		CLR	SCR_I
+10$:		CALL	SYS_MAKE
+		MOV	SYS_X,R0		; dx, in galaxy units
+		SUB	HOME_X,R0
+		CMP	R0,#SH_DX
+		BGT	80$
+		CMP	R0,#-SH_DX
+		BLT	80$
+		ASL	R0			; eight pixels to the unit
+		ASL	R0
+		ASL	R0
+		ADD	#VIEW_XC,R0
+		MOV	R0,SH_CX
+		MOV	SYS_Y,R1		; dy, at half that
+		SUB	HOME_Y,R1
+		CMP	R1,#SH_DY
+		BGT	80$
+		CMP	R1,#-SH_DY
+		BLT	80$
+		ADD	#VIEW_YC,R1		; and one to the unit down the
+		MOV	R1,SH_CY		; screen
+		CMP	R1,#20.			; clear of the heading, and on the
+		BLT	80$			; screen at all
+		CMP	R1,#VIEW_H-10.
+		BGT	80$
+
+		MOV	SH_CX,R0		; the system itself
+		MOV	SH_CY,R1
+		CALL	PLOT
+		MOV	SH_CX,R0		; and its name beside it
+		ASH	#-3,R0
+		INC	R0
+		CMP	R0,#70.
+		BGT	80$
+		MOV	R0,TX
+		MOV	SH_CY,R0
+		SUB	#3,R0
+		MOV	R0,TY
+		MOV	#SYS_NAME,R1
+		CALL	PUTS
+80$:		INC	SCR_I
+		CMP	SCR_I,#256.
+		BLT	10$
+
+		MOV	CURSYS,R0		; the cursor sits on the system the
+		CALL	SYS_SELECT		; chart is pointing at
+		MOV	SYS_X,R0
+		SUB	HOME_X,R0
+		ASL	R0
+		ASL	R0
+		ASL	R0
+		ADD	#VIEW_XC,R0
+		MOV	R0,SCR_T
+		MOV	SYS_Y,R1
+		SUB	HOME_Y,R1
+		ADD	#VIEW_YC,R1
+		MOV	SCR_T,R0
+		CALL	CROSSHAIR
+
+		MOV	#2,TX			; and its name and distance, where
+		MOV	#176.,TY		; the galaxy chart puts them
+		MOV	#SYS_NAME,R1
+		CALL	PUTS2
+		MOV	#2,TX
+		MOV	#190.,TY
+		MOV	#S_DISTANCE,R1
+		CALL	PUTS
+		CALL	SYS_DISTANCE
+		MOV	#5,R1
+		JMP	PUTDEC
+
+
+; =========================================================================
+; FIND_ASK - name a system, and put the chart cursor on it.
+;
+; With 256 systems to a galaxy, walking the cursor a square at a time is
+; only any use for a neighbour; the original lets a commander say where
+; he means, and so does this.  The search is a straight walk of the
+; galaxy through SYS_SELECT - the same work the chart does to draw
+; itself, so it costs about one redraw - and a prefix is enough, because
+; typing three letters to find ЗАОНЦЕ is the point of the thing.
+;
+; It borrows FI_LAST and NM_LOOKUP from NAME_ASK above: the same
+; keyboard, read the same way.
+; =========================================================================
+FIND_MAX = 8.
+FI_X	= 40.			; on the chart's bottom line, right of the
+FI_Y	= 186.			; distance the cursor is showing
+
+FI_LAST:	.WORD	0
+FI_LEN:		.WORD	0
+FIND_BUF:	.BLKB	FIND_MAX+1
+		.EVEN
+
+FIND_ASK:	MOV	PP_LASTKEY,FI_LAST
+		CLR	FI_LEN
+		MOV	#FIND_BUF,R0
+		MOV	#FIND_MAX+1,R1
+1$:		CLRB	(R0)+
+		SOB	R1,1$
+		MOV	#FI_X-7.,TX
+		MOV	#FI_Y,TY
+		MOV	#S_M_FIND,R1
+		CALL	PUTS
+
+10$:		CALL	VSYNC
+		MOV	PP_LASTKEY,R0
+		CMP	R0,FI_LAST
+		BEQ	10$
+		MOV	R0,FI_LAST
+		BIT	#200,R0			; a release names a row, not a key
+		BNE	10$
+		CMP	R0,#153			; ВВОД: go and look for it
+		BEQ	80$
+		CMP	R0,#4			; СТОП: forget the whole thing
+		BEQ	9$
+		CMP	R0,#132			; backspace
+		BNE	20$
+		TST	FI_LEN
+		BEQ	10$
+		DEC	FI_LEN
+		MOV	#FIND_BUF,R1
+		ADD	FI_LEN,R1
+		CLRB	(R1)
+		CALL	FIND_SHOW
+		BR	10$
+20$:		CMP	FI_LEN,#FIND_MAX
+		BGE	10$
+		CALL	NM_LOOKUP
+		TST	R0
+		BEQ	10$
+		MOV	#FIND_BUF,R1
+		ADD	FI_LEN,R1
+		MOVB	R0,(R1)
+		INC	FI_LEN
+		CALL	FIND_SHOW
+		BR	10$
+
+80$:		TST	FI_LEN			; nothing typed: the cursor stays
+		BEQ	9$			; where the commander left it
+		CALL	GAL_START		; ONE walk of the galaxy, the way
+		CLR	R2			; the chart draws itself.  Calling
+81$:		MOV	R2,-(SP)		; SYS_SELECT per system instead
+		CALL	SYS_MAKE		; walks the seed from the start 256
+		MOV	(SP)+,R2		; times over - 33000 steps, and long
+		MOV	#SYS_NAME,R3		; enough to see
+		MOV	#FIND_BUF,R4
+82$:		MOVB	(R4)+,R0		; a prefix is a match
+		BEQ	83$
+		CMPB	R0,(R3)+
+		BEQ	82$
+		BR	84$
+83$:		MOV	R2,CURSYS
+		RETURN
+84$:		INC	R2
+		CMP	R2,#256.
+		BLT	81$
+9$:		RETURN
+
+; FIND_SHOW - what has been typed so far, with the rest blanked.
+FIND_SHOW:	MOV	#FI_X,R0
+		MOV	#FI_Y,R1
+		MOV	#FIND_MAX+1,R2
+		CALL	TEXT_CLEAR
+		MOV	#FI_X,TX
+		MOV	#FI_Y,TY
+		MOV	#FIND_BUF,R1
+		JMP	PUTS
+

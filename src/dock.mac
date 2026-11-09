@@ -1,0 +1,662 @@
+; =========================================================================
+; dock.mac - the station, and getting into it.
+;
+; The Coriolis is an ordinary entry in the universe with UF_STATION set,
+; so it moves and draws like anything else; UNIV_STEP rolls it on its own
+; axis every frame, which is what makes it look like the thing you have
+; to match.  Docking is the original's own test minus the slot's
+; orientation: the station has to be close, near the middle of the view,
+; and you must not be arriving at speed.  Come in too fast and you bounce
+; off it, with the damage that implies.
+; =========================================================================
+
+; FIND_STATION - R5 = the station's slot, C set if there is not one.
+FIND_STATION:	MOV	#UNIV,R5
+		MOV	#NUNIV,R0
+1$:		TST	U.TYPE(R5)
+		BEQ	2$
+		BIT	#UF_STATION,U.FLAGS(R5)
+		BNE	3$
+2$:		ADD	#U.SIZE,R5
+		DEC	R0
+		BGT	1$
+		SEC
+		RETURN
+3$:		CLC
+		RETURN
+
+; =========================================================================
+; FIND_PLANET - R5 = the world's slot, C set if there is not one, which
+; is the case in witchspace.  The sun is not it: UF_SUN is its own bit.
+; =========================================================================
+FIND_PLANET:	MOV	#UNIV,R5
+		MOV	#NUNIV,R0
+1$:		TST	U.TYPE(R5)
+		BEQ	2$
+		BIT	#UF_PLANET,U.FLAGS(R5)
+		BNE	3$
+2$:		ADD	#U.SIZE,R5
+		DEC	R0
+		BGT	1$
+		SEC
+		RETURN
+3$:		CLC
+		RETURN
+
+; =========================================================================
+; DOCK_CHECK - called once a flight frame.  Every slot with a bay is
+; tried - the station and this system's bases (src/bases.mac) - and a
+; ring is flown through rather than docked with.
+; =========================================================================
+DOCK_CHECK:	TST	DOCKED
+		BEQ	7$
+		RETURN
+7$:		MOV	RING_IN,RING_WAS	; the ring's mouth, frame to frame
+		CLR	RING_IN
+		MOV	#UNIV,R5
+		MOV	#NUNIV,DK_I
+10$:		TST	U.TYPE(R5)
+		BEQ	80$
+		BIT	#UF_DOCK,U.FLAGS(R5)
+		BEQ	80$
+		TST	U.EXPL(R5)		; a station going up is not a bay
+		BNE	80$
+		CALL	U_NEAR			; a bay beyond sixteen bits
+		BCS	80$			;   is not one you are docking with
+		MOV	U.Z(R5),R0
+		BLE	80$
+		CMP	R0,#DOCK_Z
+		BGT	80$
+		MOV	U.X(R5),R0
+		BGE	1$
+		NEG	R0
+1$:		CMP	R0,#DOCK_XY
+		BGT	80$
+		MOV	U.Y(R5),R0
+		BGE	2$
+		NEG	R0
+2$:		CMP	R0,#DOCK_XY
+		BGT	80$
+		CALL	BASE_KIND		; a ring: no slot to level, no
+		CMP	R0,#BK_RING		;   speed to keep, just through
+		BNE	21$
+		JMP	RING_JUMP
+21$:		CMP	R0,#BK_PORTAL		; a portal the same
+		BNE	22$
+		JMP	PORTAL_JUMP
+22$:		CMP	R0,#BK_PLATFORM		; the platform: its bay is death
+		BNE	3$			;   (eObjMove's oFlg_5 8)
+		JMP	PLAYER_DEAD
+3$:		BIT	#UF_STATION,U.FLAGS(R5)	; an angry station shoots what flies
+		BEQ	31$			;   into its slot (goto421: oFlg_2
+		BIT	#UF_HOSTILE,U.FLAGS(R5)	;   bit 2, aggressive) - but for a
+		BEQ	31$			;   held world's on Retribution,
+		MOV	R5,-(SP)		;   where the landing is the point
+		CALL	MS_HELDHERE
+		MOV	(SP)+,R5
+		BCS	31$
+		JMP	PLAYER_DEAD
+31$:		BIT	#OPT_EASY,OPTIONS	; the pause menu's C: the slot
+		BNE	32$			;   need not be level (eObjMove)
+		CALL	SLOT_OFF		; is the slot level, and are you
+		CMP	R0,#DOCK_ALIGN		; done rolling across it?
+		BGE	4$
+32$:		TST	PROLL
+		BNE	4$
+		TST	JD_SPEED		; on the injectors: too fast
+		BNE	41$
+		CMP	PSPEED,#DOCK_SPEED
+		BLE	5$
+41$:
+		MOV	#STATION_Z,U.Z(R5)	; too fast - shoved back out,
+		CLR	U.ZH(R5)
+					; and it hurts: twice the speed
+					;   and BUMP_HIT, forward (which
+					;   HIT_PLAYER is heard saying)
+		MOV	PSPEED,R0
+		ASL	R0
+		ADD	#BUMP_HIT,R0
+		CLR	R1
+		JMP	HIT_PLAYER
+5$:		CALL	BASE_KIND		; and remember whose bay it is:
+		CMP	R0,#BK_STATION		;   0 for the station, so a
+		BNE	6$			;   launch knows what to put ahead
+		CLR	R0
+6$:		MOV	R0,DOCKED_AT
+		JMP	DO_DOCK
+4$:		MOV	#2,TX			; close, but rolling
+		MOV	#28.,TY
+		MOV	#S_M_ALIGN,R1
+		CALL	PUTS
+		MOV	#20.,ALIGN_SHOW
+		RETURN
+80$:		ADD	#U.SIZE,R5
+		DEC	DK_I
+		BLE	9$			; the loop is over a branch long
+		JMP	10$
+9$:		RETURN
+
+ALIGN_SHOW:	.WORD	0		; frames the warning stays up
+
+; =========================================================================
+; SLOT_OFF - how far the station in R5 is from having its slot level, as
+; |row0.y| in Q14: 0 is dead on and 16384 is square across.  R5 is left
+; alone; R0 comes back with the answer.
+; =========================================================================
+SLOT_OFF:	MOV	U.MAT+6(R5),R0		; the y of the slot's own axis: the
+					;   station's x axis is COLUMN 0 of
+					;   the matrix, (m0,m3,m6), the
+					;   drawing being M.v
+		BGE	9$
+		NEG	R0
+9$:		RETURN
+
+; =========================================================================
+; DO_DOCK - inside.  Everything is put right.  The market is as it was
+; left: Legend stocks it on arrival in the system, not at the dock.
+; =========================================================================
+DO_DOCK:	MOV	#FX_DOCK,R0		; Docking, over the tunnel
+		CALL	SFX_BIG
+		CALL	DOCK_TUNNEL		; the way in, before anything else
+		MOV	#1,DOCKED
+		CLR	CLOAK_ON		; the cloak drops in dock
+		MOV	WITCH,-(SP)		; deep space stays deep space: a
+		CALL	SHIP_RESET		;   generation ship is docked at there
+		MOV	(SP)+,WITCH		; the bay is looked at head on,
+					;   with full banks and no lock
+		CALL	UNIV_CLEAR
+		CALL	SEG_RESET
+		CALL	LEGAL_MEND		; a night in the station is what it
+					; takes to live one offence down,
+					; which is what stops a single
+					; unlucky shot following a commander
+					; for the rest of the game
+		CALL	MS_DOCK1		; what the missions have to say
+		CALL	CT_DOCK			; contracts delivered, and late
+					;   passengers walking out
+		CALL	MS_DOCK2		; and the war's and mission 6's
+		CALL	SAVE_CMDR		; the station is where Elite has
+					; always written a commander down
+		; fall through and draw the bay
+
+; DRAW_DOCKED - what the commander looks at while docked.
+DRAW_DOCKED:	CALL	VIEW_CLEAR
+		MOV	#4,TX
+		MOV	#40.,TY
+		MOV	#S_M_DOCKED,R1
+		CALL	PUTS2
+		MOV	#4,TX
+		MOV	#70.,TY
+		MOV	#SYS_NAME,R1
+		CALL	PUTS2
+		MOV	DOCKED_AT,R1		; and which of its bays, if not
+		BEQ	1$			;   the station's
+		ASL	R1
+		MOV	BASE_NAMES(R1),R1
+		MOV	#4,TX
+		MOV	#92.,TY
+		CALL	PUTS
+1$:		MOV	#4,TX
+		MOV	#110.,TY
+		MOV	#S_M_LAUNCHKEY,R1
+		CALL	PUTS
+		MOV	CT_MSG,R1		; what the carrier market's client
+		BEQ	2$			;   said on arrival, once
+		CLR	CT_MSG
+		MOV	#4,TX
+		MOV	#130.,TY
+		CALL	PUTS
+2$:             TST SAVE_STATUS
+                BEQ 3$
+                MOV #4,TX
+                MOV #170.,TY
+                MOV #S_M_DISKERR,R1
+                CALL PUTS
+3$:             JMP INPUT_FLUSH
+
+; =========================================================================
+; DO_LAUNCH - out of the slot, with the station behind you and whatever
+; the system keeps in the way ahead.
+; =========================================================================
+DO_LAUNCH:	CLR	DOCKED
+		CALL	MS_LAUNCH		; the nova's fuse
+		CLR	VIEW_DIR
+		CALL	VIEW_CLEAR
+		CALL	VIEW_LABEL		; the sight goes up with the view
+		CALL	SEG_RESET
+		CALL	UNIV_CLEAR
+		CALL	SPAWN_LOCALS
+		CALL	LAUNCH_FROM		; from whichever bay it was
+		MOV	#16.,PSPEED
+		MOV	#FX_LAUNCH,R0		; Launch
+		JMP	SFX_BIG
+
+; =========================================================================
+; SPAWN_STATION - put the station where a launch or a jump leaves it.
+; Which kind - Coriolis, Dodo or Octo - HULL_SYSTEM decided by the tech
+; level when it chose the hulls.
+; =========================================================================
+SPAWN_STATION:	MOV	STATION_TYPE,R0
+		CLR	R1
+		CLR	R2
+		MOV	#STATION_Z,R3
+		CLR	R4
+		CALL	UNIV_ADD
+		BCS	1$
+		BIS	#UF_STATION,U.FLAGS(R5)
+		MOV	#200.,U.ENERGY(R5)	; not something to shoot at
+1$:		RETURN
+
+; =========================================================================
+; DOCKCOMP_STEP - the docking computer.
+;
+; Elite engages its computer on a keypress; this port has no key left
+; that releases cleanly, so it engages itself once the station is inside
+; DC_RANGE and stays engaged until you are in.  It flies the approach the
+; way the manual says to: bring the station to the middle of the view,
+; then close - so it pulls x and y towards zero a fraction at a time and
+; walks z down, which also means it obeys the same docking test a human
+; has to pass rather than teleporting you inside.
+;
+; Like the original's, it does not care what else is in the sky: it will
+; fly you in through a firefight, and whether that is wise is your
+; problem.
+; =========================================================================
+DOCKCOMP_STEP:	TST	DOCKED
+		BNE	8$
+		BITB	#DEV_OFF,P_DOCKCOMP	; fitted and working
+		BNE	8$
+		CALL	FIND_STATION
+		BCS	8$
+		CALL	U_NEAR
+		BCS	8$
+		MOV	U.Z(R5),R0
+		BLE	8$
+		CMP	R0,#DC_RANGE
+		BGT	8$
+
+		TST	DC_ON			; already flying the approach?
+		BNE	1$
+		TST	PSPEED			; shutting the throttle down within
+		BNE	9$			; range is how you ask it to fly:
+		MOV	#1,DC_ON		; at speed you are clearly leaving
+		CALL	DC_BANNER
+		MOV	#1,R0			; and the Blue Danube, which is
+		CALL	TUNE			; what Elite has always docked to
+
+1$:		CLR	PPITCH			; it flies, not you
+		CALL	FIND_STATION
+		BCS	9$
+		CALL	DC_ALIGN		; roll until the slot is level
+		CALL	FIND_STATION
+		BCS	9$
+		MOV	U.X(R5),R0		; centre the station
+		ASH	#-DC_PULL,R0
+		SUB	R0,U.X(R5)
+		MOV	U.Y(R5),R0
+		ASH	#-DC_PULL,R0
+		SUB	R0,U.Y(R5)
+		MOV	U.Z(R5),R0		; and walk it in
+		CMP	R0,#DOCK_Z
+		BLE	2$
+		SUB	#DC_CLOSE,U.Z(R5)
+2$:		CALL	U_SXT
+		MOV	#DOCK_SPEED,PSPEED	; slow enough for the slot
+		RETURN
+
+8$:		TST	DC_ON			; disengaged: wipe the banner
+		BEQ	9$
+		CLR	DC_ON
+		CLR	R0			; and the tune with it
+		CALL	TUNE
+		MOV	#2,R0
+		MOV	#16.,R1
+		MOV	#32.,R2
+		JMP	TEXT_CLEAR
+9$:		RETURN
+
+; =========================================================================
+; DC_ALIGN - the docking computer's own hand on the stick: roll until the
+; station's slot is level, then stop.
+;
+; Rolling turns the universe about the commander, so the station's first
+; row moves as a - k*b, b + k*a with k = -PROLL*TURN_K.  The y of that
+; row therefore changes by -PROLL*TURN_K*x, so the roll that brings it
+; down is the one whose sign is the sign of x times the sign of y.  R5 =
+; the station's slot.
+; =========================================================================
+DC_ALIGN:	CALL	SLOT_OFF
+		CMP	R0,#DOCK_ALIGN
+		BGE	1$
+		CLR	PROLL			; level: hold it there
+		RETURN
+1$:		MOV	U.MAT+6(R5),R0		; y of the slot's axis (column 0)
+		MOV	U.MAT(R5),R1		; and its x
+		CLR	R2
+		TST	R0
+		BGE	2$
+		INC	R2
+2$:		TST	R1
+		BGE	3$
+		INC	R2
+3$:		BIT	#1,R2			; the two signs agree: roll one way,
+		BEQ	4$			; disagree: the other.  The senses
+		MOV	#DC_ROLL,PROLL		; swapped when this moved from row 0
+		RETURN				; to column 0: for a station faced
+4$:		MOV	#-DC_ROLL,PROLL		; head on, m3 = -m1
+		RETURN
+
+; =========================================================================
+; STATION_SLOT - the opening, drawn where the game says it is.
+;
+; Docking has tested the orientation of the station's own x axis since
+; the slot went in, and asking a commander to line up with something
+; invisible is no way to run a station: this puts a letterbox on the
+; face that points at him, in the station's own model space, so it turns
+; with the hull and reads as the thing to match.
+;
+; The Coriolis is 160 units to a face and its nose points AWAY from the
+; commander - the hull is drawn from a matrix that starts as the
+; identity - so the face to draw on is the one at model z = -160.  The
+; rectangle is long in x, which is the axis DOCK_CHECK measures.
+; =========================================================================
+SLOT_HW	= 60.			; the opening: half its width and half its
+SLOT_HH	= 18.			; height, in the station's own units
+SLOT_Z	= -160.			; the face that looks at you
+SLOT_RANGE = 5000.		; further off than this it is not drawn
+
+SLOT_V:		.WORD	-SLOT_HW, -SLOT_HH, SLOT_Z
+		.WORD	SLOT_HW, -SLOT_HH, SLOT_Z
+		.WORD	SLOT_HW, SLOT_HH, SLOT_Z
+		.WORD	-SLOT_HW, SLOT_HH, SLOT_Z
+
+SL_I:		.WORD	0
+SL_P:		.WORD	0		; the corner being projected
+SL_X0:		.WORD	0		; where the first one landed, to close
+SL_Y0:		.WORD	0		; the rectangle at the end
+SL_OK:		.WORD	0		; 0 until a corner has been projected
+
+STATION_SLOT:	TST	SD_SH			; beyond sixteen bits: no slot
+		BNE	9$
+		CMP	SD_Z,#SLOT_RANGE
+		BGT	9$
+		CLR	SL_OK
+		MOV	#SLOT_V,SL_P
+		MOV	#4,SL_I
+10$:		MOV	SL_P,R4
+		MOV	SD_MAT,R5
+		CALL	MATVEC			; the corner, turned with the hull
+		MOV	VOUT,R0
+		ADD	SD_X,R0
+		MOV	VOUT+2,R1
+		ADD	SD_Y,R1
+		MOV	VOUT+4,R2
+		ADD	SD_Z,R2
+		CALL	PROJECT
+		BCS	80$			; off the screen: skip the corner
+		TST	SL_OK
+		BNE	20$
+		MOV	PX,SL_X0		; the first corner starts the run
+		MOV	PY,SL_Y0
+		MOV	PX,LX0
+		MOV	PY,LY0
+		MOV	#1,SL_OK
+		BR	80$
+20$:		MOV	PX,LX1
+		MOV	PY,LY1
+		CALL	SEG_LINE
+		MOV	LX1,LX0
+		MOV	LY1,LY0
+80$:		ADD	#6,SL_P
+		DEC	SL_I
+		BGT	10$
+		TST	SL_OK			; and close it
+		BEQ	9$
+		MOV	SL_X0,LX1
+		MOV	SL_Y0,LY1
+		JMP	SEG_LINE
+9$:		RETURN
+
+; =========================================================================
+; DOCK_TUNNEL - the way in.
+;
+; Elite runs the ship down a tunnel of rings on the way into the bay, and
+; it is the one piece of theatre the game allows itself.  These are
+; squares rather than rings, drawn through the segment buffer at the
+; middle of the view and pushed outwards a step a frame, with the whole
+; set turning: a docking that simply cut to the bay would lose the only
+; moment in the game where nothing is being asked of the commander.
+; =========================================================================
+DT_RINGS = 5			; squares in the tunnel at once
+DT_STEP	= 22.			; pixels between them
+DT_FRAMES = 40.			; how long the whole thing lasts
+DT_SPIN	= 1			; SCANTAB steps a frame
+DT_T:		.WORD	0
+DT_R:		.WORD	0		; the ring being drawn
+DT_RAD:		.WORD	0		; its half-width, in pixels
+DT_ANG:		.WORD	0		; and where its corners sit
+DT_X:		.WORD	0
+DT_Y:		.WORD	0
+
+DOCK_TUNNEL:	CALL	VIEW_CLEAR		; the sky the approach was flown
+		CALL	CLIP_VIEW		; through is not part of this
+		CLR	DT_T
+10$:		MOV	#DT_RINGS,DT_R
+20$:		MOV	DT_R,R0			; radius: the rings march outward
+		MUL	#DT_STEP,R0		; and the whole set with them
+		MOV	R1,DT_RAD
+		MOV	DT_T,R0
+		ASL	R0
+		ADD	R0,DT_RAD
+		CMP	DT_RAD,#96.		; past the edge of the view it is
+		BGT	30$			; not drawn at all
+		MOV	DT_T,R0			; the corners turn as they come
+		MUL	#DT_SPIN,R0
+		MOV	R1,DT_ANG
+		BIC	#177760,DT_ANG		; sixteen points to a turn
+		CALL	DT_SQUARE
+30$:		DEC	DT_R
+		BGT	20$
+		CALL	SEG_FLUSH		; the ring set that was there comes
+		CALL	VSYNC			; off as this one goes on
+		INC	DT_T
+		CMP	DT_T,#DT_FRAMES
+		BLT	10$
+		CALL	SEG_FLUSH		; a flush with nothing drawn is
+		RETURN				; what empties the view
+
+; DT_SQUARE - one square of half-width DT_RAD, turned by DT_ANG.
+DT_SQUARE:	MOV	DT_ANG,R0		; the first corner
+		CALL	DT_CORNER
+		MOV	DT_X,LX0
+		MOV	DT_Y,LY0
+		MOV	#4,DT_R2
+1$:		MOV	DT_ANG,R0		; and round the other three
+		ADD	DT_R2,R0
+		ADD	DT_R2,R0
+		ADD	DT_R2,R0
+		ADD	DT_R2,R0
+		BIC	#177760,R0
+		CALL	DT_CORNER
+		MOV	DT_X,LX1
+		MOV	DT_Y,LY1
+		MOV	DT_R2,-(SP)
+		CALL	SEG_LINE
+		MOV	(SP)+,DT_R2
+		MOV	LX1,LX0
+		MOV	LY1,LY0
+		DEC	DT_R2
+		BGT	1$
+		RETURN
+
+DT_R2:		.WORD	0
+
+; DT_CORNER - R0 = an index into SCANTAB; leaves the corner in DT_X/DT_Y.
+DT_CORNER:	ASL	R0
+		ASL	R0
+		ADD	#SCANTAB,R0
+		MOV	R0,-(SP)
+		MOV	(R0),R1			; cos, in units of 256
+		MUL	DT_RAD,R1
+		ASH	#-8.,R1
+		MOV	R1,R0			; x is stretched like everything
+		MUL	#XASP_N,R0		; else on this screen
+		DIV	#XASP_D,R0
+		ADD	#VIEW_XC,R0
+		MOV	R0,DT_X
+		MOV	(SP)+,R0
+		MOV	2(R0),R1		; sin
+		MUL	DT_RAD,R1
+		ASH	#-8.,R1
+		ADD	#VIEW_YC,R1
+		MOV	R1,DT_Y
+		RETURN
+
+; ALIGN_TICK - wipe the "steady the ship" warning after a moment.
+ALIGN_TICK:	TST	ALIGN_SHOW
+		BEQ	9$
+		DEC	ALIGN_SHOW
+		BNE	9$
+		MOV	#2,R0
+		MOV	#28.,R1
+		MOV	#40.,R2
+		JMP	TEXT_CLEAR
+9$:		RETURN
+
+; DC_BANNER - say that the computer has the ship.
+DC_BANNER:	MOV	#2,TX
+		MOV	#16.,TY
+		MOV	#S_M_DOCKCOMP,R1
+		JMP	PUTS
+
+
+; =========================================================================
+; BODY_CHECK - fly into a world and that is the end of the commander.
+;
+; Elite kills you for hitting a planet or the sun, and it should: they
+; are the two things in the sky you cannot shoot, outrun or survive.
+; =========================================================================
+BC_I:		.WORD	0		; slots left to look at
+BC_R2:		.WORD	0		; the body's radius, squared and scaled
+
+BODY_CHECK:	MOV	#UNIV,R5
+		MOV	#NUNIV,BC_I
+1$:		TST	U.TYPE(R5)
+		BEQ	4$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)
+		BEQ	4$
+		CALL	U_NEAR			; a body beyond sixteen bits holds
+		BCS	4$			;   nothing that is near
+		CALL	BODY_SWEEP		; everything else in the sky that
+					; has flown into this one
+
+		MOV	#PLANET_R,R0		; its real size, not a constant:
+		BIT	#UF_SUN,U.FLAGS(R5)	; the surface is where it is
+		BEQ	11$
+		MOV	#SUN_R,R0
+11$:		ASH	#BODY_QSH,R0		; scaled so the squares stay well
+		MOV	R0,R1			; inside 32 bits
+		MUL	R0,R1			; R1 is ODD: the low word is the
+		MOV	R1,BC_R2		; whole answer at this size
+
+		CLR	ACCH			; |P| squared, in the same units
+		CLR	ACCL
+		MOV	U.X(R5),R2
+		ASH	#BODY_QSH,R2
+		MOV	R2,R3
+		MUL	R3,R2			; R2 is EVEN, so the 32 bits land
+		ADD	R3,ACCL			; in R2:R3
+		ADC	ACCH
+		ADD	R2,ACCH
+		MOV	U.Y(R5),R2
+		ASH	#BODY_QSH,R2
+		MOV	R2,R3
+		MUL	R3,R2
+		ADD	R3,ACCL
+		ADC	ACCH
+		ADD	R2,ACCH
+		MOV	U.Z(R5),R2
+		ASH	#BODY_QSH,R2
+		MOV	R2,R3
+		MUL	R3,R2
+		ADD	R3,ACCL
+		ADC	ACCH
+		ADD	R2,ACCH
+
+		TST	ACCH			; anything in the high word puts
+		BNE	4$			; it far outside
+		CMP	ACCL,BC_R2		; inside the surface?
+		BHIS	4$
+		JMP	PLAYER_DEAD		; into the ground
+4$:		ADD	#U.SIZE,R5
+		DEC	BC_I
+		BGT	1$
+		RETURN
+
+; =========================================================================
+; BODY_SWEEP - R5 = a body; anything else that is inside it stops being a
+; ship.  R5 and BC_I are left alone.
+;
+; The commander is tested against the true surface, because he is the one
+; who cares about the difference; everything else gets a box the size of
+; the body, which is three subtractions rather than three multiplies and
+; is the same test COLLIDE_STEP uses.  Ships used to fly through worlds
+; as if they were painted on.
+; =========================================================================
+BS_P:		.WORD	0
+BS_I:		.WORD	0
+BS_R:		.WORD	0
+
+BODY_SWEEP:	MOV	#PLANET_R,BS_R
+		BIT	#UF_SUN,U.FLAGS(R5)
+		BEQ	1$
+		MOV	#SUN_R,BS_R
+1$:		MOV	R5,-(SP)
+		MOV	#UNIV,BS_P
+		MOV	#NUNIV,BS_I
+10$:		MOV	BS_P,R4
+		CMP	R4,R5			; not the body itself
+		BEQ	80$
+		TST	U.TYPE(R4)
+		BEQ	80$
+		CALL	U_NEAR4
+		BCS	80$
+		TST	U.EXPL(R4)
+		BNE	80$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R4)
+		BNE	80$			; two worlds keep out of each
+					; other's way without any help
+		; Two things that both fit sixteen bits can still be more
+		; than 32767 apart - a service station 18000 behind and the
+		; sun 22000 ahead - and then the subtraction overflows, the
+		; sign comes out wrong, and the sweep called the station
+		; "inside the sun".  An overflow means far apart: BVS, taken
+		; straight off the SUB.
+		MOV	U.X(R4),R0
+		SUB	U.X(R5),R0
+		BVS	80$
+		BGE	11$
+		NEG	R0
+11$:		CMP	R0,BS_R
+		BGE	80$
+		MOV	U.Y(R4),R0
+		SUB	U.Y(R5),R0
+		BVS	80$
+		BGE	12$
+		NEG	R0
+12$:		CMP	R0,BS_R
+		BGE	80$
+		MOV	U.Z(R4),R0
+		SUB	U.Z(R5),R0
+		BVS	80$
+		BGE	13$
+		NEG	R0
+13$:		CMP	R0,BS_R
+		BGE	80$
+		MOV	#EXPL_LEN,U.EXPL(R4)	; nobody shot it down, so nobody
+		CLR	U.SPEED(R4)		; is paid for it
+80$:		ADD	#U.SIZE,BS_P
+		DEC	BS_I
+		BGT	10$
+		MOV	(SP)+,R5
+		RETURN

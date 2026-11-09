@@ -1,0 +1,45 @@
+# Extracted from orig/legend by tools/legend_tables.py; `make extract` overwrites it.
+
+# index key price grad quant mask | Russian name
+# price+grad: the base price word; grad's low 5 bits times the economy
+# is added (bit 7 set: subtracted); quant the base quantity; mask what
+# of the system's random byte joins in - genStationPrice in genData.a80.
+
+ 0 FOOD              19 130   6   1 | ПРОДОВОЛЬСТВИЕ
+ 1 TEXTILES          20 129  10   3 | ТЕКСТИЛЬ
+ 2 RADIOACTIVES      65 131   2   7 | РАДИОИЗОТОПЫ
+ 3 SLAVES            40 133 226  31 | РАБЫ
+ 4 LIQUOR_WINES      83 133 251  15 | АЛКОГОЛЬ
+ 5 LUXURIES         196   8  54   3 | ПРЕДМЕТЫ РОСКОШИ
+ 6 NARCOTICS        235  29   8 120 | НАРКОТИКИ
+ 7 COMPUTERS        154  14  56   3 | КОМПЬЮТЕРЫ
+ 8 MACHINERY        117   6  40   7 | СТАНКИ И МАШИНЫ
+ 9 ALLOYS            78   1  17  31 | СПЛАВЫ
+10 FIREARMS         124  13  29   7 | РУЧНОЕ ОРУЖИЕ
+11 FURS             176 137 220  63 | МЕХА
+12 MINERALS          32 129  53   3 | МИНЕРАЛЫ
+13 GOLD              97 161  66   7 | ЗОЛОТО
+14 PLATINUM         171 162  55  31 | ПЛАТИНА
+15 GEM_STONES        45 193 250  15 | БРИЛЛИАНТЫ
+16 ALIEN_ITEMS       53  15 192   7 | АРТЕФАКТЫ ЧУЖИХ
+17 FERROUS_METALS    60 133   2   7 | ЧЕРНЫЕ МЕТАЛЛЫ
+18 TIMBER            88 136   4   3 | ДРЕВЕСИНА
+19 AIR_PROCESSORS    35   7  24   7 | ПРОЦЕССОРЫ
+20 ANIMAL_MEAT       86 138 229  15 | МЯСО ЖИВОТНЫХ
+21 ANIMAL_SKINS     125 139 208   7 | ШКУРЫ ЖИВОТНЫХ
+22 BATTLE_WEAPONS    53  10  28   7 | ВОЕННОЕ ОРУЖИЕ
+23 FARM_MACHINERY    18  31 212   7 | ФЕРМЕРСКИЕ МАШИНЫ
+24 FERTILIZER        47   4  23   7 | УДОБРЕНИЯ
+25 GRAIN             82 136 226  31 | ЗЕРНО
+26 DRONE            210   5   9   7 | БЕСПИЛОТНИК
+27 HEAVY_PLASTICS    38   5  33   7 | ТЯЖЕЛЫЕ ПЛАСТМАССЫ
+28 HYDROGEN_FUEL    231  13  27  15 | ВОДОРОДНОЕ ТОПЛИВО
+29 INDUSTRIAL_PARTS  95   5  19   7 | ЗАПЧАСТИ ДЛЯ МАШИН
+30 LIQUID_OXYGEN    171   9  44  15 | ЖИДКИЙ КИСЛОРОД
+31 LIVE_ANIMALS     160 145 166  31 | ЖИВЫЕ ЖИВОТНЫЕ
+32 MEDICINES         38   6  50  15 | МЕДИКАМЕНТЫ
+33 MILITARY_FUEL     78   9  13   7 | ВОЕННОЕ ТОПЛИВО
+34 NERVE_GAS        154  27  14 116 | ПАРАЛИЗУЮЩИЙ ГАЗ
+35 ROBOTS           135   9  51   7 | РОБОТЫ
+36 SYNTHETIC_MEAT   240 159  28   6 | СИНТЕТИЧЕСКОЕ МЯСО
+37 WATER             78 134 254   3 | ВОДА

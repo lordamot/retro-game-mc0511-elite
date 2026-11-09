@@ -1,0 +1,759 @@
+; =========================================================================
+; ovl_ctgen.mac - the carrier market's offers and their settling: Elite
+; Legend's genPlanetContracts (orig/legend/.../INCLUDE/Galaxy/
+; genContracts.a80) and TestFinishContract (Menu/Missions.a80).  AN
+; OVERLAY (src/ovl.list), the second half of the carrier market
+; (src/ovl_carrier.mac has the screen), called through its first word
+; by the resident alone: R0 = 0 makes the planet's twelve offers into
+; PLANET_CT (CT_MAKE in src/contract.mac, before the screen is drawn
+; for the first time after an arrival) and R0 = 1 settles the pilot's
+; contracts at a docking (CT_DOCK), leaving what the client said in
+; CT_MSG for the docked page.
+;
+; The twelve offers are Legend's, number for number: genPlanetContracts
+; run with its own little generator (IntRnd_C: a byte state seeded from
+; the record's random byte, #5A31 and the twelve availability bits,
+; which it eats one an offer), so many parcels by the population and
+; the rating, half of what is left passengers, the rest cargo, each
+; offer to a random planet of this galaxy or to nobody on a coin, timed
+; from the trip's length, the rating and the government, priced by
+; kind (CalcFeeCargo, CalcFeePassenger, CalcFeePackage), rated for
+; passengers and parcels (CalcSkillContract).  Where Legend's
+; arithmetic is peculiar - its table multiply loses min(a,b) when a+b
+; is odd, its sign-and-magnitude adder halves and the callers double,
+; a passenger's fee carries its own bit 15 again as a third byte - the
+; peculiarity is kept, because the check compares against a model of
+; exactly this (legend_contracts in tools/verify_build.py).  Legend
+; generates on the jump; this generates on the first look at the screen
+; after one, from what CT_ARRIVE noted then, which is the same set.
+;
+; Settling: a contract to this system closes at the main station and
+; pays; a late passenger elsewhere may walk out.  Legend matches the
+; planet's number alone; this asks the galaxy's as well.
+; =========================================================================
+
+		JMP	OVLG_ENTRY		; the overlay's entry, at OVL_BASE
+
+; the generator's state (IntRnd_C: c', h', l' and the bits in d'e')
+CTR_C:		.WORD	0
+CTR_H:		.WORD	0
+CTR_L:		.WORD	0
+CTR_MASK:	.WORD	0
+CTR_B:		.WORD	0		; offers still to make
+CT_CIN:		.WORD	0		; the carry Legend shifts into the bits
+; what one offer is worked out from
+CG_P:		.WORD	0		; the offer being made
+CG_CNT:		.WORD	0
+CG_KIND:	.WORD	0
+CG_GOV:		.WORD	0		; this system's government
+CG_POP:		.WORD	0		; and population
+CG_FUEL:	.WORD	0		; the trip, tenths of a light year
+CG_TIME:	.WORD	0		; and its time, tenths of an hour
+CG_GOOD:	.WORD	0
+CG_C2:		.WORD	0
+CG_C:		.WORD	0
+CG_R1:		.WORD	0
+CG_T:		.WORD	0
+CG_T2:		.WORD	0
+CF_L:		.WORD	0		; a fee: the low word
+CF_H:		.WORD	0		;   and the high byte
+
+OVLG_ENTRY:	TST	R0
+		BNE	1$
+		JMP	CT_GEN
+1$:		JMP	CT_FINISH
+
+; =========================================================================
+; The offers: genPlanetContracts.
+; =========================================================================
+
+; CT_RND - IntRnd_C: R0 = the next byte of Legend's little generator,
+; whose state is CTR_C, CTR_H, CTR_L and the bits in CTR_MASK.
+; Clobbers R1.
+CT_RND:		MOV	CTR_C,R0
+		ADD	CTR_H,R0		; a = c + h
+		MOV	R0,R1
+		BIC	#177400,R0
+		ASL	R0			; adc a,a: doubled, plus the carry
+		CMP	R1,#255.
+		BLOS	1$
+		INC	R0
+1$:		BIC	#177400,R0
+		MOV	CTR_MASK,R1		; add a,e
+		BIC	#177400,R1
+		ADD	R1,R0
+		BIC	#177400,R0
+		MOV	CTR_MASK,R1		; add a,d
+		SWAB	R1
+		BIC	#177400,R1
+		ADD	R1,R0
+		MOV	R0,R1
+		BIC	#177400,R0
+		MOV	R0,CTR_C		; c = a
+		ADD	CTR_L,R0		; adc a,l
+		CMP	R1,#255.
+		BLOS	2$
+		INC	R0
+2$:		BIC	#177400,R0
+		MOV	R0,CTR_H		; h = a; l = c; c = a
+		MOV	CTR_C,CTR_L
+		MOV	R0,CTR_C
+		RETURN
+
+; CT_SHIFT - the bits move down one (rr d; rr e): the one that falls
+; out is C, and the one that comes in at the top is the carry Legend
+; happened to have, CT_CIN.  Clobbers R1, R2.
+CT_SHIFT:	MOV	CTR_MASK,R1
+		MOV	R1,R2
+		BIC	#177776,R2
+		CLC
+		ROR	R1
+		TST	CT_CIN
+		BEQ	1$
+		BIS	#100000,R1
+1$:		MOV	R1,CTR_MASK
+		TST	R2
+		BEQ	2$
+		SEC
+		RETURN
+2$:		CLC
+		RETURN
+
+; CT_MULQ - Mult_HL_A_C, Legend's table multiply of two bytes: R0 =
+; R0 * R1, less the smaller of them when their sum is odd, which is
+; what a table of squares indexed by the halved sum and difference
+; comes to.  Clobbers R1, R2.
+CT_MULQ:	MOV	R0,R2
+		ADD	R1,R2
+		BIT	#1,R2
+		BEQ	1$
+		MOV	R1,R2
+		CMP	R0,R1
+		BHIS	2$
+		MOV	R0,R2
+		BR	2$
+1$:		CLR	R2
+2$:		MUL	R1,R0			; R0 even: the product in R0:R1
+		MOV	R1,R0
+		SUB	R2,R0
+		RETURN
+
+; CT_MUL24 - Multiply_de_bc: R2 * R3, 24 bits of it, in R0 (the high
+; byte) and R1 (the low word).  Clobbers R0, R1.
+CT_MUL24:	CALL	UMUL
+		BIC	#177400,R0
+		RETURN
+
+; CT_HI16 - R1 = the 24-bit R0:R1 over 256, the "l = h, h = a" Legend
+; takes a product's middle with.  Clobbers R0.
+CT_HI16:	SWAB	R1
+		BIC	#177400,R1
+		SWAB	R0
+		BIS	R0,R1
+		RETURN
+
+; CT_SMADD8 - AddSign_A_E: R0 and R1 are sign-and-magnitude bytes (bit
+; 7 the sign) and R0 comes back their sum, held at 127.  Clobbers
+; R1..R3.
+CT_SMADD8:	MOV	R0,R2
+		BIC	#177577,R2
+		MOV	R1,R3
+		BIC	#177577,R3
+		BIC	#177600,R0
+		BIC	#177600,R1
+		CMP	R2,R3
+		BNE	1$
+		ADD	R1,R0
+		CMP	R0,#177
+		BLOS	2$
+		MOV	#177,R0
+2$:		BIS	R2,R0
+		RETURN
+1$:		CMP	R0,R1
+		BLO	3$
+		SUB	R1,R0
+		BIS	R2,R0
+		RETURN
+3$:		SUB	R0,R1
+		MOV	R1,R0
+		BIS	R3,R0
+		RETURN
+
+; CT_TRAVEL - CalcTravelTime: R0 = the time in tenths of an hour of a
+; trip of R0 tenths of a light year - the fuel squared over ten within
+; the tank's reach, six times the fuel beyond it with a navigation
+; array, and nothing at all beyond it without one.  Clobbers R1.
+CT_TRAVEL:	CMP	R0,PFUEL
+		BHI	1$
+		MOV	R0,R1
+		MUL	R0,R1			; R1 odd: the low word, 4900 fits
+		CLR	R0
+		DIV	#10.,R0
+		RETURN
+1$:		BITB	#DEV_OFF,P_ADVNAV
+		BNE	2$
+		MOV	R0,R1
+		ASL	R0
+		ADD	R1,R0
+		ASL	R0
+		RETURN
+2$:		CLR	R0
+		RETURN
+
+; CT_GEN - genPlanetContracts: the twelve offers into PLANET_CT.  The
+; system's government and population are this system's; each offer's
+; destination is selected in turn and SYS_* are put back at the end.
+; Clobbers everything.
+CT_GEN:		MOV	SYS_INDEX,R0
+		CALL	SYS_SELECT
+		MOV	SYS_GOVT,CG_GOV
+		MOV	SYS_POP,CG_POP
+		MOVB	P_RND,R0		; the generator: c' = PilotRnd,
+		BIC	#177400,R0		;   hl' = #5A31, de' the bits
+		MOV	R0,CTR_C
+		MOV	#132,CTR_H
+		MOV	#61,CTR_L
+		MOV	CT_MASK0,CTR_MASK
+		MOV	#NPLANET_CT,CTR_B
+		MOV	#PLANET_CT,CG_P
+
+		CALL	CT_RND			; parcels: -3..3 on the roll,
+		BIC	#177770,R0
+		MOV	R0,R1
+		BIC	#177776,R1
+		ASR	R0
+		TST	R1
+		BEQ	1$
+		NEG	R0
+1$:		CMP	CG_POP,#50.		;   one more where it is crowded,
+		BLO	2$
+		INC	R0
+2$:		CMP	CG_POP,#30.		;   one fewer where it is empty,
+		BHIS	3$
+		DEC	R0
+3$:		MOV	CT_RATE0,R1		;   and the rating, 0..7 either way
+		MOV	R1,R2
+		ASH	#-4,R1
+		BIC	#177770,R1
+		BIT	#200,R2
+		BEQ	4$
+		NEG	R1
+4$:		ADD	R1,R0
+		BPL	5$
+		CLR	R0
+5$:		CMP	R0,#5
+		BLO	6$
+		MOV	#5,R0
+6$:		TST	R0
+		BEQ	7$
+		MOV	#CTK_PARCEL,R1
+		CALL	CT_GENN
+7$:		MOV	CTR_B,R0		; passengers: half of what is left
+		ASR	R0
+		MOV	#CTK_PASS,R1
+		CALL	CT_GENN
+		MOV	CTR_B,R0		; cargo: the rest
+		CLR	R1
+		CALL	CT_GENN
+		MOV	SYS_INDEX,R0
+		JMP	SYS_SELECT
+
+; CT_GENN - R0 offers of kind R1, each typed by a roll.
+CT_GENN:	TST	R0
+		BEQ	9$
+		MOV	R0,CG_CNT
+		MOV	R1,CG_KIND
+1$:		CALL	CT_RND
+		BIC	#177700,R0
+		BIS	CG_KIND,R0
+		MOV	CG_P,R5
+		MOVB	R0,C.TYPE(R5)
+		CALL	CT_GENONE
+		ADD	#C.SIZE,CG_P
+		DEC	CTR_B
+		DEC	CG_CNT
+		BNE	1$
+9$:		RETURN
+
+; CT_GENONE - genOneContract for the offer at R5, its type set: a coin
+; for whether there is one at all, a planet that is not this one, the
+; time, the sums by kind, the rating for passengers and parcels; and
+; one bit eaten whatever happened, with Legend's carry shifted in.
+CT_GENONE:	CALL	CT_RND
+		MOV	#1,CT_CIN
+		BIT	#200,R0			; rlca: no offer on a set bit 7
+		BNE	90$
+		CALL	CT_RND			; the planet
+		CMP	R0,P_PLANET
+		BNE	1$
+		CLR	CT_CIN			; cp: equal leaves no carry
+		BR	90$
+1$:		MOVB	R0,C.PLANET(R5)
+		MOV	R5,-(SP)
+		CALL	SYS_SELECT
+		CALL	SYS_DISTANCE
+		MOV	R0,CG_FUEL
+		CALL	CT_TRAVEL
+		MOV	R0,CG_TIME
+		MOV	(SP)+,R5
+		CALL	CT_WITHIN
+		BCC	2$
+		MOV	#1,CT_CIN
+		BR	90$
+2$:		MOV	R0,C.TIME(R5)
+		MOVB	C.TYPE(R5),R0
+		BMI	3$
+		BIT	#CTK_PASS,R0
+		BNE	4$
+		CALL	CT_NUMPROD		; cargo: the good and how much
+		BCS	90$			;   (CT_CIN is its carry)
+		CALL	CT_FEECARGO
+		BR	5$
+3$:		CALL	CT_FEEPKG
+		BR	5$
+4$:		CALL	CT_FEEPASS
+5$:		MOV	CF_L,C.FEE(R5)
+		MOVB	CF_H,C.FEEH(R5)
+		MOVB	C.TYPE(R5),R0
+		BIC	#177477,R0
+		BNE	6$
+		CLR	R0			; cargo: anyone; and: leaves no carry
+		CLR	CT_CIN
+		BR	7$
+6$:		CALL	CT_SKILL
+7$:		CALL	CT_SHIFT
+		BCS	8$
+		MOV	#CT_NONE,R0		; the bit was out: no offer
+8$:		MOVB	R0,C.RATE(R5)
+		RETURN
+90$:		CALL	CT_SHIFT
+		MOVB	#CT_NONE,C.RATE(R5)
+		RETURN
+
+; CT_WITHIN - CalcWithinTime: R0 = the time allowed, C set where the
+; sum came out negative and there is no offer.  A parcel gets the trip
+; times 1.1 plus a roll of up to one, and four hours; cargo and
+; passengers the trip and 25.6 hours, plus or minus the roll times
+; seven plus the rating less the government (in tenths: 256 + x*r,
+; with Legend's product and its dropped low bit).  Clobbers R0..R3.
+CT_WITHIN:	CALL	CT_RND
+		MOV	R0,CG_T2		; the roll
+		MOV	R0,R2
+		TSTB	C.TYPE(R5)
+		BPL	1$
+		ADD	#281.,R2		; a parcel
+		MOV	CG_TIME,R3
+		CALL	CT_MUL24
+		CALL	CT_HI16
+		ADD	#40.,R1
+		MOV	R1,R0
+		CLC
+		RETURN
+1$:		MOV	CT_RATE0,R1		; the rating, 0..7 with its sign
+		MOV	R1,R3
+		ASH	#-4,R1
+		BIC	#177770,R1
+		BIT	#200,R3
+		BEQ	2$
+		BIS	#200,R1
+2$:		MOV	#7,R0
+		SUB	CG_GOV,R0
+		CALL	CT_SMADD8		; x = 7 + rating - government
+		MOV	R0,R3
+		BIC	#177600,R0
+		MOV	CG_T2,R1
+		CALL	CT_MULQ			; |x| * the roll
+		BIT	#200,R3
+		BEQ	3$
+		BIS	#100000,R0
+3$:		MOV	#256.,R1
+		CALL	CT_SMADD
+		TST	R0
+		BMI	9$
+		BIC	#1,R0			; add hl,hl of the halved sum
+		ADD	CG_TIME,R0
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; CT_NUMPROD - SetNumProduct: the good, into C.TYPE, and how much of
+; it, into C.NUM; C set when four rolls found nothing the rating may
+; carry (gold, platinum and gems want a rating of #68).  The quantity
+; is (1 + roll * 32) * (1 + roll * 16) times a unit coefficient - one
+; for tonnes, up to 18 for kilogrammes and 33 for grammes - rolled
+; again under twenty, held at 750 or 960, and a tonnage over 125
+; halved once or twice on a roll.  Clobbers R0..R4.
+CT_NUMPROD:	MOV	#4,R4
+1$:		CALL	CT_RND
+		MOV	#38.,R1
+		CALL	CT_MULQ
+		SWAB	R0
+		BIC	#177400,R0		; the good
+		CMP	R0,#13.
+		BLO	2$
+		CMP	R0,#16.
+		BHIS	2$
+		CMP	CT_RATE0,#200		; precious: not below nought,
+		BHIS	3$
+		CMP	CT_RATE0,#104.		;   and not under #68
+		BHIS	2$
+3$:		DEC	R4
+		BNE	1$
+		MOV	#1,CT_CIN		; cp's carry, unless the rating
+		CMP	CT_RATE0,#200		;   was below nought
+		BLO	4$
+		CLR	CT_CIN
+4$:		SEC
+		RETURN
+2$:		MOVB	R0,C.TYPE(R5)
+		MOV	R0,CG_GOOD
+5$:		MOV	#1,R3			; the coefficient
+		CMP	CG_GOOD,#13.
+		BLO	7$
+		MOV	CG_GOOD,R0
+		SUB	#15.,R0
+		BEQ	51$
+		BGT	7$
+		MOV	#6,R1			; kilogrammes
+		BR	52$
+51$:		MOV	#11.,R1			; grammes
+52$:		MOV	R1,CG_C
+		CLR	CG_T
+		MOV	#3,R4
+53$:		CALL	CT_RND
+		MOV	CG_C,R1
+		CALL	CT_MULQ
+		ADD	R0,CG_T
+		SOB	R4,53$
+		MOV	CG_T,R3
+		SWAB	R3
+		BIC	#177400,R3
+		INC	R3
+7$:		MOV	R3,CG_C2
+		CALL	CT_RND
+		BIC	#177740,R0
+		INC	R0
+		MOV	R0,CG_R1
+		CALL	CT_RND
+		BIC	#177760,R0
+		INC	R0
+		MOV	CG_R1,R1
+		CALL	CT_MULQ
+		MOV	R0,R2
+		MOV	CG_C2,R3
+		CALL	UMUL			; the low word of it
+		MOV	R1,R2
+		CMP	R2,#19.
+		BLOS	5$
+		MOV	#750.,R0
+		CMP	CG_C2,#1
+		BEQ	8$
+		MOV	#960.,R0
+8$:		CMP	R2,R0
+		BLOS	9$
+		MOV	R0,R2
+9$:		CMP	CG_C2,#1
+		BNE	10$
+		CMP	R2,#125.
+		BLOS	10$
+		CALL	CT_RND
+		MOV	R0,R1
+		BIT	#1,R1
+		BEQ	91$
+		ASR	R2
+91$:		BIT	#2,R1
+		BEQ	10$
+		ASR	R2
+10$:		MOV	R2,C.NUM(R5)
+		CLC
+		RETURN
+
+; CT_FEECARGO - CalcFeeCargo: the deposit is the station's price of
+; the good less up to 56/256 for quantity (doubled, and doubled again,
+; for a rating below nought with bits 6 and 5 set), a unit; the fee is
+; a quarter of the price times twice the trip, over 256, plus eight
+; per step of government below seven, a unit.  Clobbers R0..R3.
+CT_FEECARGO:	MOV	C.NUM(R5),R0
+		ASH	#-3,R0
+		BIC	#177400,R0
+		CMP	R0,#56.
+		BLOS	1$
+		MOV	#56.,R0
+1$:		NEG	R0
+		BIC	#177400,R0		; 256 - the discount
+		MOV	CT_RATE0,R1
+		BIT	#200,R1
+		BEQ	2$
+		BIT	#100,R1
+		BEQ	11$
+		ASL	R0
+11$:		BIT	#40,R1
+		BEQ	2$
+		ASL	R0
+2$:		MOV	R0,R2
+		MOV	CG_GOOD,R3
+		ASL	R3
+		MOV	ST_PRICE(R3),R3
+		CALL	CT_MUL24
+		CALL	CT_HI16			; the deposit a unit
+		MOV	R1,R3
+		MOV	C.NUM(R5),R2
+		CALL	CT_MUL24
+		MOV	R1,C.ADV(R5)
+		MOVB	R0,C.ADVH(R5)
+		MOV	CG_GOOD,R3
+		ASL	R3
+		MOV	ST_PRICE(R3),R2
+		CLC
+		ROR	R2
+		CLC
+		ROR	R2			; a quarter of the price
+		MOV	CG_FUEL,R3
+		ASL	R3			; twice the trip
+		CALL	CT_MUL24
+		CALL	CT_HI16
+		MOV	#7,R0
+		SUB	CG_GOV,R0
+		ASL	R0
+		ASL	R0
+		ASL	R0
+		ADD	R0,R1			; the fee a unit
+		MOV	R1,R3
+		MOV	C.NUM(R5),R2
+		CALL	CT_MUL24
+		MOV	R1,CF_L
+		MOV	R0,CF_H
+		RETURN
+
+; CT_FEEPKG - CalcFeePackage: the trip times 32 and a roll's fraction,
+; plus - for a rating not below nought - the trip times two to the
+; rating less one, plus 256 a step of government below seven; no
+; advance.  Clobbers R0..R4.
+CT_FEEPKG:	CALL	CT_RND
+		MOV	R0,R2
+		ADD	#8192.,R2
+		MOV	CG_FUEL,R3
+		CALL	CT_MUL24
+		CALL	CT_HI16
+		MOV	R1,CF_L
+		CLR	R4			; the third byte
+		MOV	CT_RATE0,R1
+		BIT	#200,R1
+		BNE	2$
+		ASH	#-4,R1
+		BIC	#177770,R1
+		ADD	#7,R1			; the trip shifted up so far,
+		MOV	CG_FUEL,R2		;   24 bits of it
+		CLR	R0
+1$:		ASL	R2
+		ROL	R0
+		SOB	R1,1$
+		BIC	#177400,R0
+		MOV	R2,R1
+		CALL	CT_HI16
+		ADD	R1,CF_L
+		ADC	R4
+2$:		MOV	#7,R0
+		SUB	CG_GOV,R0
+		SWAB	R0
+		ADD	R0,CF_L
+		ADC	R4
+		MOV	R4,CF_H
+		CLR	C.ADV(R5)
+		CLRB	C.ADVH(R5)
+		RETURN
+
+; CT_FEEPASS - CalcFeePassenger: the trip squared over 32 (doubled for
+; a type of #60), plus the trip times eight and a roll's, plus 256
+; times the square of the government's shortfall from seven, all
+; times half the sum of six rolls, over 256 - with Legend's odd high
+; bit; and the advance is the fee shifted down by the rating.
+; Clobbers R0..R4.
+CT_FEEPASS:	MOV	CG_FUEL,R2
+		MOV	R2,R3
+		CALL	CT_MUL24		; the trip squared
+		ASL	R1
+		ROL	R0
+		BIC	#177400,R0
+		CALL	CT_HI16
+		ASL	R1
+		ASL	R1
+		MOVB	C.TYPE(R5),R0
+		BIC	#177437,R0
+		CMP	R0,#140
+		BNE	1$
+		ASL	R1
+1$:		MOV	R1,CG_T
+		CALL	CT_RND
+		ADD	#256.,R0
+		ASL	R0
+		ASL	R0
+		ASL	R0
+		MOV	R0,R2
+		MOV	CG_FUEL,R3
+		CALL	CT_MUL24
+		CALL	CT_HI16
+		ADD	R1,CG_T
+		MOV	#7,R0
+		SUB	CG_GOV,R0
+		ASL	R0
+		ASL	R0
+		MOV	R0,R2
+		MOV	R0,R3
+		CALL	UMUL			; its square, times sixteen
+		ASL	R1
+		ASL	R1
+		ASL	R1
+		ASL	R1
+		ADD	R1,CG_T
+		CLR	CG_T2			; six rolls, halved
+		MOV	#6,R4
+2$:		CALL	CT_RND
+		ADD	R0,CG_T2
+		SOB	R4,2$
+		MOV	CG_T2,R2
+		ASR	R2
+		MOV	CG_T,R3
+		CALL	CT_MUL24
+		CALL	CT_HI16
+		CLR	R0			; and the top bit of that, again,
+		TST	R1			;   as the third byte
+		BPL	3$
+		INC	R0
+3$:		MOV	R1,CF_L
+		MOV	R0,CF_H
+		MOV	CT_RATE0,R1		; the advance: the fee over two to
+		MOV	R1,R3			;   ((8 - rating) / 2 + 1) / 2, all
+		ASH	#-4,R1			;   of it at the top rating
+		BIC	#177770,R1
+		BIT	#200,R3
+		BEQ	4$
+		NEG	R1
+4$:		MOV	#8.,R2
+		SUB	R1,R2
+		ASR	R2
+		INC	R2
+		ASR	R2
+		MOV	CF_L,R1
+		MOV	CF_H,R0
+		TST	R2
+		BEQ	6$
+5$:		CLC
+		ROR	R0
+		ROR	R1
+		SOB	R2,5$
+6$:		MOV	R1,C.ADV(R5)
+		MOVB	R0,C.ADVH(R5)
+		RETURN
+
+; CT_SKILL - CalcSkillContract: R0 = the least rating for the offer -
+; the trip times 32, plus or minus 64 times the difference of two
+; rolls doubled and 256 (fifteen bits of it), over 256, held at #70,
+; and nought below nought.  CT_CIN is the carry it leaves.  Clobbers
+; R0..R3.
+CT_SKILL:	CALL	CT_RND
+		ASL	R0
+		ADD	#256.,R0
+		BIS	#100000,R0		; -(2 r1 + 256)
+		MOV	R0,CG_T
+		CALL	CT_RND
+		ASL	R0			; 2 r2
+		MOV	CG_T,R1
+		CALL	CT_SMADD
+		MOV	R0,R2
+		BIC	#77777,R2
+		BIC	#100000,R0
+		ASH	#6,R0
+		BIC	#100000,R0
+		BIS	R2,R0
+		MOV	R0,R1
+		MOV	CG_FUEL,R0
+		ASH	#5,R0
+		CALL	CT_SMADD
+		MOV	#1,CT_CIN
+		TST	R0
+		BPL	1$
+		CLR	R0
+		RETURN
+1$:		SWAB	R0
+		BIC	#177400,R0
+		CMP	R0,#112.
+		BLO	2$
+		MOV	#112.,R0
+		CLR	CT_CIN
+2$:		RETURN
+
+; =========================================================================
+; CT_FINISH - TestFinishContract, at every docking: a contract to this
+; system closes at the main station - cargo only if the goods are still
+; aboard, and then the deposit comes back - and pays its fee; in time,
+; the rating rises too (Msg_GoodDeliv), late, it does not
+; (Msg_NoTimeDeliv).  A passenger whose time has run out anywhere else
+; may walk out on a roll under his own type byte (Msg_FailDeliv), and
+; that is a refusal.  The last thing said goes to CT_MSG for the
+; docked page.  Legend matches the planet's number alone; this asks
+; the galaxy's as well.  Clobbers everything.
+; =========================================================================
+CT_FINISH:	CLR	CT_MSG
+		MOV	#P_CONTRACT,R5
+		MOV	#NCONTRACTS,R4
+1$:		CMPB	C.GAL(R5),#CT_NONE
+		BEQ	8$
+		MOVB	C.TYPE(R5),R3
+		BIC	#177400,R3
+		MOVB	C.PLANET(R5),R0
+		BIC	#177400,R0
+		CMP	R0,P_PLANET
+		BNE	2$
+		MOVB	C.GAL(R5),R0
+		BIC	#177400,R0
+		CMP	R0,P_GALAXY
+		BNE	2$
+		TST	DOCKED_AT		; not the station: not closed here
+		BNE	8$
+		BIT	#CTK_PASS!CTK_PARCEL,R3
+		BNE	5$
+		MOV	R3,R2			; cargo: the goods must be aboard
+		ASL	R2
+		CMP	P_CARGO(R2),C.NUM(R5)
+		BLO	8$
+		SUB	C.NUM(R5),P_CARGO(R2)
+		MOV	R3,R0
+		CALL	GOOD_UNIT
+		TST	R0
+		BNE	4$
+		ADD	C.NUM(R5),P_FREECARGO
+4$:		CALL	CT_GETADV		; the deposit back
+		CALL	CASH_ADD32
+5$:		CALL	CT_GETFEE		; and the fee
+		CALL	CASH_ADD32
+		MOV	#S_C_NOTIME,CT_MSG
+		TST	C.TIME(R5)
+		BEQ	6$
+		CLR	R0			; in time: the rating rises
+		CALL	CT_RATING
+		MOV	#S_C_GOOD,CT_MSG
+6$:		MOVB	#CT_NONE,C.GAL(R5)
+		BR	8$
+2$:		TST	C.TIME(R5)		; elsewhere, past its time
+		BNE	8$
+		BIT	#CTK_PASS,R3
+		BEQ	8$
+		MOV	R4,-(SP)
+		MOV	R5,-(SP)
+		CALL	RND_BYTE		; clobbers R1..R3 and R5
+		MOV	(SP)+,R5
+		MOV	(SP)+,R4
+		MOVB	C.TYPE(R5),R1
+		BIC	#177400,R1
+		CMP	R0,R1
+		BHIS	8$
+		MOV	#S_C_FAIL,CT_MSG	; the passenger walks out
+		CALL	CT_REFUSE
+8$:		ADD	#C.SIZE,R5
+		DEC	R4			; too far back for SOB
+		BEQ	9$
+		JMP	1$
+9$:		RETURN
+

@@ -1,0 +1,256 @@
+; =========================================================================
+; mission_fly.mac - the missions' flight frame: what Legend's missions
+; do while the sky moves.  The state is the record's (src/mission.mac
+; says which bytes).  Resident: it began in the flight overlay and
+; outgrew the room there (src/ovl_fly.mac); what the ships' minds call
+; from it (MS_CLOAKE) is reached from the overlay as any resident is.
+; =========================================================================
+
+NOVA_STEP = 5			; the swelling a frame: Legend's two pixels on
+				;   a 256-pixel view, on 640 here
+NOVA_MAX = 600.			; and where it has swallowed the ship: the
+				;   largest body BODY_RADIUS draws (Legend's
+				;   256, past twice the view)
+
+; =========================================================================
+; MS_FLY - once a flight frame, after SUN_SCOOP.  The nova (mission 1):
+; arriving, the station calls MAYDAY every seventy frames (ePrnTxt's
+; txtMission1); once the commander has launched from it the star
+; swells two of Legend's pixels a frame from the size it was last drawn
+; (CorrData4Nova), the cabin warms with it, and at NOVA_MAX the ship is
+; gone.  Legend swells it only on the frames it draws the sun; here it
+; swells whichever way the ship faces, which is the danger the text
+; describes.  Clobbers R0..R5.
+; =========================================================================
+MS_FLY:		TST	WITCH			; deep space has no star
+		BNE	9$
+		CALL	MS_FLY2			; the Asp and the Targon station
+		CALL	MS_CRUISER		; mission 6's cruiser
+		CALL	MS_WARSTEP		; the war's progress
+		CALL	FV_PORTAL		; the portals (src/portal_fly.mac)
+		TST	NEAR_PORTAL		; and one near: ОБНАРУЖЕНА АНОМАЛИЯ,
+		BEQ	1$			;   every seventy frames (ePrnTxt)
+		MOV	FLY_TICK,R1
+		CLR	R0
+		DIV	#70.,R0
+		TST	R1
+		BNE	1$
+		MOV	#S_M_ANOMALY,R1
+		CALL	SAY_LINE
+1$:		TST	PIRATE_ON		; the pirates' station, near: it
+		BEQ	12$			;   does not answer
+		TST	STN_NEAR
+		BEQ	12$
+		MOV	FLY_TICK,R1
+		CLR	R0
+		DIV	#70.,R0
+		TST	R1
+		BNE	12$
+		MOV	#S_M_NOREPLY,R1
+		CALL	SAY_LINE
+12$:
+		CMPB	P_M1,#1
+		BNE	2$
+		MOV	FLY_TICK,R1		; MAYDAY, every seventy frames
+		CLR	R0
+		DIV	#70.,R0
+		TST	R1
+		BNE	9$
+		MOV	#S_M_MAYDAY1,R1
+		JMP	SAY_LINE
+2$:		CMPB	P_M1,#2
+		BNE	9$
+		MOV	NOVA_R,R0		; from the size it was last drawn
+		BNE	3$
+		MOV	SUN_LASTR,R0
+		BEQ	9$			; never drawn yet
+3$:		ADD	#NOVA_STEP,R0
+		MOV	R0,NOVA_R
+		CMP	R0,#NOVA_MAX
+		BLO	4$
+		JMP	PLAYER_DEAD
+4$:		MOV	R0,R1			; the cabin with it: 30 degrees to
+		MUL	#45.,R1			;   255 over the swelling (R1 odd:
+		ASH	#-7,R1			;   the low word, and 600 * 45 fits)
+		ADD	#CAB_COOL,R1
+		CMP	R1,PCABTEMP
+		BLOS	9$
+		MOV	R1,PCABTEMP
+9$:		RETURN
+
+; =========================================================================
+; MS_FLY2 - missions 2 and 3 in flight.  Mission 3 issued: MAYDAY, the
+; target system is taken (ePrnTxt, every seventy frames).  At the
+; Targon station (P_M3 4) the station is angry unless the commander
+; flies a Targoid ship (MoveAllObjects' head).  And the cloaked Asp's
+; book-keeping, which Legend does where a wreck is removed: an Asp gone
+; from the sky by any road but the commander's guns lets another come
+; (P_M2 0), and so does its container, gone unscooped.  Clobbers R0..R5.
+; =========================================================================
+MS_FLY2:	CMPB	P_M3,#1
+		BNE	2$
+		MOV	FLY_TICK,R1
+		CLR	R0
+		DIV	#70.,R0
+		TST	R1
+		BNE	2$
+		MOV	GALNUM,R0		; MAYDAY! <system> ЗАХВАЧЕНА!
+		MOVB	P_M3+1,R1
+		BIC	#177400,R1
+		CALL	MS_NAMEOF
+		MOV	#2,R0
+		MOV	#4,R1
+		MOV	#40.,R2
+		CALL	TEXT_CLEAR
+		MOV	#2,TX
+		MOV	#4,TY
+		MOV	#S_M_MAYDAY3,R1
+		CALL	PUTS2
+		MOV	#MS_NAME,R1
+		CALL	PUTS2
+		MOV	#S_M_TAKEN,R1
+		CALL	PUTS2
+		MOV	#40.,HYP_SHOW
+2$:		CMPB	P_M3,#4
+		BNE	4$
+		CALL	MS_TARGOID
+		BEQ	4$
+		MOV	#UNIV,R5
+		MOV	#NUNIV,R4
+3$:		BIT	#UF_STATION,U.FLAGS(R5)
+		BEQ	31$
+		TST	U.TYPE(R5)
+		BEQ	31$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+31$:		ADD	#U.SIZE,R5
+		SOB	R4,3$
+4$:		BITB	#100,P_M4		; the Constrictor gone from the sky
+		BEQ	41$			;   (OffTargetMissiles): another may
+		MOV	#UNIV,R5		;   come
+		MOV	#NUNIV,R4
+42$:		CMP	U.TYPE(R5),#SH_CONSTRICTORH
+		BNE	43$
+		BIT	#UF_MISSION,U.FLAGS(R5)
+		BNE	41$
+43$:		ADD	#U.SIZE,R5
+		SOB	R4,42$
+		BICB	#100,P_M4
+41$:		MOVB	P_M2,R2			; the Asp's book-keeping
+		BEQ	9$
+		MOV	#SH_ASPH,R3		; 1 or 2: the Asp; 3: its container
+		CMP	R2,#3
+		BNE	5$
+		MOV	#SH_CARGOHC,R3
+5$:		MOV	#UNIV,R5
+		MOV	#NUNIV,R4
+6$:		CMP	U.TYPE(R5),R3
+		BNE	7$
+		TST	U.EXPL(R5)
+		BNE	7$
+		CMP	R2,#3			; the container: any of its type
+		BEQ	9$
+		BIT	#UF_MISSION,U.FLAGS(R5)	; the Asp: the marked one
+		BNE	9$
+7$:		ADD	#U.SIZE,R5
+		SOB	R4,6$
+		CLRB	P_M2			; gone
+9$:		RETURN
+
+; =========================================================================
+; MS_CLOAKE - R5 = a ship in its reaction, R0 its energy: the cloaked
+; Asp's cloak (ReactionObject's goto391).  It goes on from #50 of energy
+; and off under #34, and while it is on it costs two a reaction.  Legend
+; runs this on every ship's energy against the one mission byte; here it
+; is the marked Asp's own.  Returns R0 = the energy; keeps R1, R5.
+; =========================================================================
+MS_CLOAKE:	BIT	#UF_MISSION,U.FLAGS(R5)
+		BEQ	9$
+		CMP	U.TYPE(R5),#SH_ASPH
+		BNE	9$
+		CMPB	P_M2,#2
+		BNE	1$
+		CMP	R0,#120
+		BLO	9$
+		MOVB	#1,P_M2
+1$:		CMPB	P_M2,#1
+		BNE	9$
+		CMP	R0,#64
+		BHIS	2$
+		MOVB	#2,P_M2
+		RETURN
+2$:		SUB	#2,R0
+		MOV	R0,U.ENERGY(R5)
+9$:		RETURN
+
+
+; =========================================================================
+; MS_CRUISER - SetTargonCruiser, once a flight frame: in mission 6's
+; second part, at the Targon-held world (P_M3 4) and next to it -
+; within one of Legend's high-byte units on every axis - the unfinished
+; cruiser, if it is not in the sky already: boardable, marked, with
+; three to five Targons about it, each with an ECM and none to leave by
+; hyperspace.  Legend puts the escort on the cruiser's own spot give or
+; take seven; here they stand off by a thousand, since the port's hulls
+; collide.  Clobbers R0..R5.
+; =========================================================================
+MC_N:		.WORD	0
+MC_X:		.WORD	0
+MC_Y:		.WORD	0
+MC_Z:		.WORD	0
+
+MS_CRUISER:	CMPB	P_M6,#4
+		BNE	9$
+		CMPB	P_M3,#4
+		BNE	9$
+		CALL	FIND_PLANET
+		BCS	9$
+		CALL	U_NEAR
+		BCS	9$
+		MOV	#BASE_U,R2
+		MOV	R2,R3
+		CALL	NEAR_BOX
+		BCC	9$
+		MOV	#UNIV,R5		; the cruiser is not about already
+		MOV	#NUNIV,R4
+1$:		CMP	U.TYPE(R5),#SH_TARGONINTH
+		BNE	2$
+		BIT	#UF_MISSION,U.FLAGS(R5)
+		BNE	9$
+2$:		ADD	#U.SIZE,R5
+		SOB	R4,1$
+		MOV	#SH_TARGONINTH,R0
+		CALL	SPAWN_LEGEND
+		BCS	9$
+		BIS	#UF_MISSION,U.FLAGS(R5)
+		BISB	#KB_BOARD,U.TYP(R5)
+		MOV	U.X(R5),MC_X
+		MOV	U.Y(R5),MC_Y
+		MOV	U.Z(R5),MC_Z
+		CALL	AI_RND			; three to five
+		BIC	#^C3,R0
+		ASR	R0
+		ADC	R0
+		ADD	#3,R0
+		MOV	R0,MC_N
+3$:		CALL	AI_RND
+		BIC	#^C1,R0
+		ADD	#SH_TARGONH,R0
+		CALL	TYPE_AVAIL		; the Targon 6 if its hull is here,
+		BEQ	9$			;   else a kind that is
+		MOV	R0,-(SP)
+		MOV	MC_N,R1			; a thousand apart, round about
+		MUL	#1000.,R1
+		MOV	R1,R2
+		ADD	MC_X,R1
+		ASR	R2
+		ADD	MC_Y,R2
+		MOV	MC_Z,R3
+		MOV	#-1,R4
+		MOV	(SP)+,R0
+		CALL	UNIV_ADD
+		BCS	9$
+		BISB	#F3_ECM,U.FL3(R5)
+		BICB	#AI_HYPER,U.AIF(R5)
+		DEC	MC_N
+		BGT	3$
+9$:		RETURN

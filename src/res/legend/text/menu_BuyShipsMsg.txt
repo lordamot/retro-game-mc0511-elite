@@ -1,0 +1,18 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/BuyShipsMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_BuyShips+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,18,4}ПОКУПКА КОРАБЛЯ
+Msg_ShipInfo+0|{nFlgPrn0xx}{nFlgPrn_xx1}{nSetCrdXY,26,16}ДАТА СОЗДАНИЯ:{nSetCrdXY,26,18}ГРУЗОПОДЪЕМНОСТЬ:{nSetCrdXY,26,20}МАКС. СКОРОСТЬ:{nSetCrdXY,26,22}ЦЕНА:
+MsgDate+0|{nFlgPrn_1xx} AD
+MsgNone4+0|----
+MsgTonn+0|{nFlgPrn_1xx} Т
+MsgSpeed+0|{nFlgPrn_1xx} LM
+MsgSpeed1+0|0.
+Msg_ShipCrd+0|{nFlgPrn0xx}{nFlgPrn_xx1}{nSetCrdXY,31,16}МЕСТОНАХОЖДЕНИЕ{nSetCrdXY,26,17}{nFlgPrn_xx1}ГАЛАКТИКА:{nSetCrdXY,26,18}ПЛАНЕТА:
+MsgDarkWheel+0|{nFlgPrn0xx}{nFlgPrn_xx1}НЕТ ДАННЫХ{nFlgPrn_xx1}
+MsgSellShip+0|{nFlgPrn0xx}{nFlgPrn_xx1}ПРОДАТЬ(
+Msg_Cr2+0|КР)
+MsgDeliverShip+0|{nFlgPrn0xx}{nFlgPrn_xx1}ДОСТАВИТЬ(
+MsgSelectShipH+0|{nSetPixCrdY,16}{nNamePackage}{nPlanetDest}
+MsgSelectShip+0|{nFlgPrn0xx}{nFlgPrn_xx1}ВЫБРАТЬ КОРАБЛЬ

@@ -1,0 +1,22 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/PauseInGameMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_Pause+0|{nSetZnkCrd}{nSetCrdXY,21,3}{nFlgPrn0xx}П А У З А{nSetCrdXY,7,5}{nFlgPrn_xx1}Q НОВАЯ ИГРА
+Msg_Pause+1|S ЗВУКОВЫЕ ЭФФЕКТЫ
+Msg_Pause+2|G GENERAL SOUND
+Msg_Pause+3|B ИНВЕРСИЯ УПРАВЛЕНИЯ
+Msg_Pause+4|Y ИНВЕРСИЯ КЛАВИШ ВВЕРХ/ВНИЗ
+Msg_Pause+5|R ИНЕРЦИОННОЕ УПРАВЛЕНИЕ
+Msg_Pause+6|D ПОСТОЯННАЯ СКОРОСТЬ ПОВОРОТА
+Msg_Pause+7|E АВТОВКЛЮЧЕНИЕ П.Р.О.
+Msg_Pause+8|P АВТОКАТАПУЛЬТИРОВАНИЕ
+Msg_Pause+9|F ПЕРЕХВАТ ТАРГОНОВ
+Msg_Pause+10|L ЛОКАТОР
+Msg_Pause+11|C УПРОЩЕННАЯ ИГРА
+Msg_Pause+12|C УПРОЩЕННАЯ СТЫКОВКА
+Msg_Pause+13|U ПОДТВЕРЖДЕНИЕ НА ВЗЛЕТ
+Msg_Pause+14|K ИЗМЕНИТЬ УПРАВЛЕНИЕ
+Msg_Pause+15|A ПОВОРОТ ЛАЗЕРНЫХ ТУРРЕЛЕЙ{nSetCrdXY,13{MaxPauseOpt+6},1}{'"ПРОБЕЛ" - ПРОДОЛЖИТЬ ИГРУ'}
+Msg_On+0|{nFlgPrn_xx1}ВКЛ.
+Msg_Off+0|{nFlgPrn_xx1}ВЫКЛ.

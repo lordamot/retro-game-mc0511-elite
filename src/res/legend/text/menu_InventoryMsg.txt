@@ -1,0 +1,10 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/InventoryMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_Inventory+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,21,4}ГРУЗОВОЙ ОТСЕК
+Msg_Fuel+0|{nFlgPrn_xx1}ТОПЛИВО
+Msg_Refugees+0|{nSetCrdXY,3,5}{nFlgPrn_xx1}БЕЖЕНЦЫ
+Msg_Descent+0|{nSetCrdXY,3,5}{nFlgPrn_xx1}ШТУРМОВОЙ ОТРЯД
+Msg_RefGenShip+0|{nSetCrdXY,3,5}{nFlgPrn_xx1}ОБИТАТЕЛИ КОРАБЛЯ ПОКОЛЕНИЙ
+Msg_Retribution+0|{nSetCrdXY,3,5}{nFlgPrn_xx1}ШТУРМОВИКИ

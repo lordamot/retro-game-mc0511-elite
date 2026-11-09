@@ -1,0 +1,714 @@
+		.ASECT
+		.MCALL .SETTO,.LOOKU,.READW,.ENTER,.WRITW,.CLOSE,.PURGE,.PRINT,.EXIT
+; =========================================================================
+; defs.mac - global layout constants for the UKNC Elite port (octal).
+; See docs/architecture.md for the reasoning behind the numbers.
+; =========================================================================
+
+FONT_H = 11.			; authentic UKNC system glyph height
+
+; ---- RT-11 CPU layout ---------------------------------------------------
+; Low 001000 bytes belong to RT-11. Stack and PPU-shared state must stay
+; BELOW the swappable USR region (136556 on the supplied monitor). Only
+; synchronous overlays occupy the high region reclaimed with SET USR SWAP.
+PROG_SIZE = 132400              ; resident budget, including RT-11 low page
+STACK_TOP = 133400              ; 512-byte stack above resident
+HULL_BASE = 133400              ; one hull from the bank, maximum 480 bytes
+HULL_END = 134400               ; 512-byte working buffer
+OVL_BASE = 134400               ; 5120-byte synchronous overlay window
+OVL_END = 146400
+MEM_TOP = 146400                ; .SETTO request; checked at entry
+
+; These logical block numbers are relative to ELITE.DAT, not the disk.
+; Block 0 pairs SAV/DAT. Last text block has an extra zero guard block.
+OVL_DIR_LBA = 1
+KEYS_LBA = 2
+OVL_LBA0 = 3
+HULL_LBA0 = 100.
+; All hulls live in video planes 1/2 above the screen (13,612 bytes).
+; HULL_SYSTEM keeps the original 5120-byte logical selection budget;
+; SHIP_TABLE contains bank addresses. HULL_FETCH supplies a CPU pointer.
+; the overlays, by number: the order of src/ovl.list
+OVL_TITLE = 0
+OVL_CHARTS = 1			; the two charts (src/ovl_charts.mac)
+OVL_INFO = 2			; the data screen (src/ovl_info.mac)
+OVL_TRADE = 3			; the market (src/ovl_trade.mac)
+OVL_CMDR = 4			; the commander chooser and the name prompt
+OVL_PILOT = 5			; the commander's record (src/ovl_pilot.mac)
+OVL_EQUIP = 6			; the outfitter (src/ovl_equip.mac)
+OVL_YARD = 7			; the yard (src/ovl_yard.mac)
+OVL_SAVE = 8.			; the access menu (src/ovl_save.mac)
+OVL_CARRIER = 9.		; the carrier market (src/ovl_carrier.mac)
+OVL_CTGEN = 10.			; its offers and their settling (src/ovl_ctgen.mac)
+OVL_FLY	= 11.			; the flight frame's code (src/ovl_fly.mac)
+OVL_MISSION = 12.		; the missions' screens (src/ovl_mission.mac)
+OVL_DASH = 13.			; the dashboard, drawn for the cockpit (src/ovl_dash.mac)
+OVL_PAUSE = 14.			; the pause menu and the launch prompt (src/ovl_pause.mac)
+OVL_SFX	= 15.			; Legend's effects engine, which the PPU runs out
+				;   of the overlay cache (src/ppu_sfx.mac)
+MTEXT_LBA0 = 127.		; the missions' text (build/mistext.bin), after
+				;   the hull bank (tools/mission_text.py)
+; the flight overlay's entries: a JMP each at the window's head
+FV_AI	= OVL_BASE		; AI_STEP (src/ai_fly.mac)
+FV_SPAWN = OVL_BASE+4		; SPAWN_TICK
+FV_JDRIVE = OVL_BASE+10		; JDRIVE_STEP (src/jdrive_fly.mac)
+FV_DRONE = OVL_BASE+14		; DRONE_LAUNCH (src/drone_fly.mac)
+FV_PORTAL = OVL_BASE+20		; MS_PORTAL (src/portal_fly.mac)
+FV_ATTACK = OVL_BASE+24		; player Targlet attack
+FV_END	= 30			; bytes of table
+OC_WORDS = 7168.                ; 14 KiB PPU overlay cache; includes live SFX
+NAME_MAX = 10.                  ; Legend's ten-letter commander name
+; The PPU allocation also reserves 2392 bytes for firmware display state.
+; Its dead CPU copy is reused by initialized buffers in src/tail.mac.
+
+; ---- video --------------------------------------------------------------
+; The UKNC user screen in its widest mode: 640x288, 80 bytes per line, one
+; bit per plane per pixel, bit 0 of a byte = leftmost pixel.  Plane bytes
+; are reached through the window registers, never as CPU addresses.
+VADDR	= 176640		; plane byte address register
+VDATA	= 176642		; data word: low byte = plane 1, high = plane 2
+VRAM	= 100000		; plane byte address of screen line 0
+PADDR	= 177010		; the same pair as the PPU sees them: its
+PDATA	= 177014		;   plane address and its plane 1/2 data word
+
+; The ring of walk records the CPU hands the PPU to draw - see the head
+; of src/gfx.mac.  A record is the three-word walk LINE_RUN reads.
+RECB	= 6.			; bytes in a record (= SEGREC in ship.mac)
+RING_N	= 256.			; records the ring holds (256 until
+				;   2026-09-24, when the AI needed the room,
+				;   and again since the records halved on
+				;   2026-09-26: the same 1536 bytes).  512
+				;   was measured and bought nothing: 22
+				;   stalls in a turning bench fell to 0 and
+				;   the frame rate did not move
+RING_BYTES = RING_N*RECB
+VLINE	= 120			; 80. plane bytes per line
+SCRW	= 640.			; visible pixels per line
+SCRH	= 288.			; visible lines
+SCRWB	= 80.			; bytes per line
+HBANK_ADDR = VRAM+<SCRH*SCRWB>	; the hull bank: the first plane byte above
+HBANK_MAX = 177777-HBANK_ADDR+1	;   the screen, and the words to the top
+
+MODE_640 = 7			; display control word: 640 mode (scale 1)
+MODE_320 = 27			; ... and 320 mode, for reference
+
+; Pixel values the CPU can write are 0/2/4/6: bit 0 of the value comes
+; from plane 0, which belongs to the PPU.  So plane 1 alone is INK_MAIN,
+; plane 2 alone INK_ALT, and both together INK_BOTH.
+INK_MAIN = 2			; plane 1
+INK_ALT	= 4			; plane 2
+INK_BOTH = 6
+
+; ---- palette ------------------------------------------------------------
+; A palette element is two words holding eight YRGB nibbles: word 1 carries
+; entries 0..3 (low nibble first), word 2 entries 4..7.  YRGB = bit 3
+; bright, bit 2 red, bit 1 green, bit 0 blue.
+;
+; View palette:  0 black, 1 blue, 2 white, 3 cyan,
+;                4 yellow, 5 magenta, 6 white, 7 white
+PAL_VIEW1 = 137620		; 0xBF90: entries 3..0 = B,F,9,0
+PAL_VIEW2 = 177736		; 0xFFDE: entries 7..4 = F,F,D,E
+
+; Dashboard palette: 0 black, 1 blue, 2 white, 3 cyan,
+;                    4 green, 5 yellow, 6 red, 7 white
+PAL_DASH1 = 137620		; 0xBF90
+PAL_DASH2 = 176352		; 0xFCEA: entries 7..4 = F,C,E,A
+
+; ---- screen layout ------------------------------------------------------
+; The space view fills the top of the screen; the dashboard sits under it
+; and gets its own palette element in the line table.
+; Written in decimal throughout - MACRO-11's default radix is OCTAL, and
+; a bare 640 here would quietly mean 416.
+VIEW_Y	= 0
+VIEW_H	= 200.			; lines of space view
+VIEW_YC	= 100.			; the view's centre line
+VIEW_XC	= 320.			; ... and centre column
+DASH_Y	= 200.			; first dashboard line
+DASH_H	= 88.
+
+; The UKNC's 640x288 pixels are tall and narrow (about 0.6 as wide as
+; high), so a projection has to stretch x to keep circles round.  5/3 is
+; close enough and cheap: x = x * XASP_N / XASP_D.
+XASP_N	= 5
+XASP_D	= 3
+
+; ---- PPU commands (byte written to @#176666) ----------------------------
+CMD_CLS	= 0			; clear screen + set mode from CPU_MODE
+CMD_OLD	= 1			; restore the firmware screen
+CMD_PAL	= 4			; reload palettes/modes, no clear
+CMD_OCOPY = 2			; copy between the PPU's cache and the window
+CMD_TUNE = 3			; the tune: MUS_MODE says stop, once or round
+CMD_BLIT = 5			; blit plane-0 lines from FRAME_BUF
+CMD_FILL = 6			; fill whole lines with FILL_COLOR
+CMD_PPBENCH = 7			; time the PPU's own plane access (PP_BENCH)
+CMD_RESET = -1			; reset the machine
+
+; ---- keyboard bits (PP_KEYS_DATA, kept by the PPU) ----------------------
+K_LEFT	= 1			; arrows: roll left / right, pitch up / down
+K_RIGHT	= 2
+K_UP	= 4
+K_DOWN	= 10
+K_FIRE	= 20			; ФИКС - fire the lasers
+K_ENTER	= 40			; ВВОД - select / launch
+K_STOP	= 100			; СТОП - back out of a screen
+K_PAUSE	= 200			; АР2  - the pause menu (src/ovl_pause.mac)
+K_THR	= 400			; ВВОД on the numpad - the throttle
+K_MISSILE = 1000		; space - lock on, then launch
+K_VIEW	= 2000			; 1 - front, rear, left, right, and round
+K_ECM	= 4000			; 2 - the ECM, if one is fitted
+K_BOMB	= 10000			; 3 - the energy bomb, once
+K_POD	= 20000			; 6 - the escape capsule, once
+K_MISSKIND = 40000		; 8 - the missile kind: standard or military
+K_CLOAK	= 100000		; 9 - the cloaking device, on and off
+; The word is full, so a second one, PP_KEYS2_DATA, published beside it
+; and read into KEYS2/KEYS2_EDGE the same way (2026-09-19).  Its keys
+; are Legend's own letters where the PC keyboard's position lets them
+; be (KEYBOARD.md): J, V and S on the PC are О, М and Ы on the УКНЦ.
+KB_JDRIVE = 1			; О (PC J) - the J-drive, HELD; the injectors
+				;   when the drive is mass-locked
+KB_COMPASS = 2			; М (PC V) - the advanced compass's next mode
+KB_SCANNER = 4			; Ы (PC S) - the scanner's next mode
+KB_TURRET = 10			; А (PC F) - the laser turrets turn
+; WHICH key sets each bit is not written here: src/res/setup.txt names a
+; key for every command, tools/keyfile.py turns it into the PPU's four
+; tables (build/keytab.mac) and into the key file on the disk, and
+; KEY_INIT reads that at boot - so a player's own key file wins.  The
+; rule the tool warns about is the keyboard's: a release names the
+; matrix ROW, the low four bits of the code, and clears every key in
+; it, so a key must not share a row with one that is held down
+; (KEYBOARD.md).
+
+; ---- sound: a request to the effects engine (SFX_PLAY, src/sound.mac;
+; src/ppu_sfx.mac): Legend's effect number (its SFX_* in AllConst.a80,
+; the table in src/res/legend/sfx.txt) in the low byte, the channel in
+; bits 8-9 and the priority - 0 wins, 7 yields - in bits 10-12, as
+; Legend's calls give them (Main/Sound.a80: SetSoundsInGame 5 and 6,
+; SetSoundEffectA/B 7) ---------------------------------------------------
+FX.A	= 0			; the channels
+FX.B	= 400
+FX.C	= 1000
+FX.P5	= 12000			; the priorities the game uses
+FX.P6	= 14000
+FX.P7	= 16000
+FX_KEY	= 0+FX.B+FX.P7		; KeyPressed: a message, a lock, typing
+FX_OPTION = 1+FX.B+FX.P7	; PressOption: a menu's key
+FX_LASER = 2+FX.B+FX.P6		; the commander's laser, + its type 0..7
+FX_LHIT	= 12+FX.A+FX.P5		; PilotLaserHit: your laser hits
+FX_EHIT	= 13+FX.C+FX.P6		; EnemyLaserHit: something hits you
+FX_MISSILE = 14+FX.A+FX.P7	; LaunchMissile: yours goes
+FX_ECM	= 15+FX.B+FX.P6		; ECMsystem: the field, round and round
+FX_OFFB	= 16+FX.B+FX.P6		; SFX_Off: the field's end, SoundOff
+FX_BOMB	= 17+FX.B+FX.P7		; E_Bomb
+FX_OVER	= 20+FX.B+FX.P7		; GameOver
+FX_DRONE = 21+FX.A+FX.P7	; CaptureDron: the boarding drone goes
+FX_ALIEN = 22+FX.A+FX.P7	; AlienDrone
+FX_PAUSE = 23+FX.B+FX.P7	; PressPause: an option flipped
+FX_CARGO = 24+FX.A+FX.P7	; CaptureCargo: the auto-take
+FX_REFUEL = 25+FX.A+FX.P7	; Refueled: the extra tank
+FX_DESCENT = 26+FX.A+FX.P7	; LaunchDescent: the troops go
+FX_GATE	= 27+FX.B+FX.P7		; JumpGate: a ring or a portal
+FX_DOCK	= 30+FX.B+FX.P7		; Docking
+FX_LAUNCH = 31+FX.B+FX.P7	; Launch
+FX_HYPER = 32+FX.B+FX.P7	; HyperJump
+FX_BUMP	= 33+FX.C+FX.P5		; Collision: you ran into it
+FX_KILL	= 34+FX.C+FX.P5		; DestroyObj: something went up
+FX_STOP	= 377			; every slot empty, every channel silent
+
+; ---- the options (OPTIONS, src/gamevars.mac): the pause menu's, Legend's
+; FlagsSetUp and FlagsSetUp2 bits (Menu/PauseInGame.a80); their defaults
+; are the key file's (src/res/setup.txt) ------------------------------
+OPT_SOUND = 1			; S - the effects and the tune
+OPT_INV	= 2			; B - the stick inverted, both axes
+OPT_INVUD = 4			; Y - up and down swapped
+OPT_INERT = 10			; R - inertial: an opposite key slows the
+				;   turn through zero, not to it
+OPT_STEADY = 20			; D - a turn keeps its rate when let go
+OPT_WITCH = 40			; F - every jump is intercepted
+OPT_EASY = 100			; C - docking without levelling the slot
+OPT_LAUNCH = 200		; U - ask before launching
+
+; ---- dashboard layout (byte columns 0..79, pixel rows DASH_Y..287) -----
+BAR_W	= 15.			; gauge field, in byte columns (120 pixels)
+BAR_H	= 6.			; bar height in lines
+LBAR_LX	= 1			; left block: label column
+LBAR_BX	= 7			;             bar column
+LBAR_Y	= 208.			;             first bar's top line
+RBAR_LX	= 57.			; right block
+RBAR_BX	= 63.
+RBAR_Y	= 208.
+BAR_STEP = 11.			; lines between gauges
+RACK_Y	= LBAR_Y+<6*BAR_STEP>		; the missile rack: the left block's
+					;   seventh row
+
+COMP_CX	= 320.			; the compass: a small ring above the
+COMP_CY	= 210.			; scanner, in the band between the rule
+COMP_RX	= 15.			; and the dish.  15 by 9 is round on a
+COMP_RY	= 9.			; screen whose pixels are 5:3
+
+SCAN_CX	= 320.			; the scanner: centre and radii, in pixels
+SCAN_CY	= 250.
+SCAN_RX	= 108.
+SCAN_RY	= 30.
+
+; The plane words a gauge is painted with.  A word written to the video
+; window puts its low byte in plane 1 and its high byte in plane 2, and
+; the dashboard palette reads 2 as white, 4 as green and 6 as red - so
+; these are the three inks, written a whole byte of pixels at a time.
+INK_WHITE = 377			; plane 1 only
+INK_GREEN = 177400		; plane 2 only
+INK_RED	= 177777		; both
+
+; ---- the universe: one record per ship in flight ------------------------
+U.TYPE	= 0			; blueprint index + 1; 0 = the slot is free
+U.X	= 2			; position relative to the commander
+U.Y	= 4
+U.Z	= 6
+U.MAT	= 10			; 8. - the ship's own 3x3 orientation
+U.SPEED	= 34			; 28. - how fast it moves along its nose
+U.TURN	= 36			; 30. - a ship: frames of roll and pitch left
+				;   (U.TLR, U.TDU below)
+U.AI3	= 40			; 32. - a ship: oFlg_3 and oSpeedUp (U.FL3,
+				;   U.ACC below)
+U.ROLL	= U.TURN		; the old names, for the checks
+U.PITCH	= U.AI3
+U.ENERGY = 42			; 34. - what is left of it
+U.FLAGS	= 44			; 36. - bit 0: it shoots back
+U.EXPL	= 46			; 38. - explosion countdown, 0 = intact
+U.SX	= 50			; 40. - where its centre projected to, kept
+U.SY	= 52			; 42.   from the draw pass for the gunsight
+U.TARGET = 54			; 44. - slot a missile is chasing, +1; 0 none
+U.BCX	= 56			; 46. - where a body was last DRAWN, and how
+U.BCY	= 60			; 48.   big: a planet whose projection has not
+U.BR	= 62			; 50.   moved is left on screen untouched
+U.AI	= U.BCX			; a SHIP has no drawn centre: these two hold
+U.KIND	= U.BCY			;   its mind and its kind (src/ai.mac).  U.BR
+				;   is not free: BODY_FORGET clears it in
+				;   every slot
+U.LAUNCH = 64			; 52. - escorts it has left to put in the air,
+				;       out of the original's own launch byte
+U.MOTHER = 66			; 54. - the slot of the ship that let it go,
+				;       as an address; 0 = it flies alone
+U.XH	= 70			; 56. - the HIGH words of the position: x, y
+U.YH	= 72			; 58.   and z are 32-bit since 2026-09-10
+U.ZH	= 74			; 60.   (Legend's sky is bigger than 16 bits);
+				;   the low words stay at U.X/U.Y/U.Z, so every
+				;   16-bit reader still reads a NEAR object
+				;   right, and U_NEAR says whether it may
+U.HI	= U.XH-U.X		; from a low word to its high word
+U.SIZE	= 76			; 62.
+NUNIV	= 16.			; ships that can be in flight at once: Legend's
+				; sixteen since 2026-09-10.  It was eight
+				; until the law started flying, then ten:
+				; between the world, the sun, the station,
+				; a drop, the traffic and a Viper or two
+				; there was no room left for a missile to
+				; launch into or for a wreck's cargo to
+				; fall out of, and both simply failed.
+
+
+; ---- which way the commander is looking ---------------------------------
+; The universe is kept in the ship's own frame, so a view is a rotation
+; applied when a slot is drawn and nowhere else: flying, docking, the
+; scanner and the missiles all go on reading the stored coordinates.
+;   rear   x' = -x, z' = -z
+;   left   x' =  z, z' = -x      (what was ahead is now on your right)
+;   right  x' = -z, z' =  x
+VIEW_FRONT = 0
+VIEW_REAR = 1
+VIEW_LEFT = 2
+VIEW_RIGHT = 3
+NVIEWS	= 4
+
+; A laser belongs to a mount, the way Elite sells them: a new ship has a
+; pulse laser at the front and nothing anywhere else, and the trigger
+; does nothing at all in a view with no gun in it.  The numbers are
+; Legend's (PilotFrontLaser: 0..7, #80 for an empty mount), so the
+; record's four laser words are its four laser bytes widened.
+LAS_PULSE = 0
+LAS_PULSE2 = 1
+LAS_BEAM = 2
+LAS_BEAM2 = 3
+LAS_MIL	= 4
+LAS_NAVAL = 5
+LAS_TARGOID = 6
+LAS_MINING = 7
+LAS_NONE = 200			; an empty mount (bit 7, as in Legend)
+NLASERS	= 8.
+
+; A device in the commander's record is one byte, in Legend's packing:
+; bit 7 set means it is not fitted, bit 6 that it is fitted but broken,
+; and the low bits are its type or mode.  So "fitted" is TSTB + BPL and
+; "not fitted" is TSTB + BMI - never TST/BEQ, which a fitted device of
+; type 0 would also satisfy.
+DEV_NONE = 200			; not aboard
+DEV_BROKEN = 100		; aboard, but broken (phase 3 breaks them)
+DEV_ON	= 0			; aboard and working, type 0
+DEV_OFF	= DEV_NONE!DEV_BROKEN	; either: Legend's `cp #40`, a device
+				;   that is not there or not working
+
+; The legal record, in Legend's units (PilotLegalStatus): 0 clean, then
+; offender, fugitive from LEGAL_FUGITIVE, outlaw from 256, rogue from
+; 8192.  The 1985 rules charged one point an offence and called two a
+; fugitive; the same rules now charge LEGAL_OFFENCE, so that two
+; offences still make a fugitive and Legend's bands read right.
+LEGAL_OFFENCE = 25.
+LEGAL_FUGITIVE = 50.
+UF_ALIENITEM = 40000		; a returned player Targlet: alien cargo
+UF_HOSTILE = 1			; U.FLAGS bit 0: it is aggressive (Legend's
+				;   oFlg_2 bit 2): it closes on the
+				;   commander and shoots
+UF_STATION = 2			; U.FLAGS bit 1: it is the space station
+UF_MISSILE = 4			; U.FLAGS bit 2: it is a missile in flight
+UF_PLANET = 10			; U.FLAGS bit 3: draw it as a disc, not a hull
+UF_SUN	= 20			; U.FLAGS bit 4: a disc with a corona
+UF_DERELICT = 40		; U.FLAGS bit 5: nobody is flying it (oFlg_1
+				;   bit 6 clear): a drop, a rock, a hull
+				;   whose pilot has ejected.  It drifts and
+				;   tumbles, and has no mind
+UF_POD	= 100			; U.FLAGS bit 6: it carries an escape capsule
+				;   (oFlg_1 bit 7) and will fire it
+UF_POLICE = 200			; U.FLAGS bit 7: a police ship (Legend's kind
+				;   1), for the code that asks
+UF_BASE	= 400			; U.FLAGS bit 8: a base with a bay that is not
+				; THE station - the compass, the docking
+				; computer and the police look for
+				; UF_STATION; docking, collisions and the
+				; launch bays take either (src/bases.mac)
+UF_DOCK	= UF_STATION!UF_BASE	; anything that can be docked with
+UF_MILMISS = 1000		; U.FLAGS bit 9: a military missile (Legend's
+				;   objMisD #FF): 255 to a hull, and it flies
+				;   through any ECM but a naval one of yours
+UF_DROP	= 2000			; U.FLAGS bit 10: a container the scoop can
+				;   take (oFlg_4 bit 1): cargo, alloys,
+				;   minerals, a capsule
+UF_MISSION = 20000		; U.FLAGS bit 13: a mission's ship - the
+				;   cloaked Asp, the Constrictor (Legend's
+				;   oFlg_4 bit 6)
+UF_REACTFAR = 10000		; U.FLAGS bit 12: its reaction radius is the
+				;   wide one (oFlg_4 bit 5)
+; The rest of Legend's object record is in the slot words a ship has no
+; other use for (src/ai.mac): U.AI, U.KIND, U.TURN, U.AI3, and the high
+; byte of U.LAUNCH.  Their bytes:
+U.AIF	= U.AI			; oFlgAI: bits 1-0 the frame it was born in
+				;   (ships of one frame do not fight each
+				;   other; 0 the police, 3 the Targons), ...
+AI_FRAME = 3
+AI_NEARBAY = 4			;   bit 2 it appeared with the station near
+AI_CLOAK = 10			;   bit 3 it may cloak
+AI_COLLECT = 20			;   bit 4 it picks containers up
+AI_HYPER = 40			;   bit 5 it may leave by hyperspace - and
+				;     with bits 6 and 3 clear it is leaving:
+				;     bits 2-0 count the frames
+AI_ATTACK = 100			;   bit 6 it fights: it has targets and a
+				;     counter
+AI_PIRATE = 200			;   bit 7 a pirate, a rock or a missile:
+				;     shooting it makes nobody an aggressor
+U.CNT	= U.AI+1		; oCounter: frames to its next decision, and
+				;   whose parity says whether this frame it
+				;   chases (odd) or reacts (even)
+AI_COUNT0 = 24.			;   what it is born with (#18)
+AI_HYPCNT = 264			;   and what leaving sets it to (#B4)
+U.TYP	= U.KIND		; oTypeObj: bits 2-0 the kind (KD_*: K_* are
+				;   the keys, and K_MISSILE was defined twice
+				;   for an afternoon), ...
+KD_TRADER = 0
+KD_POLICE = 1
+KD_PIRATE = 2
+KD_HUNTER = 3
+KD_TARGON = 4
+KD_ROCK	= 5
+KD_MISSILE = 6
+KD_STATIC = 7			;   containers, bases, the Targlet
+KB_BOARD = 10			;   bit 3 it can be boarded
+KB_MISSPROOF = 20		;   bit 4 no missile or bomb breaks it
+KB_DRONE = 100			;   bit 6 a boarding drone (with bit 7; a
+				;     Targlet of yours has bit 7 alone)
+KB_PLAYER = 200			;   bit 7 the commander launched it
+U.FL2	= U.KIND+1		; oFlg_2, the bits UF_HOSTILE and UF_POD do
+				;   not carry:
+F2_SPEED4 = 1			;   bit 0 its top speed is four times the byte
+F2_LEGAL = 2			;   bit 1 it turns on a commander the law
+				;     wants (LEGAL_FUGITIVE and up)
+F2_SHY	= 10			;   bit 3 near the station it keeps away
+				;     from the commander instead of closing
+F2_LAWBITS = 140		;   bits 6-5: a hostile one of these makes
+				;     the whole sky hostile (PlayerPirate)
+U.TLR	= U.TURN		; frames of roll left, signed; +-64 means
+U.TDU	= U.TURN+1		;   for ever (a rock's tumble); and of pitch
+U.FL3	= U.AI3			; oFlg_3: bit 0 it has an ECM, bit 7 it is
+F3_ECM	= 1			;   running from the commander, and the rest
+F3_FLEE	= 200			;   is how sure it is of its hull - a laser
+				;   hit takes 14 off, and a critical ship
+				;   fires its capsule on a roll at or above
+				;   it
+U.ACC	= U.AI3+1		; oSpeedUp: what its speed changes by a
+				;   frame, -2..2
+U.NLA	= U.LAUNCH		; how many it has left to launch (oFlg_1 bits
+				;   2-0) ...
+U.TGT2	= U.LAUNCH+1		; ... and oTarget2: the container it is going
+				;   for, or the station it is going home to,
+				;   as a slot+1
+U.TGT1	= U.MOTHER		; oTarget1, the second target, a slot+1;
+				;   U.TARGET is the first: 0 nobody (which
+				;   for a fighter means you), n a slot+1
+; And its numbers, in this port's units, where Legend's sixteen-bit
+; coordinate is one to one (a collision distance is the same byte):
+AI_ROLL_K = 1536.		; a frame of roll, Q14: Legend's #0C/128
+AI_PITCH_K = 1024.		; and of pitch, #08/128
+AI_REACT_XY = 512.		; the reaction radius: inside it a ship keeps
+AI_REACT_Z = 1024.		;   away from you (DirectObject's #200 ...
+AI_REACTF_XY = 2560.		;   and #A00 for UF_REACTFAR)
+AI_REACTF_Z = 3072.
+AI_FLEE_XY = 256.		; a runner turns back on you outside this
+AI_FLEE_Z = 768.		;   (MoveObjToPlayerAttack)
+AI_RAM	= 128.			; a target this close on every axis has been
+				;   reached: a bay is docked with, a drop
+				;   picked up
+AI_RANGE = 9216.		; a ship's shot at another ship reaches this
+				;   far on every axis (#24 of Legend's middle
+				;   byte)
+AI_HOLD	= 10.			; distances /512 (Legend's LenVector high
+AI_FAST	= 16.			;   byte): a ship closing holds its speed
+AI_BACK	= 11.			;   inside AI_HOLD and puts on two a frame
+AI_BACK2 = 18.			;   beyond AI_FAST; one going away slows
+AI_SHOT	= 12.			;   beyond AI_BACK; no shot beyond AI_SHOT
+AI_SURE	= 4.			;   and a sure hit inside AI_SURE
+SPAWN_Z	= 12800.		; where a ship is born: #32 of the middle byte
+				;   ahead, and for a hostile one the same to
+				;   the side (SetObjInSlot)
+SPAWN_SIDE = 7			; a peaceful one is within (rnd & 7) * 256 of
+				;   the line
+AI_GONE	= 24576.		; and past this in z, or beyond sixteen bits,
+				;   a ship is over the horizon and gone
+				;   (ReCalcCrdObj's #60 of the middle byte)
+CO_GIVE	= 12.			; world units two crowded ships give way by
+
+
+; Docking.  The commander is docked when the station is close, near
+; enough to the middle of the view, and he is not arriving at speed -
+; which is the whole of the original's test too, minus the slot's
+; orientation.
+DOCK_Z	= 700.
+DOCK_XY	= 240.
+DOCK_SPEED = 16.
+; The slot.  A Coriolis has a rectangular opening across one face, and
+; this port takes it to lie along the station's own x axis - which is
+; what the eye reads off the hull anyway, since the station is drawn
+; rolling about the axis that points at you.  The first row of its
+; orientation is that axis in the commander's frame, so the slot is
+; level when the row's y component is small: 11585 is Q14 for cos 45,
+; which is Elite's own generosity about how straight you have to be.
+;
+; The commander's own roll turns the whole universe about him, the
+; station's matrix included, so rolling really does line the ship up
+; with the slot rather than merely looking as if it does.
+DOCK_ALIGN = 11585.
+DC_ROLL	= 3			; how hard the docking computer rolls to match
+STATION_Z = 6000.		; where it sits when a system is entered
+STATION_SPIN = 90.		; Q14 roll a frame
+; The bases (src/bases.mac).  Kinds are Legend's own numbers, bits 0-2 of
+; its oFlg_5; which ones a system has is SYS_BASES, Legend's objInSystem
+; bits.
+BK_RING	= 0
+BK_STATION = 1
+BK_MILITARY = 2
+BK_FUEL	= 3
+BK_HERMIT = 4
+BK_PORTAL = 5			; a portal (SetObjPortal): flown into, like
+				;   the ring; UF_MISSION on it is Raxxla's
+BK_GENSHIP = 6			; a generation ship (deep space; Docking 5)
+BK_PLATFORM = 7			; the space platform: touching it is death
+SB_MILITARY = 20
+SB_HERMIT = 40
+SB_FUEL	= 100
+SB_RING	= 200
+BASE_U	= 4500.			; one unit of Legend's high coordinate byte,
+				; at this port's scale: the world is 3..10
+				; of them ahead in Legend and PLANET_Z here
+RING_Z	= -3000.		; the ring hangs behind the arrival point
+RING_FARE = 2500.		; and the jump to the orbit is 250 Cr
+
+; Outfitting is Legend's (src/ovl_equip.mac, build/legend_equip.mac).
+CABIN_TONS = 5			; a passenger cabin takes this much hold
+NYARD	= 19.			; Legend's MaxShips: the yard's rows and the
+				;   commander's berths, of the catalogue's 20
+SLOT_LEN = 18.			; lenPilotShip: a berthed ship, packed
+DC_RANGE = 9000.		; the computer takes over inside this
+DC_PULL = 5			; how hard it centres the station a frame
+DC_CLOSE = 150.			; and how fast it closes
+HOLD_STD = 20.			; tonnes a standard Cobra Mk III holds
+HOLD_BAY = 15.			; and what the larger bay adds to it
+NGOODS_L = 38.			; Legend's goods: the record's hold and the
+				;   station's stock are this long, the 1985
+				;   market (NGOODS, build/market.mac) uses
+				;   the first seventeen, which are the same
+				;   goods in the same order
+EXPL_LEN = 14.			; frames a wreck keeps burning
+; A hostile's chance of landing one is no longer a constant: it is the
+; type's own laser rating out of the original's table, scaled down to a
+; per-frame chance and halved against a commander who is not Elite yet,
+; which is the rule the original states.
+ELITE_RATING = 6656.		; combat rating at which the ladder ends
+
+; The five tiers the original's own object table sorts everything into,
+; which is what the spawner draws from.
+CL_STATION = 0			; the station and the missile
+CL_DROPS = 1			; canisters, plates, splinters, asteroids
+CL_TRADERS = 2			; what an ordinary system has flying about
+CL_HEAVIES = 3			; the big hulls, and the Thargoid
+CL_FIGHTERS = 4			; Sidewinder, Krait, Thargon
+; A hull carries the energy Legend gave it - 70 for a Sidewinder, 140
+; for a Viper, 240 for a Thargoid - and a gun is worth what Legend's
+; LaserDamages says (LASTAB_DMG in combat.mac): a pulse hit is 15, a
+; military 23, a Targoid 51.  The heat is Legend's FireLaser: a shot
+; adds LASER_HEAT (two more from a beam-class gun), the gun sheds
+; LASER_COOL a frame, twice that with the cooling booster, cuts out at
+; LASER_MAX (MaxTempLaser, #90) and the reading never passes LASER_CAP
+; (#A0, the gauge's full scale).  A pulse laser fires every other frame,
+; a mining laser every eighth, the rest every frame; and a shot costs
+; the banks LASER_COST four times, Legend's DamageEnergyUnit.
+LASER_MAX = 144.		; laser temperature at which it cuts out
+LASER_CAP = 160.		; and the most it can read
+LASER_HEAT = 8.			; heat per shot; a beam-class gun adds 2
+LASER_COOL = 2			; heat shed per frame
+LASER_COOL2 = 4			; with the laser cooling booster
+LASER_COST = 1			; a shot is a blow of one taken four times
+HEAVY_BLOW = 70.		; a blow the shield feels of this (#46) or
+				;   more is HeavyDamage, and so is a run of
+HEAVY_RUN = 13.			;   blows reaching the banks: 5 each, this
+				;   much within a frame or two (var_05)
+ECM_COST = 1			; every frame an ECM runs costs your banks
+				;   a blow of one four times, if you have
+				;   one (Legend's DamageEnergyUnit)
+ECM_FRAMES = 12.		; TimeECMobj: frames an ECM runs, anyone's
+ECM_ON	= 40			; P_ECM bit 5: yours is switched on
+DEV_NAVAL = 1			; bit 0 of the ECM byte: the naval one
+AUTOECM_ARMED = 40		; P_AUTOECM bit 5: it will fire the ECM
+AUTOECM_OUT = 20		; P_AUTOECM bit 4: a missile has just been
+				;   fired at you (set by the launch, read
+				;   and cleared by ECM_STEP)
+MISS_DMG = 160.			; #A0: what a missile takes off a hull
+MISS_DMG_MIL = 255.		; #FF: what a military one does
+ECM_SHIP_CH = 160.		; #A0: a ship's chance in 256 a frame of
+				;   answering a missile with its ECM
+ECM_SHIP_BREAK = 128.		; a roll at or above this breaks it (v1.09)
+CLOAK_COST = 1			; the cloak costs a blow of one four times
+				;   a frame (CloakingDeviceOn into
+				;   DamageEnergyUnit) and needs the last
+				;   bank full to switch on
+CLOAK_SEEN_MIN = 40		; how visible you are under it: a byte that
+				;   halves a frame and keeps bit 5, so it
+				;   settles at 63 (63/2 is 31, plus the bit)
+CLOAK_SEEN_SHOT = 200		;   and a hostile acts on 63 in 256 at least;
+CLOAK_SEEN_FLOOR = 77		;   a shot of yours sets bit 7
+				;   (ChanceFireLaser)
+AUTOPOD_ARMED = 40		; P_AUTOPOD bit 5: it fires the pod when
+POD_BANK = 48.			;   the last bank falls under this (#30)
+ENERGY_MAX = 160.		; Legend's #A0: a full bank, a full shield
+NBANKS_MAX = 7			; banks a cockpit can have (cocpMaxEnUnit)
+NGAUGES = 9.+NBANKS_MAX+1		; HUD_LAST's slots: nine gauges, the
+					;   banks, the missile rack
+LASER_BLOW = 7			; the blow a laser hit lands on the commander
+MISSILE_HIT = 42.		; #2A over the missile's own collision byte
+BUMP_HIT = 12.			; a station bump: this, plus twice the speed
+BANK_H	= 3			; a bank's bar on the dashboard, and the
+BANK_STEP = 4			;   lines from one to the next
+MISS_SPEED = 110.		; how fast a missile closes
+MISS_HIT = 200.			; how near it has to get to go off
+MISS_LIFE = 120.		; frames before it runs out of fuel
+; ---- the J-drive and the injectors (src/jdrive.mac) --------------------
+JD_STEP	= 562.			; what a frame of J-drive moves every body
+				;   and bay: Legend's #2000 of its raw z
+				;   (proc_07), an eighth of BASE_U here
+JD_FLOOR = -16.			; the high word of z nothing is moved past
+				;   (Legend caps the byte at #DF)
+JD_LOCK	= 13824.		; a ship this close on any axis mass-locks
+				;   the drive: the scanner's cube
+JD_BODY	= 8000.			; and so does a world or a sun this close
+				;   - this port's own rule: its worlds are
+				;   bigger than Legend's #4000, and the
+				;   drive would run you into one
+INJ_SPEED = 47.			; the injectors' speed (HighDeltaSpeed
+INJ_SPEED_MIL = 63.		;   #2F) and the military pair's (#3F)
+INJ_FRAMES = 32.		; frames of injector a tenth of fuel buys
+COLL_FRAMES = 64.		; frames of drive a tenth from the collector
+DEV_RUN	= 40			; bit 5 of a device byte: running (the
+				;   injectors, and ECM_ON is the same bit)
+; ---- the auto-take (src/cargo.mac) --------------------------------------
+UF_TAKEN = 4000			; U.FLAGS bit 11: a drop the auto-take is
+				;   bringing in (Legend flies it as a
+				;   missile whose quarry is you)
+TAKE_SPEED = 60.		; how fast it closes
+TAKE_Z	= 200.			; and where it is brought to: ahead, inside
+				;   the scoop's box
+; the functions "8" cycles through (MISS_KIND: Legend's TypeUseTarget)
+MF_MISSILE = 0			; a missile off the rack
+MF_MILMISS = 1			; a military missile
+MF_ALIEN = 2			; an alien item under the alien computer
+MF_TAKE	= 3			; the auto-take: the locked drop comes in
+MF_DRONE = 4			; a boarding drone at the locked derelict
+MF_TANK	= 5			; the extra tank refills the main one
+MF_DESCENT = 6			; the war's troops at the locked station
+MF_LAST	= 7			; all eight space-bar functions
+; ---- the boarding drone (src/drone.mac) ---------------------------------
+DRONE_SPEED = 152.		; what it flies at (SetPlayerDrone's #98)
+G_DRONE	= 26.			; the drone's index among Legend's goods
+G_ALIEN = 16.
+				;   (src/res/legend/market/goods.txt): the
+				;   hold's word it leaves from
+BOMB_SPARE = 39.		; a bomb of kind k spares the hull whose
+				;   speed is this less k (goto434: dMaxSpeed
+				;   + kind = #27): the Targon mother ship's
+				;   39 for the energy bomb, the Targon-6's
+				;   38 for the Q-bomb
+; ---- cargo, and what ships put in the air -------------------------------
+; Both come out of the blueprint header.  The CARGO byte packs what an
+; object is made of into its top nibble - one less than the market index,
+; so an escape capsule (2) is slaves and a splinter (11) minerals - and
+; how many canisters it leaves behind into its bottom one.  The LAUNCH
+; byte's low three bits are how many ships it can put in the air.
+SCOOP_Z	= 400.			; how near a drop must come to be taken aboard
+SCOOP_XY = 200.
+; The sun is the other half of what a fuel scoop is for.  Distances are
+; kept as |P| squared in BODY_QSH units, the way BODY_CHECK does it, so
+; these are (distance >> 5) squared and stay inside sixteen bits:
+;   3.0 * SUN_R -> 225 -> 50625, where the cabin starts to warm;
+;   1.3 * SUN_R ->  97 ->  9409, where it reaches 255 and you are gone.
+; The gauge runs 30..255 over that span, which is 225 degrees across
+; 41216 units of d^2 - one degree per 183.
+SUN_HOT2 = 50625.
+SUN_BURN2 = 9409.
+SUN_TSPAN = 183.
+CAB_COOL = 30.			; the cabin, far from any sun
+CAB_MAX	= 255.			; ... and the last reading it ever gives
+CAB_FALL = 4			; degrees a frame on the way back down
+FUEL_EVERY = 4			; frames per tenth of a light year scooped
+DROP_MAX = 2			; canisters one wreck may leave: eight slots
+				; hold a system, not a scrapyard
+PLANET_R = 3000.		; the planet's radius in world units
+PLANET_Z = 28000.		; and how far off it starts
+SUN_R	= 2400.			; the sun, off to one side
+SUN_X	= -8000.
+SUN_Z	= 22000.
+; A world kills you at its SURFACE, which is where it looks like it
+; should: |P| < its own radius.  This used to be a 900-unit box around
+; the centre, so a planet of radius 3000 could be flown a long way into -
+; and, off-axis, straight through - before anything happened.  The
+; coordinates are shifted down by BODY_QSH first so the three squares
+; stay well inside 32 bits; one unit of the scaled value is 32 world
+; units, which is a rounding error on a body 3000 across.
+BODY_QSH = -5.
+; (MISJUMP, the 1985 misjump's odds, went with Legend's interception:
+; WI_ODDS in src/main.mac, 2026-09-24 late)
+MISJUMP_OLD = 17.		; a random byte under this misjumped the
+				; hyperdrive - about one jump in fifteen
+
+EDGE_DSHIFT = -8.		; z >> 8 is the distance an edge's cull
+				; threshold is measured against, so the
+				; scale runs out at z = 8192
+SHIP_DOT = 7.			; a ship projecting smaller than this across
+				; is drawn as a single dot
+GUNSIGHT_X = 46.		; how near the centre a ship must project to
+GUNSIGHT_Y = 26.		;   be under the gunsight
+
+TURN_K	= 250.			; Q14 angle one unit of roll or pitch gives

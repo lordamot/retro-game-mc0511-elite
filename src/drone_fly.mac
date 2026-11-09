@@ -1,0 +1,231 @@
+; =========================================================================
+; drone_fly.mac - the boarding drone's launch and the boarding, in the
+; flight overlay (src/ovl_fly.mac); the state and PACK_DEVICES, which
+; the yard shares, are in src/drone.mac, resident.
+; =========================================================================
+
+; =========================================================================
+; DRONE_LAUNCH - the space bar with "8" on the drone and a lock: the lock
+; must be on a wreck that can be boarded with nobody aboard, or the till
+; buzzes; a drone leaves the hold and flies for it.  Clobbers
+; everything.
+; =========================================================================
+DRONE_LAUNCH:	MOV	MISS_LOCK,R0
+		CLR	MISS_LOCK
+		CALL	SLOT_OF			; R4 = the wreck
+		TST	U.TYPE(R4)
+		BEQ	8$
+		TST	U.EXPL(R4)
+		BNE	8$
+		BITB	#KB_BOARD,U.TYP(R4)	; a hull that can be boarded ...
+		BEQ	8$
+		BIT	#UF_DERELICT!UF_MISSION,U.FLAGS(R4)	; ... with nobody
+		BEQ	8$			;   aboard, or mission 6's cruiser
+		MOV	R0,BD_T
+		MOV	#SH_DRONEH,R0
+		CLR	R1
+		MOV	#-40.,R2		; from under the hull, like a
+		MOV	#300.,R3		;   missile
+		MOV	#DRONE_SPEED,R4
+		CALL	UNIV_ADD
+		BCS	8$
+		BISB	#KB_PLAYER!KB_DRONE,U.TYP(R5)
+		BIC	#UF_DROP!UF_DERELICT!UF_HOSTILE,U.FLAGS(R5)
+		CLR	U.TURN(R5)		; SLOT_MIND made it a tumbling drop
+		MOV	BD_T,U.TARGET(R5)
+		CLR	U.TGT1(R5)
+		CLRB	U.TGT2(R5)
+		CALL	AI_RND			; SetPlayerDrone: a random frame,
+		BIC	#^C3,R0			;   and it fights
+		BIS	#AI_PIRATE!AI_ATTACK,R0
+		MOVB	R0,U.AIF(R5)
+		DEC	P_CARGO+<2*G_DRONE>	; one tonne fewer
+		INC	P_FREECARGO
+		MOV	#FX_DRONE,R0		; CaptureDron
+		JMP	SFX_PLAY
+8$:		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY
+
+; DRONE_LOST - OBJ_CHASE with the target gone (goto729): the drone is
+; nobody's now, a container that tumbles.  R5 = the drone.
+; DRONE_LOST is resident in src/alien.mac (also used by the Targlet).
+
+; DRONE_REACHED - OBJ_TOTARGET with the drone inside AI_RAM of its
+; wreck: the boarding, and the drone is spent either way (goto643).
+; R5 = the drone, R4 = the wreck.
+DRONE_REACHED:	BITB	#KB_DRONE,U.TYP(R5)
+		BNE	1$
+		JMP	OBJ_TOPLAYER		; a Targlet does not board (goto732)
+1$:		MOV	R5,-(SP)
+		CALL	BOARD_SHIP
+		MOV	(SP)+,R5
+		CLR	U.TYPE(R5)
+		RETURN
+
+; =========================================================================
+; BOARD_SHIP - BoardingShip: R4 = the wreck.  The rolls, a free berth,
+; the ship into it, and the wreck away; or the message that it failed.
+; Clobbers everything.
+; =========================================================================
+BOARD_SHIP:	MOV	R4,BD_T
+		MOV	U.TYPE(R4),R0
+		MOV	#SS_SHIPNUM,R1
+		CALL	SHIP_STAT		; the yard's number for the hull
+		MOV	R0,BD_N
+		MOV	BD_NAVAL,BD_C		; the naval drone's chance: a ship's,
+		CMP	R0,#64.			;   #60 for a Targon spy, #30 for the
+		BLO	0$			;   cruiser
+		MOV	#140,BD_C
+		CMP	R0,#64.			; MOV changed Z: compare again
+		BEQ	0$
+		MOV	#60,BD_C
+0$:		CALL	AI_RND
+		CMP	R0,BD_FREE		; taken whatever the drone ...
+		BLO	1$
+		BITB	#1,P_DRONE		; ... else only the naval one,
+		BEQ	8$			;   on its own roll
+		CALL	AI_RND
+		CMP	R0,BD_C
+		BHIS	8$
+1$:		MOV	BD_N,R0			; a Targon spy or the cruiser: the
+		CMP	R0,#64.			;   sixth mission's, if it is on,
+		BLO	11$			;   and never a berth
+		CALL	MS_CAPTURE
+		BCC	8$
+		BR	4$
+11$:		MOV	#P_SHIPS,R5		; a free berth (GetFreeShipSlot)
+		MOV	#NYARD,R1
+2$:		TSTB	(R5)
+		BEQ	3$
+		ADD	#SLOT_LEN,R5
+		SOB	R1,2$
+		BR	8$
+3$:		CALL	BD_GEN			; the ship, as found, into it
+4$:		MOV	BD_T,R4
+		MOVB	#AI_HYPER,U.AIF(R4)	; and the wreck leaves by
+		MOVB	#AI_HYPCNT,U.CNT(R4)	;   hyperspace
+		MOV	#S_M_BOARDED,R1
+		JMP	SAY_LINE		; which beeps
+8$:		MOV	#S_M_NOTBOARD,R1
+		CALL	SAY_LINE
+		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY
+
+; =========================================================================
+; BD_GEN - genDataCaptShip and PackShipPilot2_HLDE in one: the captured
+; ship rolled as Legend rolls it, straight into the berth at R5 in the
+; packed form.  The yard's number, this galaxy and world, a hull worn
+; to 112 or more, up to 3.1 light years of fuel, no tank, no missiles,
+; no cabins; a front gun of type 0..4 off the fuel roll's bits and the
+; other three fitted one time in 32 (BD_GUN); then the 27 devices in
+; the record's order, each absent on a roll under its chance in
+; BD_CHANCE - or never fitted, on a 0 - and broken on a second roll
+; under 200, the energy unit naval on a coin; rolled into the record's
+; layout on the stack and packed from there.  Clobbers everything.
+; =========================================================================
+BD_GEN:		MOVB	BD_N,(R5)+
+		MOVB	P_GALAXY,(R5)+
+		MOVB	P_PLANET,(R5)+
+		CALL	AI_RND
+		BIS	#160,R0			; the wear: %01110000 and up
+		MOVB	R0,(R5)+
+		CALL	AI_RND
+		BIC	#^C37,R0		; the fuel
+		MOVB	R0,(R5)+
+		MOVB	#DEV_NONE,(R5)+		; no tank
+		CLRB	(R5)+			; no missiles of either kind
+		CLRB	(R5)+			; no cabins
+		ASR	R0			; the front gun's roll is the fuel's
+		CALL	BD_GUN			;   (rra of it), and it is fitted
+		ASH	#4,R0
+		MOV	R0,-(SP)
+		CALL	BD_GUNRND		; the rear
+		BIS	(SP)+,R0
+		MOVB	R0,(R5)+
+		CALL	BD_GUNRND		; the left
+		ASH	#4,R0
+		MOV	R0,-(SP)
+		CALL	BD_GUNRND		; and the right
+		BIS	(SP)+,R0
+		MOVB	R0,(R5)+
+
+		MOV	R5,-(SP)		; the berth, at its devices
+		SUB	#28.,SP			; the 27 device bytes, the record's
+		MOV	SP,R4			;   layout, rolled here
+		MOV	#BD_CHANCE,R5
+		MOV	#NDEVICES,BD_I
+1$:		MOVB	(R5)+,BD_C		; its chance of being absent, or 0:
+		BIC	#177400,BD_C		;   never fitted (proc_14's e)
+		BNE	2$
+		MOVB	#DEV_NONE,(R4)+
+		BR	3$
+2$:		CLRB	(R4)
+		CALL	AI_RND
+		CMP	R0,BD_C
+		BHIS	21$
+		BISB	#DEV_NONE,(R4)
+21$:		CALL	AI_RND
+		CMP	R0,#200.		; broken under #C8
+		BHIS	22$
+		BISB	#DEV_BROKEN,(R4)
+22$:		INC	R4
+3$:		DEC	BD_I
+		BNE	1$
+		CALL	AI_RND			; the energy unit: naval on a coin
+		BIC	#^C1,R0
+		BISB	R0,P_ENERGYUNIT-P_DEVICES(SP)
+		MOV	SP,R4
+		MOV	28.(SP),R5
+		CALL	PACK_DEVICES
+		ADD	#30.,SP
+		RETURN
+
+; BD_GUN - R0 = a gun as Legend rolls it, the type in bits 2-0 and
+; absent in bit 7: R0 = its nibble in the packed form, the type halved
+; and rounded up (0..7 to 0..4: `and #07 / rra / adc a,#00`, which
+; leaves out lasers 5, 6 and 7) doubled, with the absent bit under it.
+; Clobbers R1.
+BD_GUN:		MOV	R0,R1
+		BIC	#^C7,R0
+		ASR	R0
+		ADC	R0
+		ASL	R0
+		BIT	#200,R1
+		BEQ	1$
+		INC	R0
+1$:		RETURN
+
+; BD_GUNRND - a gun rolled: fitted, with a type off the low bits, on a
+; roll of 248 or more (`sub #F8`, the borrow is the absent bit).
+BD_GUNRND:	CALL	AI_RND
+		SUB	#248.,R0
+		BPL	BD_GUN
+		BIS	#200,R0
+		BR	BD_GUN
+
+; the chance of each device being absent, in the record's order
+; (P_DEVICES..), a 0 for one the captured ship never has: proc_14's
+; groups of #06D0, 1 at #D0, #01B0, #03C0, #01E0 and #0AD0, each
+; opened with the byte e = #80 written unrolled
+BD_CHANCE:	.BYTE	0			; the large cargo bay
+		.BYTE	320, 320, 320, 320, 320	; the compass, the target lock,
+						;   the auto-repair, life support,
+						;   the unused one
+		.BYTE	320			; the navigation array
+		.BYTE	320			; the energy unit
+		.BYTE	0			; the galactic drive
+		.BYTE	260			; the ECM
+		.BYTE	0			; the injectors
+		.BYTE	300, 300, 300		; the bomb, the auto-ECM, the
+						;   auto-eject
+		.BYTE	0			; the drone
+		.BYTE	340			; the shield generator
+		.BYTE	0			; the military shields
+		.BYTE	320, 320, 320, 320, 320	; the laser cooling, the cloak,
+		.BYTE	320, 320, 320, 320, 320	;   the alien computer, the ore
+						;   processor, the capsule, the
+						;   collector, the scoops, the
+						;   docking computer, the auto-take,
+						;   the ejector
+		.EVEN
+		.IIF	NE, <.-BD_CHANCE>-<<NDEVICES+1>/2*2>, .ERROR ; BD_CHANCE is not one byte a device

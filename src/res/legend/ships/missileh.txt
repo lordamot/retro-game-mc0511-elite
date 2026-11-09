@@ -1,0 +1,72 @@
+# d_MissileH - extracted from orig/legend by tools/legend_ships.py;
+# object 7 of AdrDataShips, hull d_Missile.
+# `make extract` overwrites it.
+name MISSILEH
+index 7
+class 0
+speed 44
+energy 2
+bounty 0
+laser 0
+collide 40
+cargo 0
+launch 0
+dot 14
+rating 448
+flags 0
+flags2 2
+laservert 0
+type 6
+objflags 192
+shipnum 0
+radius 68
+vertex     0     0    68
+vertex     8    -8    36
+vertex     8     8    36
+vertex    -8     8    36
+vertex    -8    -8    36
+vertex     8     8   -44
+vertex     8    -8   -44
+vertex    -8    -8   -44
+vertex    -8     8   -44
+vertex    12    12   -44
+vertex    12   -12   -44
+vertex   -12   -12   -44
+vertex   -12    12   -44
+vertex    -8     8   -12
+vertex    -8    -8   -12
+vertex     8     8   -12
+vertex     8    -8   -12
+edge 0 1 31 1 2
+edge 0 2 31 2 3
+edge 0 3 31 0 3
+edge 0 4 31 0 1
+edge 1 2 31 4 2
+edge 1 4 31 1 5
+edge 3 4 31 0 6
+edge 2 3 31 3 7
+edge 2 5 31 4 7
+edge 1 6 31 4 5
+edge 4 7 31 5 6
+edge 3 8 31 6 7
+edge 7 8 31 6 8
+edge 5 8 31 7 8
+edge 5 6 31 4 8
+edge 6 7 31 5 8
+edge 6 10 8 5 8
+edge 5 9 8 7 8
+edge 8 12 8 7 8
+edge 7 11 8 5 8
+edge 9 15 8 4 7
+edge 10 16 8 4 5
+edge 12 13 8 6 7
+edge 11 14 8 5 6
+normal  -64    0   16
+normal    0  -64   16
+normal   64    0   16
+normal    0   64   16
+normal   32    0    0
+normal    0  -32    0
+normal  -32    0    0
+normal    0   32    0
+normal    0    0 -176

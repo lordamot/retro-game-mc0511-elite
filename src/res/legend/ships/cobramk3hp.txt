@@ -1,0 +1,22 @@
+# d_CobraMk3Hp - extracted from orig/legend by tools/legend_ships.py;
+# object 46 of AdrDataShips, hull d_CobraMk3.
+# `make extract` overwrites it.
+name COBRAMK3HP
+index 46
+class 3
+speed 28
+energy 150
+bounty 175
+laser 160
+collide 95
+cargo 1
+launch 2
+dot 50
+rating 896
+flags 140
+flags2 10
+laservert 21
+type 10
+objflags 240
+shipnum 6
+geometry COBRAMK3HT1

@@ -1,0 +1,127 @@
+; =========================================================================
+; ovl_info.mac - the data screen: what is known about the system under
+; the chart cursor, and who lives there (src/planet.mac, which assembles
+; into this overlay with its vocabulary).  AN OVERLAY (src/ovl.list),
+; called through its first word with R0 = 0 to draw; it has no keys.
+; =========================================================================
+
+		JMP	OVLI_ENTRY		; the overlay's entry, at OVL_BASE
+
+OVLI_ENTRY:	TST	R0
+		BNE	9$			; no keys of its own
+		JMP	SCR_DATA
+9$:		RETURN
+
+; =========================================================================
+; SCR_DATA - what is known about the system under the cursor.
+; =========================================================================
+SCR_DATA:	CALL	PAGE_CLEAR
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	#S_T_DATA,R1
+		CALL	PUTS2
+
+		MOV	CURSYS,R0
+		CALL	SYS_SELECT
+
+		MOV	#2,TX
+		MOV	#24.,TY
+		MOV	#SYS_NAME,R1
+		CALL	PUTS2
+
+		MOV	#S_ECONOMY,R1		; economy
+		MOV	#44.,R0
+		CALL	DATA_LABEL
+		MOV	SYS_ECON,R0
+		ASL	R0
+		MOV	ECONNAMES(R0),R1
+		CALL	PUTS
+
+		MOV	#S_GOVERNMENT,R1	; government
+		MOV	#56.,R0
+		CALL	DATA_LABEL
+		MOV	SYS_GOVT,R0
+		ASL	R0
+		MOV	GOVTNAMES(R0),R1
+		CALL	PUTS
+
+		MOV	#S_TECHLEVEL,R1		; tech level
+		MOV	#68.,R0
+		CALL	DATA_LABEL
+		MOV	SYS_TECH,R0
+		INC	R0
+		MOV	#4,R1
+		CALL	PUTDEC
+
+		MOV	#S_POPULATION,R1	; population, in hundreds of millions
+		MOV	#80.,R0
+		CALL	DATA_LABEL
+		MOV	SYS_POP,R0
+		MOV	#4,R1
+		CALL	PUTDEC
+
+		MOV	#S_RADIUS,R1
+		MOV	#92.,R0
+		CALL	DATA_LABEL
+		MOV	SYS_RADIUS,R0
+		MOV	#6,R1
+		CALL	PUTDEC
+
+		MOV	#S_DISTANCE,R1
+		MOV	#104.,R0
+		CALL	DATA_LABEL
+		CALL	SYS_DISTANCE
+		MOV	#5,R1
+		CALL	PUTDEC
+
+		MOV	#S_ST_SPECIES,R1	; who lives there, out of the same
+		MOV	#120.,R0		; seed the rest of it came from
+		CALL	DATA_LABEL
+		CALL	SPECIES_SHOW
+
+		MOV	#2,TX			; and what the place is known for
+		MOV	#136.,TY
+		CALL	DESC_SHOW
+
+		MOV	CURSYS,R0		; the Targons' galaxy: a world they
+		CALL	MS_HELD			;   still hold (Msg_PlanetRetr)
+		BCC	2$
+		MOV	#2,TX
+		MOV	#184.,TY
+		MOV	#S_I_HELD,R1
+		JMP	PUTS
+2$:		CLR	R0			; the war: taken, or holding out
+		MOV	SYS_X,R1		;   (InfoPlanet's Msg_PlanetOccup
+		MOV	SYS_Y,R2		;   and Msg_PlanetResis)
+		CALL	MS_ZONE
+		MOV	#S_I_OCCUP,R4
+		BCS	1$
+		MOV	#74,R0
+		MOV	SYS_X,R1
+		MOV	SYS_Y,R2
+		CALL	MS_ZONE
+		BCC	9$
+		MOV	#S_I_RESIST,R4
+1$:		MOV	#2,TX
+		MOV	#184.,TY
+		MOV	#SYS_NAME,R1
+		CALL	PUTS
+		MOV	R4,R1
+		CALL	PUTS
+9$:		RETURN
+
+; DATA_LABEL - put the label in R1 at the left of row R0, and leave the
+; cursor in the value column.
+DATA_LABEL:	MOV	R0,TY
+		MOV	#2,TX
+		CALL	PUTS
+		MOV	#24.,TX
+		RETURN
+
+
+; ---- the names the data screen reads out --------------------------------
+ECONNAMES:	.WORD	S_E_RICHIND, S_E_AVGIND, S_E_POORIND, S_E_MAININD
+		.WORD	S_E_MAINAGR, S_E_RICHAGR, S_E_AVGAGR, S_E_POORAGR
+GOVTNAMES:	.WORD	S_G_ANARCHY, S_G_FEUDAL, S_G_MULTIGOV, S_G_DICTATOR
+		.WORD	S_G_COMMUNIST, S_G_CONFED, S_G_DEMOCRACY, S_G_CORPORATE
+

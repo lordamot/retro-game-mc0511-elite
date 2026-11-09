@@ -1,0 +1,54 @@
+# d_CargoHr - extracted from orig/legend by tools/legend_ships.py;
+# object 12 of AdrDataShips, hull d_Cargo.
+# `make extract` overwrites it.
+name CARGOHR
+index 12
+class 1
+speed 15
+energy 17
+bounty 0
+laser 0
+collide 20
+cargo 0
+launch 0
+dot 12
+rating 31
+flags 0
+flags2 2
+laservert 0
+type 7
+objflags 128
+shipnum 0
+radius 24
+vertex    24    16     0
+vertex   -24    16     0
+vertex    24     5    15
+vertex    24     5   -15
+vertex   -24     5    15
+vertex   -24     5   -15
+vertex    24   -13     9
+vertex    24   -13    -9
+vertex   -24   -13     9
+vertex   -24   -13    -9
+edge 0 2 31 0 1
+edge 2 6 31 0 2
+edge 6 7 31 0 3
+edge 7 3 31 0 4
+edge 0 3 31 0 5
+edge 0 1 31 1 5
+edge 2 4 31 1 2
+edge 6 8 31 2 3
+edge 7 9 31 3 4
+edge 3 5 31 4 5
+edge 1 4 31 1 6
+edge 4 8 31 2 6
+edge 8 9 31 3 6
+edge 9 5 31 4 6
+edge 5 1 31 5 6
+normal   96    0    0
+normal    0   41   30
+normal    0  -18   48
+normal    0  -51    0
+normal    0  -18  -48
+normal    0   41  -30
+normal  -96    0    0

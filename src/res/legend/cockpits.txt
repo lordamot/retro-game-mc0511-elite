@@ -1,0 +1,31 @@
+# Extracted from orig/legend by tools/legend_tables.py; `make extract` overwrites it.
+
+# n | maxmiss enunits maxfuel tonnage turrets scanner
+# Cocpits/Cocpit_Var/Ship.var_NN.a80, the fields the rules read: maxmiss
+# (cocpMaxMiss, 0..8), enunits (cocpMaxEnUnit, energy banks, 1..7), maxfuel
+# (cocpMaxFuel, tenths of a light year), tonnage (shipTonnage, the hold
+# without the larger bay), turrets (shipTurrets: 0 none, 1 front only, 2
+# front/rear, 4 all round), scanner (cocpScanerNum: bits 2-0 which of the
+# scanner drawings, bits 7-6 what it shows).  The catalogue's cockpit
+# column says which block a ship flies with.
+
+ 0 | 4 4 70 20 4 1
+ 1 | 4 1 70 10 1 4
+ 2 | 0 1 70 5 1 4
+ 3 | 2 2 70 15 2 4
+ 4 | 2 2 70 10 2 4
+ 5 | 8 5 100 80 4 4
+ 6 | 4 5 70 10 2 4
+ 7 | 0 3 70 4 1 4
+ 8 | 0 3 70 5 1 4
+ 9 | 0 3 70 10 1 4
+10 | 2 3 70 7 4 2
+11 | 2 3 70 6 1 2
+12 | 8 7 200 750 4 1
+13 | 6 7 130 125 4 3
+14 | 3 7 100 100 4 1
+15 | 0 7 211 1500 4 5
+16 | 0 7 212 1700 4 6
+17 | 4 4 85 50 4 4
+18 | 4 6 99 90 4 4
+19 | 6 3 80 12 4 1

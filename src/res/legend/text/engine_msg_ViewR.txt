@@ -1,0 +1,8 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Engine/Messages/ViewR.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+?+0|{nFlgPrn_1xx}{nClearDescrMsg}{nClearDescrMsg}{nClearDescrMsg}{nClearDescrMsg}{nFlgPrn_1xx}
+?+1|s@qHs
+?+2|{#8C}{#D2}{#92}{#D2}{#8C}
+?+3|{#E0}{#90}{#90}{#E0}{#80}

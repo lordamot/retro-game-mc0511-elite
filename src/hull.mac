@@ -1,0 +1,251 @@
+; =========================================================================
+; hull.mac - immutable geometry in video RAM, selected roster, CPU working hull.
+; The original 5120-byte roster budget and alias sharing are preserved, so
+; systems offer the same types. SHIP_TABLE stores video-bank word addresses.
+; HULL_FETCH copies only a model being drawn, retaining the last model.
+; No flight-time disk reads are introduced. Largest record: 480 bytes.
+; =========================================================================
+
+HULL_FILL:	.WORD	0	; where the next hull goes
+STATION_TYPE:	.WORD	SH_CORIOLIS	; the station this system has
+HB_S:		.WORD	0		; the sector being read in
+HB_DONE:	.WORD	0		; and whether the bank is in the planes
+HS_P:		.WORD	0		; the core list, and where the extras
+HS_T:		.WORD	0		;   loop is: the tier, the pass, and
+HS_PASS:	.WORD	0		;   whether the pass found a tier with
+HS_ANY:		.WORD	0		;   anything left in it
+
+; =========================================================================
+; HULL_BANK_INIT - read the bank off the disk into the planes.  Once per
+; power-up, after OVL_INIT: DATA_READ reads into CPU memory only, so each
+; sector lands in the overlay window and is pushed up through the window
+; registers from there.  A drive that will not read the bank cannot run
+; the game either: three failed reads restore the terminal and exit.
+;
+; A death restarts the game at MAIN_RESTART without reloading the image,
+; and the planes above the screen are not cleared by anything, so the
+; bank is still there: HB_DONE says so, and the 27 sectors are not read
+; again.  (They were, once, and the title came back from ИГРА ОКОНЧЕНА
+; a hundred ticks late for every scripted check that dies on purpose.)
+; =========================================================================
+HULL_BANK_INIT:	TST	HB_DONE
+		BNE	9$
+		CLR	HB_S
+1$:		MOV	#HULL_LBA0,R0
+		ADD	HB_S,R0
+		MOV	#OVL_BASE,R1
+		MOV	#256.,R2		; one sector
+		CALL	DATA_READ
+		BCC .+6
+		JMP RT_IOERROR
+		MOV	HB_S,R1			; sector s is plane words s*256
+		SWAB	R1			;   on from the bank's start
+		ADD	#HBANK_ADDR,R1
+		MOV	#OVL_BASE,R0
+		MOV	#256.,R2
+2$:		MOV	R1,@#VADDR
+		MOV	(R0)+,@#VDATA		; plane 1 low, plane 2 high
+		INC	R1
+		SOB	R2,2$
+		INC	HB_S
+		CMP	HB_S,#HULL_BANK_SECTORS
+		BLT	1$
+		MOV	#-1,OVL_CUR		; the window held sectors, not an
+		INC	HB_DONE			;   overlay
+9$:		RETURN
+
+; =========================================================================
+; HULL_RESET - forget every loaded hull: the area is empty again.
+; =========================================================================
+HULL_RESET:	CLR	HULL_FILL
+		CLR	HULL_CACHED
+		MOV	#SHIP_TABLE,R0
+		MOV	#NSHIPS,R1
+1$:		CLR	(R0)+
+		SOB	R1,1$
+		RETURN
+
+; =========================================================================
+; HULL_LOAD - R0 = a type (1-based). Selects its hull under the logical
+; roster budget, and points SHIP_TABLE at its immutable video-bank record
+; for this type and for every other header that shares the hull.
+; Returns C set when the area has no room for it; the type stays
+; unloadable, and a smaller hull asked for later may still fit.
+; Clobbers R0..R4.
+; =========================================================================
+HULL_LOAD:	MOV	R0,R4
+		ASL	R4
+		TST	SHIP_TABLE-2(R4)
+		BNE	8$			; in already
+		MOV	HULL_OFF-2(R4),R1	; where it is in the planes
+		ADD	#HBANK_ADDR,R1
+		MOV	R1,@#VADDR		; the length, out of the record's
+		MOV	@#VDATA,R3		;   own header: nv ...
+		MUL	#6,R3			; R3 is ODD: the low word only
+		MOV	R3,R2
+		INC	R1
+		MOV	R1,@#VADDR
+		MOV	@#VDATA,R3		; ... ne ...
+		ASL	R3
+		ASL	R3			; four bytes an edge
+		ADD	R3,R2
+		ADD	#2,R1			; past the radius
+		MOV	R1,@#VADDR
+		MOV	@#VDATA,R3		; ... nf
+		MUL	#6,R3
+		ADD	R3,R2
+		ADD	#8.,R2			; and the four header words
+		SUB	#3,R1			; back to the record's first word
+		MOV	HULL_FILL,R0
+		ADD	R2,R0			; where it would end: addresses
+		CMP	R0,#5120.		;   are unsigned, and so is this
+		BHI	9$
+		MOV	R0,HULL_FILL
+		MOV	R1,R0		; bank address shared by every alias
+		MOV	HULL_OFF-2(R4),R1	; every header on this hull is
+		MOV	#NSHIPS,R2		;   loaded with it
+		MOV	#SHIP_TABLE,R3
+		MOV	#HULL_OFF,R4
+2$:		CMP	(R4)+,R1
+		BNE	3$
+		MOV	R0,(R3)
+3$:		TST	(R3)+
+		SOB	R2,2$
+8$:		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; HULL_SYSTEM - fill the area with what this system's sky can show.
+; Called with the sky EMPTY (SPAWN_LOCALS, after UNIV_CLEAR): every slot's
+; type is looked up through SHIP_TABLE, and this rewrites it.
+;
+; The station kind is the manual's rule (legend-notes.md): a Coriolis up
+; to tech level 8, an Octo from 15, a Dodo between - the levels as the
+; data screen shows them, which is SYS_TECH plus one.
+; =========================================================================
+HULL_SYSTEM:	CALL	HULL_RESET
+		MOV	#SH_CORIOLISH,R0
+		CMP	SYS_TECH,#7
+		BLE	1$
+		MOV	#SH_DODOH,R0
+		CMP	SYS_TECH,#14.
+		BLT	1$
+		MOV	#SH_NEWSTH,R0
+1$:		MOV	R0,STATION_TYPE
+		CALL	HULL_LOAD
+
+		CALL	SYS_BASES_SET		; and the bases this system has
+		MOV	#HULL_BASES,HS_P	;   (src/bases.mac), by their bits
+11$:		MOV	HS_P,R1
+		MOV	(R1)+,R0
+		BEQ	12$
+		BIT	R0,SYS_BASES
+		BEQ	13$
+		MOV	(R1),R0
+		CALL	HULL_LOAD
+13$:		ADD	#4,HS_P
+		BR	11$
+
+12$:		MOV	#HULL_CORE,HS_P		; the core set, whatever the system
+2$:		MOV	@HS_P,R0
+		BEQ	21$
+		ADD	#2,HS_P
+		CALL	HULL_LOAD
+		BR	2$
+21$:		CALL	MS_HULLS		; and a live mission's (mission.mac)
+
+3$:		CLR	HS_PASS			; the extras: one from each tier in
+4$:		MOV	#HULL_TIERS,HS_T	;   turn, round and round, from
+		CLR	HS_ANY			;   where the seed points
+5$:		MOVB	@HS_T,R0
+		BMI	6$			; the end of the tier list
+		INC	HS_T
+		ASL	R0
+		MOV	SHIP_CLSN(R0),R2	; how many the tier holds
+		CMP	HS_PASS,R2
+		BGE	5$			; this tier is used up
+		INC	HS_ANY
+		MOV	SYS_SEED+2,R3		; (seed + pass) mod the count
+		BIC	#177400,R3
+		ADD	HS_PASS,R3
+		CLR	R2
+		DIV	SHIP_CLSN(R0),R2	; R3 = the remainder
+		MOV	SHIP_CLSP(R0),R1
+		ADD	R3,R1
+		MOVB	(R1),R0
+		CALL	HULL_LOAD		; full: it says no, and the next
+		BR	5$			;   may be smaller
+6$:		INC	HS_PASS
+		TST	HS_ANY
+		BNE	4$
+		RETURN
+
+; The core set: the parts the 1985 rules and the checks name.  The
+; station kind goes in first, above; the pirates that borrow a trader's
+; hull (SH_COBRA3P, SH_PYTHONP, SH_HERMIT) come in with their owners.
+HULL_CORE:	.WORD	SH_MISSILE, SH_DRONEH
+		.WORD	SH_CANISTER, SH_ALLOY, SH_ESCAPEPOD, SH_SPLINTER
+		.WORD	SH_ASTEROID
+		.WORD	SH_VIPER
+		.WORD	SH_COBRA3, SH_PYTHON
+		.WORD	SH_ASP, SH_FERDELANCE, SH_THARGOID, SH_THARGON
+		.WORD	SH_SIDEWINDER, SH_KRAIT
+		.WORD	0
+
+; The bases, by SYS_BASES bit and hull.
+HULL_BASES:	.WORD	SB_FUEL, SH_FUELSTH
+		.WORD	SB_RING, SH_RINGH
+		.WORD	SB_MILITARY, SH_MILITARYST2H
+		.WORD	SB_HERMIT, SH_ASTEROIDSTH
+		.WORD	0
+
+; The tiers the extras are drawn from, in the order they get a turn.
+HULL_TIERS:	.BYTE	CL_TRADERS, CL_FIGHTERS, CL_HEAVIES, CL_DROPS, -1
+		.EVEN
+
+; Fetch one immutable hull from video RAM. R0 is a bank pointer or an
+; already resident test model. Preserve R1..R5; return CPU pointer in R0.
+HULL_CACHED: .WORD 0
+HULL_FETCH:
+ CMP R0,#HBANK_ADDR
+ BLO 9$
+ CMP R0,HULL_CACHED
+ BEQ 8$
+ MOV R1,-(SP)
+ MOV R2,-(SP)
+ MOV R3,-(SP)
+ MOV R0,HULL_CACHED
+ MOV R0,R1
+ MOV #HULL_BASE,R2
+ MOV #4,R3
+1$: MOV R1,@#VADDR
+ MOV @#VDATA,(R2)+
+ INC R1
+ SOB R3,1$
+ MOV HULL_BASE,R3
+ ADD HULL_BASE+6,R3
+ MUL #3,R3
+ ADD HULL_BASE+2,R3
+ ADD HULL_BASE+2,R3
+2$: MOV R1,@#VADDR
+ MOV @#VDATA,(R2)+
+ INC R1
+ SOB R3,2$
+ MOV (SP)+,R3
+ MOV (SP)+,R2
+ MOV (SP)+,R1
+8$: MOV #HULL_BASE,R0
+9$: RETURN
+
+; R0 = model, R3 = radius. Clobbers R0 only besides result.
+HULL_RADIUS:
+ CMP R0,#HBANK_ADDR
+ BLO 1$
+ ADD #2,R0
+ MOV R0,@#VADDR
+ MOV @#VDATA,R3
+ RETURN
+1$: MOV 4(R0),R3
+ RETURN

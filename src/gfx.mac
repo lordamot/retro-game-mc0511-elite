@@ -1,0 +1,435 @@
+; =========================================================================
+; gfx.mac - the 640x288 renderer.
+;
+; The CPU reaches the screen only through the two window registers: a
+; plane byte address goes into @#176640 and a word written to @#176642
+; puts its low byte into plane 1 and its high byte into plane 2.  Reads
+; work as well, so every primitive here is a read-modify-write.
+;
+; Everything the game moves is drawn into plane 1 with XOR, which is what
+; makes Elite's renderer possible on a machine this size: a ship is erased
+; by drawing it again from the same coordinates, so only the pixels that
+; actually changed are ever touched and the view never has to be cleared.
+;
+; Bit 0 of a plane byte is the LEFTMOST pixel, so the mask for x walks
+; left through the byte as x grows.
+;
+; A note on the two hardware arithmetic instructions used below: MUL and
+; DIV want a register PAIR.  MUL into an EVEN register leaves the 32-bit
+; product in Rn,Rn+1 and so clobbers the next register; into an ODD one it
+; keeps only the low 16 bits, which is what the address arithmetic wants.
+; DIV always needs an even register holding the 32-bit dividend.
+; =========================================================================
+
+BITTAB:		.BYTE	1,2,4,10,20,40,100,200
+		.EVEN
+
+; ---- line endpoints ------------------------------------------------------
+LX0:		.WORD	0
+LY0:		.WORD	0
+LX1:		.WORD	0
+LY1:		.WORD	0
+
+; A walk - what a segment record holds and what the ring hands the PPU -
+; is three words (RECB):
+;
+;   +0  dx (bits 0-9), the start pixel's bit in its byte (10-12), and
+;       bit 15 set for a walk to the left
+;   +2  dy (bits 0-8), bit 15 set for a walk upwards
+;   +4  the plane byte the walk starts in
+;
+; which is everything LINE_RUN needs: the two steps are only signs and
+; the mask is 1 shifted by the bit.  It was six words until 2026-09-26 -
+; LADX, LADY, LSX, LSY, LADDR, LMASK - and every segment in the frame
+; paid for the other three twice over: written, compared with last
+; frame's, copied into the ring and read back through the PPU's window.
+
+; =========================================================================
+; PIX_ADDR - plane byte address and bit mask of (R0 = x, R1 = y).
+; Returns R0 = address, R1 = mask.  Clobbers R2.
+; =========================================================================
+; The row's own address comes out of a table rather than a multiply: it
+; is worked out once at startup and read once per segment, and a MUL is
+; the most expensive thing this routine would otherwise do.
+ROWTAB:		.BLKW	SCRH
+
+GFX_INIT:	MOV	#ROWTAB,R0
+		MOV	#VRAM,R1
+		MOV	#SCRH,R2
+1$:		MOV	R1,(R0)+
+		ADD	#SCRWB,R1
+		SOB	R2,1$
+		RETURN
+
+PIX_ADDR:	MOV	R0,R2		; keep x
+		ASL	R1		; the line's first byte, from the table
+		MOV	ROWTAB(R1),R1
+		MOV	R2,R0
+		ASR	R0			; x / 8: three fixed shifts
+		ASR	R0
+		ASR	R0
+		ADD	R1,R0
+		BIC	#177770,R2	; x & 7
+		MOVB	BITTAB(R2),R1
+		BIC	#177400,R1	; MOVB sign-extends; we want 1..200
+		RETURN
+
+; =========================================================================
+; PLOT - XOR one pixel of plane 1 at (R0 = x, R1 = y).  No clipping.
+; =========================================================================
+PLOT:		CALL	PIX_ADDR
+		MOV	R0,@#VADDR
+		XOR	R1,@#VDATA
+		RETURN
+
+; =========================================================================
+; LINE - XOR a line between (LX0,LY0) and (LX1,LY1) into plane 1.
+; Both endpoints must already be on screen; CLIP_LINE arranges that.
+; Clobbers R0..R5.
+;
+; Two things make this fast enough to fly a wireframe at 640x288.
+;
+; The first is that XOR on a PDP-11 reads, combines and writes its
+; destination in one instruction, so a plane byte is updated with
+;
+;       MOV  addr,@#VADDR
+;       XOR  bits,@#VDATA
+;
+; rather than a separate read, combine and write through the window.
+;
+; The second is that the window is slow compared with the CPU, so the
+; loop touches it as little as it can: bits are accumulated in R4 while
+; the walk stays inside one plane byte, and only flushed when the
+; address is about to change - when x crosses a byte boundary, when y
+; steps to another line, or at the end.  A shallow line then costs one
+; window update per eight pixels instead of one per pixel.
+; =========================================================================
+; LINE is in two halves.  LINE_SETUP works the walk out - the two
+; deltas, the two step directions, and the plane byte and bit the first
+; pixel lands in - and LINE_RUN walks it.  The point of the seam is the
+; erase pass: every segment on screen is drawn twice, once when it goes
+; on and once to rub it out, and the second time the setup is already
+; known.  The segment buffers therefore record the walk LINE_RUN
+; needs rather than the four coordinates it would have to work it out
+; from again, which is about two dozen instructions a segment saved on
+; every frame, PIX_ADDR among them.
+;
+; NOTE: the branch has to come straight off the SUB.  A MOV in between
+; would overwrite the condition codes with the flags of the value it
+; moved, dx/dy would keep the sign of a leftward or upward line, and
+; the draw loop would run about 65536 times - which on this machine is
+; not merely a wrong picture: plane bytes below 100000 ARE CPU RAM, so a
+; runaway loop overwrites the program and the stack.
+; LINE_SETUP writes the walk into the record at R5, which it leaves
+; pointing past what it wrote; the caller keeps the record's address
+; (R4 survives) to compare it or hand it over.  A caller with nothing to
+; record passes LREC, three words over the dead PPU copy (src/tail.mac).
+; Clobbers R0..R2.
+
+LINE_SETUP:	MOV	LX0,R0		; the start: its row out of the table,
+		MOV	LY0,R1		;   the byte inside it, and the bit
+		ASL	R1
+		MOV	ROWTAB(R1),R1
+		MOV	R0,R2
+		ASR	R2		; x / 8 - three single shifts, not an
+		ASR	R2		;   ASH, which is a shift loop and
+		ASR	R2		;   dearer (x is never negative here)
+		ADD	R2,R1		; R1 = the byte
+		BIC	#177770,R0	; R0 = x & 7, up to bits 10-12
+		SWAB	R0
+		ASL	R0
+		ASL	R0
+		MOV	LX1,R2		; dx and its direction
+		SUB	LX0,R2
+		BGE	1$
+		NEG	R2
+		BIS	#100000,R0
+1$:		BIS	R2,R0
+		MOV	R0,(R5)+
+		MOV	LY1,R2		; dy and its direction
+		SUB	LY0,R2
+		BGE	2$
+		NEG	R2
+		BIS	#100000,R2
+2$:		MOV	R2,(R5)+
+		MOV	R1,(R5)+
+		RETURN
+
+; =========================================================================
+; The pixel loops are not here.  LINE_RUN, the two bit-walks and the
+; span loop live in src/ppu.mac and run on the PPU, which addresses the
+; planes through a register pair of its own (@#177010/@#177014, the
+; same numbers for a plane byte as ours) and which this port used for
+; nothing but the keyboard, the clock and five commands.  The CPU works a
+; walk out - LINE_SETUP, the three words above - and hands it over through
+; a RING of records in CPU RAM: RING_PUTR appends one, the PPU's 50 Hz
+; handler drains whatever is waiting, and the two overlap, so a frame
+; costs the larger of the two halves rather than their sum.  The pixel
+; loops were 40% of a frame on the CPU.
+;
+; The order of the records is the order they are drawn in, so "the new
+; segment goes on before the old comes off" (see SEG_LINE) survives the
+; move; and XOR does not care about order anyway.  What DOES have to be
+; watched is anything the CPU still draws itself - text, the gauges, a
+; screen clear, a chart - which must not read-modify-write a byte the
+; PPU is about to: RING_WAIT is the fence, and every PPU command,
+; SEG_RESET and the text routines call it.  The gauges and the scanner
+; share the dashboard band and are checked disjoint by byte column.
+;
+; RING_HEAD is the byte offset the CPU writes next, RING_TAIL the one the
+; PPU draws next - written by the PPU, straight into CPU RAM through its
+; window.  Head == tail is empty; the ring is full when the head would
+; step onto the tail, and RING_PUTR then waits for the PPU, which is the
+; only time the CPU ever waits for it.
+; =========================================================================
+RING_HEAD:	.WORD	0
+RING_TAIL:	.WORD	0
+RING_STALL:	.WORD	0		; times the CPU found the ring full
+RING:		.BLKW	RING_BYTES/2
+
+; LINE - work the walk out and hand it over.  The one entry point for a
+; caller with nothing to record; the segment buffers call RING_PUTR after
+; their own LINE_SETUP.  Clobbers R0..R5.
+LINE:		MOV	#LREC,R4	; nothing to record: throw the walk away
+		MOV	R4,R5
+		CALL	LINE_SETUP
+RING_PUTR:	MOV	RING_HEAD,R2	; R4 = a record to hand over
+		ADD	#RECB,R2
+		CMP	R2,#RING_BYTES
+		BLO	3$
+		CLR	R2
+3$:		CMP	R2,RING_TAIL	; full: the PPU is behind, wait for it
+		BNE	2$
+		INC	RING_STALL	; ... and count the times, for the
+1$:		CMP	R2,RING_TAIL	;   balance measurement (until
+		BEQ	1$		;   2026-09-25 only a full ring at
+					;   the wrap was counted: 1 in 128)
+2$:		MOV	RING_HEAD,R3
+		ADD	#RING,R3
+		MOV	(R4)+,(R3)+
+		MOV	(R4)+,(R3)+
+		MOV	(R4)+,(R3)+
+		MOV	R2,RING_HEAD	; last, so the PPU never sees a record
+		RETURN			;   before it is whole
+
+; RING_WAIT - everything handed over so far is on the screen.
+RING_WAIT:	CMP	RING_HEAD,RING_TAIL
+		BNE	RING_WAIT
+		RETURN
+
+; Submit the replacement and the old walk together when two contiguous
+; records fit. Snapshot the consumer once: two reads could straddle its
+; advance and falsely report room. Publish only after both copies finish.
+; R4 = new, R5 = old. Clobbers R0..R5; the slow path preserves ordering.
+RING_PUT2:	MOV	RING_HEAD,R3
+		MOV	R3,R2
+		ADD	#<2*RECB>,R2
+		CMP	R2,#RING_BYTES
+		BHIS	8$
+		MOV	RING_TAIL,R1
+		CMP	R2,R1
+		BEQ	8$
+		MOV	R3,R0
+		ADD	#RECB,R0
+		CMP	R0,R1
+		BEQ	8$
+		ADD	#RING,R3
+		MOV	(R4)+,(R3)+
+		MOV	(R4)+,(R3)+
+		MOV	(R4)+,(R3)+
+		MOV	(R5)+,(R3)+
+		MOV	(R5)+,(R3)+
+		MOV	(R5)+,(R3)+
+		MOV	R2,RING_HEAD
+		RETURN
+8$:		MOV	R5,-(SP)
+		CALL	RING_PUTR
+		MOV	(SP)+,R4
+		JMP	RING_PUTR
+
+; =========================================================================
+; Clipping.  The space view is the top VIEW_H lines of the screen; the
+; dashboard underneath must never be scribbled on, so every line the 3D
+; code produces goes through CLIP_LINE first.  Cohen-Sutherland, with the
+; boundary intersections worked out exactly using the hardware MUL and
+; DIV - the 8-bit originals could not afford that and used cheaper
+; approximations that let long lines drift by a pixel or two.
+; =========================================================================
+; The clip rectangle is a variable, not a constant: the 3D code draws
+; into the space view and must never touch the dashboard, while the
+; dashboard's own gauges and scanner need the band underneath it.
+CLIPX0:		.WORD	0
+CLIPX1:		.WORD	639.
+CLIPY0:		.WORD	0
+CLIPY1:		.WORD	199.
+CLIPYD:		.WORD	199.		; CLIPY1 - CLIPY0, which is what the
+				; trivial-accept test compares against
+
+; CLIP_VIEW / CLIP_DASH / CLIP_ALL - pick the region to draw in.
+CLIP_VIEW:	MOV	#0,CLIPY0
+		MOV	#VIEW_H-1,CLIPY1
+		MOV	#VIEW_H-1,CLIPYD
+		RETURN
+CLIP_DASH:	MOV	#DASH_Y,CLIPY0
+		MOV	#SCRH-1,CLIPY1
+		MOV	#SCRH-1-DASH_Y,CLIPYD
+		RETURN
+CLIP_ALL:	MOV	#0,CLIPY0
+		MOV	#SCRH-1,CLIPY1
+		MOV	#SCRH-1,CLIPYD
+		RETURN
+
+CODE0:		.WORD	0
+CODE1:		.WORD	0
+CLIP_NX:	.WORD	0
+CLIP_NY:	.WORD	0
+CLIP_WHICH:	.WORD	0		; the outcode being resolved
+
+; OUTCODE - R0 = x, R1 = y -> R2 = 1 left, 2 right, 4 above, 10 below.
+OUTCODE:	CLR	R2
+		CMP	R0,CLIPX0
+		BGE	1$
+		BIS	#1,R2
+		BR	2$
+1$:		CMP	R0,CLIPX1
+		BLE	2$
+		BIS	#2,R2
+2$:		CMP	R1,CLIPY0
+		BGE	3$
+		BIS	#4,R2
+		RETURN
+3$:		CMP	R1,CLIPY1
+		BLE	4$
+		BIS	#10,R2
+4$:		RETURN
+
+; CLIP_LINE - returns C set when the line is wholly outside the view.
+; An inline "is it all on screen?" test was tried here and measured
+; SLOWER - 11 frames a second against 12.  The bodies and the station
+; fill enough of the view that a good half of the segments in a frame
+; are partly outside it, and those paid for the test twice over.  The
+; outcodes below answer the same question and are needed anyway.
+; The trivial accept comes first and is done without OUTCODE, because
+; most segments are wholly inside and the two calls cost more than the
+; answer is worth: an UNSIGNED compare settles a coordinate in one
+; instruction, a negative value being a very large unsigned one, so
+; `CMP x,CLIPX1 / BHI` tests both edges at once.  CLIPX0 is zero and
+; nothing writes it; y is biased by CLIPY0 first, because the dashboard
+; band does not start at zero.
+;
+; This is NOT the test that was tried and measured nothing years ago.
+; That one asked the same question with eight signed compares in front
+; of a clipper that then asked it again, and the half of the segments
+; that are partly outside paid for it twice.  This one replaces the
+; first half of the clipper rather than preceding it.
+CLIP_LINE:	MOV	LX0,R0
+		CMP	R0,CLIPX1
+		BHI	5$
+		MOV	LX1,R0
+		CMP	R0,CLIPX1
+		BHI	5$
+		MOV	LY0,R1
+		SUB	CLIPY0,R1
+		CMP	R1,CLIPYD
+		BHI	5$
+		MOV	LY1,R1
+		SUB	CLIPY0,R1
+		CMP	R1,CLIPYD
+		BHI	5$
+		CLC			; wholly inside: nothing to cut
+		RETURN
+
+5$:		MOV	LX0,R0
+		MOV	LY0,R1
+		CALL	OUTCODE
+		MOV	R2,CODE0
+		MOV	LX1,R0
+		MOV	LY1,R1
+		CALL	OUTCODE
+		MOV	R2,CODE1
+
+1$:		MOV	CODE0,R3	; both ends inside - draw it
+		BIS	CODE1,R3
+		BEQ	9$
+		MOV	CODE1,R4	; R3 = CODE0 & CODE1: a bit both share
+		COM	R4		; means both ends are outside the same
+		MOV	CODE0,R3	; edge, so the line cannot cross the view
+		BIC	R4,R3
+		BNE	8$
+		MOV	CODE0,R3	; resolve whichever end is outside
+		BNE	2$
+		MOV	CODE1,R3
+2$:		MOV	R3,CLIP_WHICH
+		CALL	CLIP_ONE
+		BR	1$
+
+8$:		SEC
+		RETURN
+9$:		CLC
+		RETURN
+
+; CLIP_ONE - move the endpoint whose outcode is CLIP_WHICH onto the
+; boundary it fails, and refresh that end's outcode.
+CLIP_ONE:	MOV	LX1,R0		; dx
+		SUB	LX0,R0
+		MOV	LY1,R1		; dy
+		SUB	LY0,R1
+		MOV	CLIP_WHICH,R3
+
+		BIT	#4,R3		; above the region
+		BEQ	1$
+		MOV	CLIPY0,R2
+		BR	CLIP_HORZ
+1$:		BIT	#10,R3		; below it
+		BEQ	2$
+		MOV	CLIPY1,R2
+		BR	CLIP_HORZ
+2$:		BIT	#1,R3		; left of it
+		BEQ	3$
+		MOV	CLIPX0,R2
+		BR	CLIP_VERT
+3$:		MOV	CLIPX1,R2	; right of it
+
+; x = x0 + dx * (R2 - x0) / dx is trivial; here x is pinned and y solved.
+CLIP_VERT:	MOV	R2,CLIP_NX
+		SUB	LX0,R2		; R2 = target x - x0
+		MOV	R1,R4		; dy
+		MUL	R2,R4		; R4:R5 = dy * (target - x0)
+		DIV	R0,R4		; / dx
+		ADD	LY0,R4
+		MOV	R4,CLIP_NY
+		BR	CLIP_STORE
+
+; y is pinned at R2 and x solved: x = x0 + dx * (R2 - y0) / dy
+CLIP_HORZ:	MOV	R2,CLIP_NY
+		SUB	LY0,R2		; R2 = target y - y0
+		MOV	R0,R4		; dx
+		MUL	R2,R4		; R4:R5 = dx * (target - y0)
+		DIV	R1,R4		; / dy
+		ADD	LX0,R4
+		MOV	R4,CLIP_NX
+
+CLIP_STORE:	TST	CODE0		; whichever end we were resolving
+		BEQ	1$
+		MOV	CLIP_NX,LX0
+		MOV	CLIP_NY,LY0
+		MOV	CLIP_NX,R0
+		MOV	CLIP_NY,R1
+		CALL	OUTCODE
+		MOV	R2,CODE0
+		RETURN
+1$:		MOV	CLIP_NX,LX1
+		MOV	CLIP_NY,LY1
+		MOV	CLIP_NX,R0
+		MOV	CLIP_NY,R1
+		CALL	OUTCODE
+		MOV	R2,CODE1
+		RETURN
+
+; =========================================================================
+; DRAW_LINE - clip, then draw.  The one entry point the 3D code uses.
+; =========================================================================
+DRAW_LINE:	CALL	CLIP_LINE
+		BCS	1$
+		CALL	LINE
+1$:		RETURN

@@ -1,0 +1,56 @@
+# The title theme: the opening of the Blue Danube, which is what Elite
+# has played over its title ship since 1984.
+#
+# One note a line: NAME OCTAVE-in-the-name, then how long it lasts in
+# 50 Hz frames.  R is a rest.  tools/music_gen.py turns this into the
+# same (period, volume, frames) script the sound effects use, so the
+# player needs nothing new to play it.
+#
+#   note   frames
+D4      14
+F#4     14
+A4      22
+R       4
+A4      8
+R       4
+A4      8
+R       10
+B4      14
+R       4
+B4      8
+R       10
+G4      14
+R       4
+G4      8
+R       10
+A4      14
+F#4     14
+D4      22
+R       4
+D4      8
+R       4
+D4      8
+R       10
+E4      14
+R       4
+E4      8
+R       10
+F#4     22
+R       6
+A4      14
+D5      22
+R       4
+D5      8
+R       4
+D5      8
+R       10
+C#5     14
+R       4
+C#5     8
+R       10
+B4      14
+R       4
+B4      8
+R       10
+A4      28
+R       16

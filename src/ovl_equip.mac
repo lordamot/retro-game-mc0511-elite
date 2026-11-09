@@ -1,0 +1,899 @@
+; =========================================================================
+; ovl_equip.mac - the outfitter: Elite Legend's equipment shop
+; (orig/legend/.../INCLUDE/Menu/EquipShip.a80) laid out for eighty
+; columns.  AN OVERLAY (src/ovl.list), called through its first word
+; with R0 = 0 to draw and R0 = 1 for its keys; screen 5 in СТОП's cycle.
+;
+; What is on the list is Legend's TestSaleEquip, row for row: an item
+; is for sale where the tech level reaches its own (less one), where
+; the mission that unlocks it is done, where the station kind stocks it
+; - a military station has its own price list, and a hermit's rock no
+; shop at all - and never to an outlaw; fuel is on the list only while
+; the tanks are not full, priced by the economy, the galaxy and what is
+; missing.  The right-hand column says what Legend says with row
+; colours: НА БОРТУ for what is fitted, НЕ ПОДХОДИТ for what the ship's
+; fit mask (build/legend_catalog.mac, SHIP_FIT) refuses, НЕИСПРАВЕН for
+; a fitted device the sky has broken, which may be bought again.
+;
+; Buying is BuyEquip: fuel fills the main tank and the extra one, a
+; missile of either kind goes into the rack while it holds fewer than
+; the ship's limit, a cabin takes five tonnes of hold, a tank or a
+; device replaces the one of its kind aboard and - at a plain station
+; only - the old one is bought back at its list price, half if it was
+; broken (SellEquip); the larger bay adds its tonnes; a laser opens a
+; second list, the four mounts with what is in them, and goes into the
+; one picked, the old gun bought back the same way.
+;
+; At a service station the same screen is Legend's repair menu: fuel at
+; half price, the hull's wear worked off for a fraction of the ship's
+; price that shrinks with the tech level (CalcCashRepairShip and the
+; shift at goto118), a passenger cabin taken out, and every device
+; aboard listed at its repair price, a broken one mended for it.
+;
+; The two shortcuts from Legend that this port does not take: Raxxla,
+; where everything is for sale, is a phase 5 place and is not tested
+; for; and a replaced fuel tank is bought back by the type it WAS
+; rather than the type opposite the one bought - the same thing except
+; when a broken tank is replaced by one of its own size, which Legend
+; refunds at the other size's price.
+;
+; The keys: up and down walk the rows and turn the page at either end
+; (Legend's UpEquip/DownEquip), left and right turn the page, ФИКС buys
+; (or mends).  Pages are fifteen rows.
+; =========================================================================
+
+		JMP	OVLE_ENTRY		; the overlay's entry, at OVL_BASE
+
+EQ_X0	= 2			; the cursor
+EQ_XN	= 4			; the name
+EQ_XP	= 36.			; the price, right-aligned in nine, and КР
+EQ_XS	= 51.			; the state
+EQ_Y0	= 20.			; the first row
+EQ_STEP	= 12.
+EQ_ROWS	= 15.			; a page
+EQ_YMSG	= 256.			; the message line, with the page arrows
+EQ_YCASH = 270.			; the purse
+EQ_XARR	= 70.			; the page arrows
+
+; Legend's list is the equipment table, NEQL rows (build/legend_equip.mac,
+; assembled after this module - so it is named where it is used and not
+; assigned here), and two names after it that the service station shows
+; in place of a missile and a cabin: NEQL the cabin's removal, NEQL+1
+; the hull's repair.
+
+; state
+EQ_FIRST:	.WORD	0		; the first item on the page; -1 = the
+					;   laser's mount list
+EQ_LAST:	.WORD	0		; rows on the page
+EQ_PAGE:	.WORD	0
+EQ_NPAGES:	.WORD	0
+EQ_PSTART:	.BLKW	5		; the first item of each page
+EQ_ROWITEM:	.BLKW	EQ_ROWS		; the item on each row
+EQ_MSG:		.WORD	0		; the message line: a string, or 0
+EQ_MSGITEM:	.WORD	-1		;   and an item named after it, or -1
+EQ_KIND:	.WORD	0		; where the shop is: BK_STATION,
+					;   BK_MILITARY, BK_FUEL (the service
+					;   station); 0 in flight, BK_HERMIT
+					;   where there is none
+EQ_LASER:	.WORD	0		; the laser the mount list is for
+EQ_LPL:		.WORD	0		;   and its price
+EQ_LPH:		.WORD	0
+EQ_PL:		.WORD	0		; the price EQ_SALE worked out, low
+EQ_PH:		.WORD	0		;   and high
+EQ_STATE:	.WORD	0		; EQ_SHOWN's state: 0 plain, 1 aboard,
+					;   2 does not fit, 3 broken
+EQ_I:		.WORD	0
+EQ_T:		.WORD	0
+EQ_PN:		.WORD	0		; EQ_PAGES' rows on the page so far
+EQ_C:		.WORD	0		; the item being bought
+EQ_DEVADR:	.WORD	0		; its byte in the record
+EQ_DEVTYPE:	.WORD	0		;   and the type that byte takes for it
+
+OVLE_ENTRY:	TST	R0
+		BNE	OVLE_KEYS
+		CLR	EQ_PAGE			; entered from another screen:
+		CLR	EQ_SEL			;   page one, the top row, no
+		CLR	EQ_FIRST		;   message (Cmd_4_EquipShip)
+		CLR	EQ_MSG
+		JMP	EQ_DRAW
+
+; =========================================================================
+; The keys.  Tested in KEYS_EDGE where it lies: a purchase clobbers
+; every register.
+; =========================================================================
+OVLE_KEYS:	TST	EQ_KIND
+		BEQ	9$			; nothing to work
+		CMP	EQ_KIND,#BK_HERMIT
+		BEQ	9$
+		BIT	#K_UP,KEYS_EDGE
+		BEQ	2$
+		CLR	EQ_MSG
+		TST	EQ_FIRST		; the mount list wraps
+		BPL	11$
+		DEC	EQ_SEL
+		BGE	2$
+		MOV	#3,EQ_SEL
+		BR	2$
+11$:		DEC	EQ_SEL			; the list turns the page at the
+		BGE	2$			;   top and lands on its last row
+		CLR	EQ_SEL
+		TST	EQ_PAGE
+		BEQ	2$
+		DEC	EQ_PAGE
+		MOV	#EQ_ROWS-1,EQ_SEL	; EQ_DRAW clamps it to the page
+2$:		BIT	#K_DOWN,KEYS_EDGE
+		BEQ	3$
+		CLR	EQ_MSG
+		TST	EQ_FIRST
+		BPL	21$
+		INC	EQ_SEL
+		CMP	EQ_SEL,#4
+		BLT	3$
+		CLR	EQ_SEL
+		BR	3$
+21$:		INC	EQ_SEL
+		CMP	EQ_SEL,EQ_LAST
+		BLT	3$
+		DEC	EQ_SEL
+		MOV	EQ_PAGE,R0
+		INC	R0
+		CMP	R0,EQ_NPAGES
+		BGE	3$
+		MOV	R0,EQ_PAGE
+		CLR	EQ_SEL
+3$:		BIT	#K_LEFT,KEYS_EDGE
+		BEQ	4$
+		TST	EQ_FIRST
+		BMI	4$
+		CLR	EQ_MSG
+		TST	EQ_PAGE
+		BEQ	4$
+		DEC	EQ_PAGE
+		CLR	EQ_SEL
+4$:		BIT	#K_RIGHT,KEYS_EDGE
+		BEQ	5$
+		TST	EQ_FIRST
+		BMI	5$
+		CLR	EQ_MSG
+		MOV	EQ_PAGE,R0
+		INC	R0
+		CMP	R0,EQ_NPAGES
+		BGE	5$
+		MOV	R0,EQ_PAGE
+		CLR	EQ_SEL
+5$:		BIT	#K_FIRE,KEYS_EDGE
+		BEQ	6$
+		CALL	EQ_BUY
+		CALL	TILL
+6$:		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN!K_FIRE,KEYS_EDGE
+		BEQ	9$
+		JMP	EQ_DRAW
+9$:		RETURN
+
+; TILL - rings on a deal and buzzes on a refusal; C is EQ_BUY's.
+TILL:		BCS	1$
+		MOV	#FX_OPTION,R0
+		BR	2$
+1$:		MOV	#FX_KEY,R0
+2$:		JMP	SFX_PLAY
+
+; =========================================================================
+; EQ_DRAW - the whole screen.
+; =========================================================================
+EQ_DRAW:	CALL	PAGE_CLEAR
+		CALL	EQ_WHERE
+		MOV	#2,TX
+		MOV	#2,TY
+		MOV	#S_T_EQUIP,R1
+		CMP	EQ_KIND,#BK_FUEL
+		BNE	1$
+		MOV	#S_T_SERVICE,R1
+1$:		CALL	PUTS2
+
+		MOV	#4,TX
+		MOV	#40.,TY
+		TST	EQ_KIND
+		BNE	2$
+		MOV	#S_M_DOCKED,R1		; nothing is sold in open space
+		JMP	PUTS
+2$:		CMP	EQ_KIND,#BK_HERMIT
+		BNE	3$
+		MOV	#S_E_NOSHOP,R1		; nor at a hermit's rock
+		JMP	PUTS
+
+3$:		TST	EQ_FIRST
+		BPL	4$
+		CALL	EQ_DRAW_MOUNTS
+		JMP	80$
+
+4$:		CALL	EQ_PAGES		; where the pages start, today
+		CMP	EQ_PAGE,EQ_NPAGES
+		BLO	5$
+		MOV	EQ_NPAGES,EQ_PAGE
+		BEQ	5$
+		DEC	EQ_PAGE
+5$:		CLR	EQ_LAST
+		TST	EQ_NPAGES
+		BEQ	70$
+		MOV	EQ_PAGE,R0
+		ASL	R0
+		MOV	EQ_PSTART(R0),EQ_I
+		MOV	EQ_I,EQ_FIRST
+10$:		CMP	EQ_I,#NEQL
+		BHIS	70$
+		CMP	EQ_LAST,#EQ_ROWS
+		BHIS	70$
+		MOV	EQ_I,R0
+		CALL	EQ_SHOWN
+		BCS	60$
+		MOV	EQ_LAST,R1		; a row: the item on it
+		ASL	R1
+		MOV	EQ_I,EQ_ROWITEM(R1)
+		MOV	EQ_LAST,R1
+		MUL	#EQ_STEP,R1		; R1 odd - low 16 bits
+		ADD	#EQ_Y0,R1
+		MOV	R1,EQ_T
+
+		MOV	#EQ_X0,TX		; the cursor
+		MOV	EQ_T,TY
+		MOV	#40,R0
+		CMP	EQ_LAST,EQ_SEL
+		BNE	11$
+		MOV	#76,R0			; ">"
+11$:		CALL	PUTC
+
+		MOV	#EQ_XN,TX		; the name
+		MOV	EQ_I,R0
+		CALL	EQ_ROWNAME
+		CALL	PUTS
+
+		MOV	#EQ_XP,TX		; the price
+		MOV	EQ_PH,R0
+		MOV	EQ_PL,R1
+		CALL	PUT_CR32
+		MOV	#S_E_CR,R1
+		CALL	PUTS
+
+		MOV	EQ_STATE,R0		; the state
+		BEQ	61$
+		ASL	R0
+		MOV	EQ_STATES-2(R0),R1
+		MOV	#EQ_XS,TX
+		CALL	PUTS
+61$:		INC	EQ_LAST
+60$:		INC	EQ_I
+		BR	10$
+
+70$:		CMP	EQ_SEL,EQ_LAST		; the cursor stays on the page
+		BLO	71$
+		MOV	EQ_LAST,EQ_SEL
+		BEQ	71$
+		DEC	EQ_SEL
+71$:		TST	EQ_PAGE			; the page arrows
+		BEQ	72$
+		MOV	#EQ_XARR,TX
+		MOV	#EQ_YMSG,TY
+		MOV	#74,R0			; "<-"
+		CALL	PUTC
+		MOV	#55,R0
+		CALL	PUTC
+72$:		MOV	EQ_PAGE,R0
+		INC	R0
+		CMP	R0,EQ_NPAGES
+		BGE	80$
+		MOV	#EQ_XARR+6,TX
+		MOV	#EQ_YMSG,TY
+		MOV	#55,R0			; "->"
+		CALL	PUTC
+		MOV	#76,R0
+		CALL	PUTC
+
+80$:		MOV	EQ_MSG,R1		; the message line
+		BEQ	81$
+		MOV	#EQ_X0,TX
+		MOV	#EQ_YMSG,TY
+		CALL	PUTS
+		MOV	EQ_MSGITEM,R0
+		BMI	81$
+		CALL	EQ_NAME
+		CALL	PUTS
+
+81$:		MOV	#EQ_X0,TX		; the purse
+		MOV	#EQ_YCASH,TY
+		MOV	#S_E_CASHL,R1
+		CALL	PUTS
+		CALL	PUTCASH
+		MOV	#S_E_CR,R1
+		JMP	PUTS
+
+EQ_STATES:	.WORD	S_E_ONBOARD, S_E_NOTFIT, S_E_BROKEN
+
+; EQ_DRAW_MOUNTS - the second list: the laser being bought, and the four
+; mounts with what is in each (PrnMenuSetLaser).
+EQ_DRAW_MOUNTS:	MOV	#EQ_XN,TX
+		MOV	#EQ_Y0,TY
+		MOV	#S_E_FITTING,R1
+		CALL	PUTS
+		MOV	EQ_LASER,R0
+		CALL	EQ_NAME
+		CALL	PUTS
+		MOV	#4,EQ_LAST
+		CLR	EQ_I
+1$:		MOV	EQ_I,R1
+		MUL	#EQ_STEP,R1
+		ADD	#EQ_Y0+EQ_STEP,R1
+		MOV	R1,EQ_T
+		MOV	#EQ_X0,TX
+		MOV	EQ_T,TY
+		MOV	#40,R0
+		CMP	EQ_I,EQ_SEL
+		BNE	2$
+		MOV	#76,R0
+2$:		CALL	PUTC
+		MOV	#EQ_XN,TX
+		MOV	EQ_I,R0
+		ASL	R0
+		MOV	EQ_MOUNTS(R0),R1
+		CALL	PUTS
+		MOV	EQ_I,R0
+		ASL	R0
+		MOV	PLASERS(R0),R0
+		MOV	#S_E_NOLASER,R1
+		BIT	#200,R0
+		BNE	3$
+		ADD	#6,R0			; the gun's row in the list
+		CALL	EQ_NAME
+3$:		CALL	PUTS
+		INC	EQ_I
+		CMP	EQ_I,#4
+		BLT	1$
+		RETURN
+
+EQ_MOUNTS:	.WORD	S_E_FRONT, S_E_REAR, S_E_LEFT, S_E_RIGHT
+
+; EQ_WHERE - EQ_KIND from where the commander sits.  Legend's Docking
+; and this port's BK_* are the same numbers; a bay the base table does
+; not name is the station.
+EQ_WHERE:	CLR	EQ_KIND
+		TST	DOCKED
+		BEQ	9$
+		MOV	DOCKED_AT,R0
+		BNE	1$
+		MOV	#BK_STATION,R0
+1$:		MOV	R0,EQ_KIND
+9$:		RETURN
+
+; EQ_PAGES - walk the list once and note where each page of EQ_ROWS
+; shown rows begins.
+EQ_PAGES:	CLR	EQ_NPAGES
+		CLR	EQ_PN
+		CLR	EQ_I
+1$:		MOV	EQ_I,R0
+		CALL	EQ_SHOWN		; (which uses EQ_T, EQ_C)
+		BCS	3$
+		TST	EQ_PN
+		BNE	2$
+		MOV	EQ_NPAGES,R0		; the first row of a page
+		ASL	R0
+		MOV	EQ_I,EQ_PSTART(R0)
+		INC	EQ_NPAGES
+2$:		INC	EQ_PN
+		CMP	EQ_PN,#EQ_ROWS
+		BLO	3$
+		CLR	EQ_PN
+3$:		INC	EQ_I
+		CMP	EQ_I,#NEQL
+		BLO	1$
+		RETURN
+
+; EQ_ROWNAME - the name row R0 of the list shows: at the service station
+; row 1 is the hull's repair and row 3 the cabin's removal.
+EQ_ROWNAME:	CMP	EQ_KIND,#BK_FUEL
+		BNE	EQ_NAME
+		CMP	R0,#1
+		BNE	1$
+		MOV	#NEQL+1,R0
+		BR	EQ_NAME
+1$:		CMP	R0,#3
+		BNE	EQ_NAME
+		MOV	#NEQL,R0
+
+; EQ_NAME - R0 = an item; returns R1 = its name.  Clobbers R0.
+EQ_NAME:	CMP	R0,#NEQL
+		BNE	1$
+		MOV	#S_E_N_REMCABIN,R1
+		RETURN
+1$:		CMP	R0,#NEQL+1
+		BNE	2$
+		MOV	#S_E_N_REPAIR,R1
+		RETURN
+2$:		ASL	R0
+		MOV	EQL_NAMES(R0),R1
+		RETURN
+
+; =========================================================================
+; EQ_SHOWN - is item R0 on the list here?  C clear if so, with its price
+; in EQ_PH:EQ_PL and its state in EQ_STATE.  The shop's list is
+; TestSaleEquip coloured by TestShipEquip and TestPilotEquip; the
+; service station's is TestSaleEquip filtered by TestEquipRepair.
+; Clobbers R0..R5.
+; =========================================================================
+EQ_SHOWN:	MOV	R0,EQ_C
+		CALL	EQ_SALE
+		BCS	90$
+		CLR	EQ_STATE
+		CMP	EQ_KIND,#BK_FUEL
+		BEQ	50$
+		MOV	EQ_C,R0			; the shop
+		CALL	EQ_ABOARD
+		BCC	1$
+		MOV	#1,EQ_STATE
+		BITB	#DEV_BROKEN,@EQ_DEVADR
+		BEQ	80$
+		MOV	#3,EQ_STATE
+		BR	80$
+1$:		MOV	EQ_C,R0
+		CALL	EQ_SHIPFIT
+		BCC	80$
+		MOV	#2,EQ_STATE
+		BR	80$
+
+50$:		MOV	EQ_C,R0			; the service station
+		BEQ	80$			;   (TestEquipRepair)
+		CMP	R0,#1
+		BNE	51$
+		TSTB	P_WEAR
+		BEQ	90$
+		BR	80$
+51$:		CMP	R0,#3
+		BNE	52$
+		TSTB	P_CABINS
+		BEQ	90$
+		BR	80$
+52$:		CMP	R0,#EQL_DEV0
+		BLO	90$			; lasers, tanks and missiles are
+		CALL	EQ_ABOARD		;   not serviced
+		BCC	90$
+		BITB	#DEV_BROKEN,@EQ_DEVADR
+		BEQ	80$
+		MOV	#3,EQ_STATE
+80$:		CLC
+		RETURN
+90$:		SEC
+		RETURN
+
+; =========================================================================
+; EQ_SALE - TestSaleEquip: is item R0 for sale where the commander is,
+; and at what price, EQ_PH:EQ_PL.  C set if not.  Clobbers R0..R5.
+; =========================================================================
+EQ_SALE:	MOV	R0,R5
+		CLR	EQ_PH
+		TST	R5
+		BNE	10$
+		CALL	EQ_FUELNEED		; fuel: only while some is missing,
+		BEQ	90$			;   priced by the economy, the galaxy
+		MOVB	P_ECO,R1		;   and what is missing
+		BIC	#177400,R1
+		ASL	R1
+		ASL	R1
+		ADD	P_GALAXY,R1
+		ADD	R0,R1
+		CMP	EQ_KIND,#BK_FUEL	; half at the service station,
+		BNE	1$			;   and never nothing
+		ASR	R1
+		BNE	1$
+		INC	R1
+1$:		TSTB	P_M1			; sixty-four times while the first
+		BEQ	2$			;   mission is under way (v1.09)
+		ASH	#6,R1
+2$:		MOV	R1,EQ_PL
+		BR	80$
+
+10$:		CMP	R5,#1
+		BNE	20$
+		CMP	EQ_KIND,#BK_FUEL
+		BNE	20$
+		MOV	P_SHIP,R0		; at the service station the missile
+		DEC	R0			;   row is the hull's repair: the
+		ASL	R0			;   ship's price shifted down by the
+		ASL	R0			;   wear (CalcCashRepairShip) and
+		MOV	SHIP_PRICE(R0),EQ_PL	;   then by the tech level, which
+		MOV	SHIP_PRICE+2(R0),EQ_PH	;   has to be four or more
+		MOVB	P_WEAR,R0
+		BIC	#177400,R0
+		MOV	#255.,R1
+		SUB	R0,R1
+		ASH	#-4,R1
+		INC	R1
+		CALL	EQ_SHR
+		MOVB	P_TECH,R0
+		BIC	#177400,R0
+		SUB	#4,R0
+		BLT	90$
+		CALL	EQ_TSHIFT
+		BR	80$
+
+20$:		MOVB	EQL_TECH(R5),R1		; the table: the tech level less
+		BIC	#177400,R1		;   one reaches the item's
+		MOVB	P_TECH,R0
+		BIC	#177400,R0
+		INC	R0
+		SUB	R1,R0
+		BLT	90$
+		MOV	R0,EQ_T
+		CMP	P_LEGAL,#256.		; an outlaw is sold nothing
+		BHIS	90$
+		MOV	R5,R2
+		ASL	R2
+		ASL	R2
+		CMP	EQ_KIND,#BK_MILITARY	; the military station's own list
+		BNE	21$
+		MOV	EQL_MILPRICE(R2),EQ_PL
+		MOV	EQL_MILPRICE+2(R2),EQ_PH
+		BR	22$
+21$:		MOVB	EQL_MISSION(R5),R1	; elsewhere, once the missions the
+		BIC	#177400,R1		;   item waits on are done
+		MOVB	P_MCOMPLETE,R0
+		BIC	R0,R1
+		BNE	90$
+		MOV	EQL_PRICE(R2),EQ_PL
+		MOV	EQL_PRICE+2(R2),EQ_PH
+22$:		MOV	EQ_PL,R1		; a price of nought is "not here"
+		BIS	EQ_PH,R1
+		BEQ	90$
+		CMP	EQ_KIND,#BK_FUEL	; the service station charges a
+		BNE	80$			;   fraction, by the tech margin
+		MOV	EQ_T,R0
+		CALL	EQ_TSHIFT
+80$:		CLC
+		RETURN
+90$:		SEC
+		RETURN
+
+; EQ_TSHIFT - Legend's goto118: R0 = a margin; the price is halved once,
+; then once more for every halving of R0/2 down to nought.
+EQ_TSHIFT:	ASR	R0
+1$:		CALL	EQ_SHR1
+		ASR	R0
+		BNE	1$
+		RETURN
+
+; EQ_SHR - the price halved R1 times (R1 >= 1); EQ_SHR1, once.
+EQ_SHR:		CALL	EQ_SHR1
+		SOB	R1,EQ_SHR
+		RETURN
+EQ_SHR1:	CLC
+		ROR	EQ_PH
+		ROR	EQ_PL
+		RETURN
+
+; EQ_FUELNEED - TestFuelPilot: R0 = the tenths missing from the main tank
+; and the extra one together; Z set if none.  Clobbers R1.
+EQ_FUELNEED:	CLR	R1
+		MOVB	P_TANKS,R0
+		BIC	#177400,R0
+		BIT	#200,R0
+		BNE	1$
+		MOV	#10.,R1			; the tank's size, less what is
+		BIT	#100,R0			;   in it
+		BEQ	2$
+		MOV	#40.,R1
+2$:		BIC	#177700,R0
+		SUB	R0,R1
+1$:		MOV	CKV_MAXFUEL,R0		; cocpMaxFuel, the ship's
+		SUB	PFUEL,R0
+		ADD	R1,R0
+		RETURN
+
+; EQ_SHIPFIT - TestShipEquip: C clear if item R0 fits the ship.  Row 0,
+; fuel, fits anything; row n is bit (n-1) of the fit mask, most
+; significant first.  Clobbers R0..R3.
+EQ_SHIPFIT:	TST	R0
+		BEQ	8$
+		DEC	R0
+		MOV	R0,R1
+		ASH	#-3,R1			; the byte
+		BIC	#177770,R0		; and the bit, from the top
+		NEG	R0
+		MOV	#200,R2
+		ASH	R0,R2
+		MOV	P_SHIP,R3
+		DEC	R3
+		MUL	#6,R3			; R3 odd - low 16 bits
+		ADD	R1,R3
+		BITB	R2,SHIP_FIT(R3)
+		BEQ	9$
+8$:		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; EQ_ABOARD - TestPilotEquip: C set if item R0 is aboard.  For a tank or
+; a device (rows 4 on, the lasers apart) EQ_DEVADR is its byte in the
+; record and EQ_DEVTYPE the type that byte holds for this row, aboard or
+; not - what a purchase writes.  Clobbers R0..R2.
+EQ_ABOARD:	CMP	R0,#4
+		BLO	90$			; fuel, missiles, the cabin
+		CMP	R0,#6
+		BHIS	10$
+		SUB	#4,R0			; a tank: the type is bit 6
+		ASH	#6,R0
+		MOV	R0,EQ_DEVTYPE
+		MOV	#P_TANKS,EQ_DEVADR
+		MOVB	P_TANKS,R1
+		BIC	#177400,R1
+		BIT	#200,R1
+		BNE	90$
+		BIC	#177677,R1
+		CMP	R1,R0
+		BNE	90$
+		BR	80$
+10$:		CMP	R0,#EQL_DEV0
+		BLO	90$			; a laser: the mounts are asked
+		SUB	#EQL_DEV0,R0
+		MOVB	EQL_DEV(R0),R1
+		BIC	#177400,R1
+		MOV	R1,R2
+		BIC	#177700,R2		; the device's index
+		ADD	#P_DEVICES,R2
+		MOV	R2,EQ_DEVADR
+		ASH	#-6,R1			; and the row's type
+		MOV	R1,EQ_DEVTYPE
+		MOVB	(R2),R0
+		BIC	#177574,R0		; bit 7 and the type bits
+		CMP	R0,R1
+		BNE	90$
+80$:		SEC
+		RETURN
+90$:		CLC
+		RETURN
+
+; =========================================================================
+; EQ_BUY - ФИКС on the row under the cursor: BuyEquip.  C set on a
+; refusal, with the reason on the message line.  Clobbers everything.
+; =========================================================================
+EQ_BUY:		CLR	EQ_MSG
+		MOV	#-1,EQ_MSGITEM
+		TST	EQ_FIRST
+		BPL	1$
+		JMP	EQ_SETLASER
+1$:		TST	EQ_LAST
+		BEQ	EQ_NO
+		MOV	EQ_SEL,R0
+		ASL	R0
+		MOV	EQ_ROWITEM(R0),EQ_C
+		MOV	EQ_C,R0
+		CALL	EQ_SALE			; the price
+		BCS	EQ_NO
+		CMP	EQ_KIND,#BK_FUEL
+		BNE	2$
+		JMP	EQ_REPAIR
+
+2$:		MOV	EQ_C,R0			; the shop
+		CALL	EQ_SHIPFIT
+		BCC	3$
+		MOV	#S_E_UNAVAIL,EQ_MSG
+		BR	EQ_NO
+3$:		MOV	EQ_C,R0
+		CALL	EQ_ABOARD
+		BCC	4$
+		BITB	#DEV_BROKEN,@EQ_DEVADR	; a broken one is bought again
+		BEQ	31$			;   (BuyBrokenDevice) - except
+		CMP	EQ_C,#5			;   the large tank
+		BNE	4$
+31$:		MOV	#S_E_ABOARD,EQ_MSG
+		BR	EQ_NO
+4$:		MOV	EQ_C,R0
+		BEQ	EQ_BUYFUEL
+		CMP	R0,#3
+		BLO	EQ_BUYMISS
+		BEQ	EQ_BUYCABIN
+		CMP	R0,#6
+		BLO	EQ_BUYTANK
+		CMP	R0,#EQL_DEV0
+		BLO	41$
+		BEQ	42$
+		JMP	EQ_BUYOTHER
+41$:		JMP	EQ_LASERMENU
+42$:		JMP	EQ_BUYBAY
+
+EQ_NO:		SEC
+		RETURN
+EQ_YES:		CLC
+		RETURN
+
+; EQ_PAY - the price in EQ_PH:EQ_PL out of the purse, or C set and
+; НЕХВАТАЕТ ДЕНЕГ (DecCashEquip).
+EQ_PAY:		MOV	EQ_PH,R0
+		MOV	EQ_PL,R1
+		CALL	CASH_PAY32
+		BCC	1$
+		MOV	#S_E_NOCASH,EQ_MSG
+1$:		RETURN
+
+; EQ_DONE - УСТАНОВЛЕНО: and the item's name (PrnSetEquip).
+EQ_DONE:	MOV	#S_E_INSTALLED,EQ_MSG
+		MOV	EQ_C,EQ_MSGITEM
+		CLC
+		RETURN
+
+; BuyFuel: both tanks filled.
+EQ_BUYFUEL:	CALL	EQ_PAY
+		BCS	EQ_NO
+		MOV	CKV_MAXFUEL,PFUEL
+		MOVB	P_TANKS,R0
+		BIC	#177400,R0
+		BIT	#200,R0
+		BNE	1$
+		MOV	#10.,R1
+		BIT	#100,R0
+		BEQ	2$
+		MOV	#40.,R1
+2$:		BIC	#77,R0
+		BIS	R1,R0
+		MOVB	R0,P_TANKS
+1$:		MOV	#S_E_REFUELED,EQ_MSG
+		BR	EQ_YES
+
+; BuyMissile: the rack holds cocpMaxMiss of both kinds together.
+EQ_BUYMISS:	MOV	P_MISSILES,R0
+		ADD	P_MISSTYPE,R0
+		CMP	R0,CKV_MAXMISS
+		BLT	1$
+		MOV	#S_E_MAXMISS,EQ_MSG
+		BR	EQ_NO
+1$:		CALL	EQ_PAY
+		BCS	EQ_NO
+		CMP	EQ_C,#1
+		BNE	2$
+		INC	P_MISSILES
+		BR	EQ_DONE
+2$:		INC	P_MISSTYPE
+		BR	EQ_DONE
+
+; BuyPassenger: a cabin takes CABIN_TONS of the hold.
+EQ_BUYCABIN:	CMP	P_FREECARGO,#CABIN_TONS
+		BGE	1$
+		MOV	#S_E_NOROOM,EQ_MSG
+		BR	EQ_NO
+1$:		CALL	EQ_PAY
+		BCS	EQ_NO
+		SUB	#CABIN_TONS,P_FREECARGO
+		INCB	P_CABINS
+		BR	EQ_DONE
+
+; BuyFuelTank: the new tank in, the old one - if there was one - bought
+; back at its list price as if it were whole.
+EQ_BUYTANK:	CALL	EQ_PAY
+		BCS	EQ_NO
+		MOVB	P_TANKS,R1
+		BIC	#177400,R1
+		MOVB	EQ_DEVTYPE,P_TANKS
+		BIT	#200,R1
+		BNE	EQ_DONE
+		MOV	#4,R0			; the old one's row
+		BIT	#100,R1
+		BEQ	1$
+		INC	R0
+1$:		BIC	#DEV_BROKEN,R1
+		CALL	EQ_REFUND
+		BR	EQ_DONE
+
+EQ_NO2:		SEC
+		RETURN
+
+; BuyCargoBay.
+EQ_BUYBAY:	CALL	EQ_PAY
+		BCS	EQ_NO2
+		MOVB	EQ_DEVTYPE,@EQ_DEVADR
+		ADD	#HOLD_BAY,P_FREECARGO
+		JMP	EQ_DONE
+
+; BuyOtherEquip: the device byte takes the row's type; what was there,
+; if it was fitted and whole, is bought back - its row is this row
+; shifted by the difference of the types.
+EQ_BUYOTHER:	CALL	EQ_PAY
+		BCS	EQ_NO2
+		MOVB	@EQ_DEVADR,R1
+		BIC	#177400,R1
+		MOVB	EQ_DEVTYPE,@EQ_DEVADR
+		CMP	EQ_DEVADR,#P_AUTOECM	; the auto-ECM and the auto-eject
+		BEQ	2$			;   come armed, as Legend's record
+		CMP	EQ_DEVADR,#P_AUTOPOD	;   has them
+		BNE	1$
+2$:		BISB	#AUTOECM_ARMED,@EQ_DEVADR
+1$:		BIT	#300,R1
+		BEQ	EQ_DONE2
+		JMP	EQ_DONE
+EQ_DONE2:		MOV	R1,R0
+		BIC	#177774,R0
+		SUB	EQ_DEVTYPE,R0
+		ADD	EQ_C,R0
+		CALL	EQ_REFUND
+		JMP	EQ_DONE
+
+; BuyLasers: the mount list opens for laser EQ_C.
+EQ_LASERMENU:	MOV	EQ_C,EQ_LASER
+		MOV	EQ_PL,EQ_LPL
+		MOV	EQ_PH,EQ_LPH
+		MOV	#-1,EQ_FIRST
+		CLR	EQ_SEL
+		MOV	#4,EQ_LAST
+		JMP	EQ_YES
+
+; SetLasers: ФИКС on a mount.  The old gun, if any, is bought back.
+EQ_SETLASER:	MOV	EQ_LPH,EQ_PH
+		MOV	EQ_LPL,EQ_PL
+		CALL	EQ_PAY
+		BCS	EQ_NO2
+		MOV	EQ_SEL,R2
+		ASL	R2
+		MOV	PLASERS(R2),R1		; the old gun
+		MOV	EQ_LASER,R0
+		SUB	#6,R0
+		MOV	R0,PLASERS(R2)
+		BIT	#200,R1
+		BNE	1$
+		MOV	R1,R0
+		ADD	#6,R0			; its row
+		CLR	R1
+		CALL	EQ_REFUND
+1$:		CLR	EQ_FIRST		; back to the list, page one
+		CLR	EQ_PAGE
+		CLR	EQ_SEL
+		MOV	EQ_LASER,EQ_C
+		JMP	EQ_DONE
+
+; EQ_REFUND - SellEquip: row R0's list price back into the purse, half
+; of it if the byte in R1 says it was broken - and only at a plain
+; station.  Clobbers R0..R2.
+EQ_REFUND:	CMP	EQ_KIND,#BK_STATION
+		BNE	9$
+		ASL	R0
+		ASL	R0
+		MOV	EQL_PRICE(R0),R2
+		MOV	EQL_PRICE+2(R0),R0
+		BIT	#DEV_BROKEN,R1
+		BEQ	1$
+		CLC
+		ROR	R0
+		ROR	R2
+1$:		MOV	R2,R1
+		JMP	CASH_ADD32
+9$:		RETURN
+
+; =========================================================================
+; EQ_REPAIR - ФИКС at the service station: fuel, the hull, a cabin out,
+; or a device mended (the service half of BuyEquip).
+; =========================================================================
+EQ_REPAIR:	MOV	EQ_C,R0
+		BNE	1$
+		JMP	EQ_BUYFUEL
+1$:		CMP	R0,#1
+		BNE	2$
+		CALL	EQ_PAY			; RepairShip
+		BCS	EQ_NO3
+		CLRB	P_WEAR
+		MOV	#S_E_SHIPREP,EQ_MSG
+		JMP	EQ_YES
+2$:		CMP	R0,#3
+		BNE	3$
+		CALL	EQ_PAY			; RemovePassenger
+		BCS	EQ_NO3
+		ADD	#CABIN_TONS,P_FREECARGO
+		DECB	P_CABINS
+		MOV	#S_E_REMCABIN,EQ_MSG
+		JMP	EQ_YES
+3$:		CALL	EQ_ABOARD		; a device: only a broken one
+		BITB	#DEV_BROKEN,@EQ_DEVADR	;   needs anything
+		BNE	4$
+		MOV	#S_E_NOREPAIR,EQ_MSG
+		BR	EQ_NO3
+4$:		CALL	EQ_PAY
+		BCS	EQ_NO3
+		BICB	#DEV_BROKEN,@EQ_DEVADR
+		MOV	#S_E_REPAIRED,EQ_MSG
+		MOV	EQ_C,EQ_MSGITEM
+		JMP	EQ_YES
+EQ_NO3:		SEC
+		RETURN

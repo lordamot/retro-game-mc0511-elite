@@ -1,0 +1,1096 @@
+; =========================================================================
+; ppu.mac - the program copied into PPU RAM (PP_START..PP_END).
+;
+; The startup/vector hooks, the line-table machinery, the K1 command
+; dispatch and the keyboard handler follow this family of ports (OPEN60 ->
+; ../mc0511-openit -> ../mc0511-dicewars).  What is new here is the screen
+; itself: Elite runs the UKNC in its widest mode, 640x288, so
+;
+;   - NEW_TABLE programs 288 lines of 80 bytes straight from plane address
+;     100000 and sets the display control word to MODE_640 (7), which
+;     makes the video controller emit one pixel per plane bit instead of
+;     doubling them;
+;   - the table carries a second palette element at the dashboard
+;     boundary, so the space view and the dashboard each get their own
+;     eight colours out of the 16-colour palette.
+;
+; The block is position-independent: internal data is reached with
+; PC-relative addressing or explicit fix-ups; CPU RAM is reached through
+; the @#177010 (word address / 2) / @#177014 window.
+; =========================================================================
+
+PP_SAVE_WORDS = <7030-2300>/2
+PP_START:
+ MFPS -(SP)
+ MTPS #340
+ MOV R0,-(SP)
+ MOV R1,-(SP)
+ MOV R2,-(SP)
+ MOV R3,-(SP)
+ MOV R4,-(SP)
+ MOV R5,-(SP)
+ MOV @#177010,PP_OLDADDR
+ MOV @#177016,PP_OLDSPRITE
+ MOV @#177020,PP_OLDBG0
+ MOV @#177022,PP_OLDBG1
+ MOV @#177026,PP_OLDMASK
+ MOV @#22670,PP_OLDROWS
+ MOV @#22752,PP_OLDSCROLL
+ MOVB @#177066,PP_OLDRX
+ MOV PC,R1
+ ADD #PP_END-.,R1
+ MOV #2300,R0
+ MOV #PP_SAVE_WORDS,R2
+10$: MOV (R0)+,(R1)+
+ SOB R2,10$
+ MOV #146000,@#2470
+ MOV #177735,@#2472
+ MOV #6742,@#2456
+ MOV #2462,@#7026
+ MOV #77407,@#2460
+MOV	@#330,K1_SAVE		; save the channel K1 receiver vector
+		MOV	PC,R0
+		ADD	#K1_PP-.,R0
+		MOV	R0,@#330		; install ours
+		MOVB	#7,@#177066		; enable interrupts of all receivers
+		MOV	@#100,V100_SAVE		; save the line clock timer vector
+		MOV	PC,R0
+		ADD	#PP_V100-.,R0
+		MOV	R0,@#100
+		MOV	@#300,KEYB_SAVE		; save the keyboard vector
+		MOV	PC,R0
+		ADD	#PP_KEYB-.,R0
+		MOV	R0,@#300
+		MOV	PC,R1			; relocate the command dispatch
+		ADD	#PP_COMMANDS-.-2,R1	; table into PPU addresses
+		MOV	R1,R0
+		SUB	#PP_COMMANDS-2,R1
+1$:		ADD	R1,(R0)+
+		TST	@R0
+		BNE	1$
+
+		MOV	PC,R0			; the span loop's two tables: where
+		ADD	#PP_AVAIL_R-.,R0	;   they landed, then their contents,
+		MOV	R0,PPAV_R		;   one entry per mask - from bit a
+		MOV	PC,R0			;   there are 8-a pixels to the end
+		ADD	#PP_AVAIL_L-.,R0	;   of the byte and a+1 back to its
+		MOV	R0,PPAV_L		;   start
+		MOV	PC,R0			; and the masks the drain opens
+		ADD	#PP_BITS-.,R0		;   a walk's bit number into
+		MOV	R0,PPBT
+		MOV	#1,R1
+		MOV	#8.,R2
+		MOV	#1,R3
+2$:		MOV	PPAV_R,R4
+		ADD	R1,R4
+		MOVB	R2,@R4
+		MOV	PPAV_L,R4
+		ADD	R1,R4
+		MOVB	R3,@R4
+		ASL	R1
+		DEC	R2
+		INC	R3
+		CMP	R1,#400
+		BLO	2$
+		CLR	PP_TAIL			; the ring starts empty
+		CLR	PP_DRAWING
+
+		CALL	NEW_TABLE		; program the 640x288 line table
+		CALL	COMMAND_4		; palettes + screen mode from CPU RAM
+		CLR	@#177020		; black in the PPU drawing background
+		CLR	@#177022
+		CLR	@#177026		; write to all planes
+		MOV	#PP_BUSY/2,@#177010
+		MOV	PC,@#177014		; raise the program-loaded flag
+		MOV	PC,PP_VSYNC_FLAG
+ MOV PP_OLDADDR,@#177010
+ MOV (SP)+,R5
+ MOV (SP)+,R4
+ MOV (SP)+,R3
+ MOV (SP)+,R2
+ MOV (SP)+,R1
+ MOV (SP)+,R0
+ MTPS (SP)+
+ RETURN
+
+; ---- the video line table ----------------------------------------------
+; 288 lines of 80 bytes from plane address 100000.  Lines 0..199 are the
+; space view and take the palette in @#2400/@#2402; line 200 carries a
+; 4-word palette element (pal1, pal2, line address, link) that switches
+; the remaining 87 lines to the dashboard palette.  The element has to be
+; 8-byte aligned because the controller masks a tagged link with ~7 - the
+; table base 2410 is aligned and 200 two-word entries keep it that way.
+NEW_TABLE:	MOV	#26.,@#22670	; 26 text lines on the user screen
+		CLR	@#22752		; disable scrolling
+		CLR	@#2400		; black screen at once
+		CLR	@#2402
+		CALL	CLS_SCREEN_PP
+		MOV	#100000,R0	; plane address of screen line 0
+		MOV	#2410,R1	; video line table base
+		MOV	#2414,R3	; address of the next element
+		JSR	R5,SET_LINES	; the space view
+		.WORD	200.,80.
+
+		BIS	#6,-2(R1)	; the last view line links to a 4-word
+					; element whose tag is a palette
+		MOV	R1,DASH_PAL1	; remember where COMMAND_4 pokes them
+		CLR	(R1)+
+		MOV	R1,DASH_PAL2
+		CLR	(R1)+
+		MOV	R0,(R1)+	; the element's own display line
+		ADD	#80.,R0
+		MOV	R1,R3
+		ADD	#2,R3		; the element following this one
+		MOV	R3,(R1)+	; link
+		ADD	#4,R3		; SET_LINES wants R3 = R1 + 4
+		JSR	R5,SET_LINES	; the rest of the dashboard
+		.WORD	87.,80.
+		RETURN
+
+DASH_PAL1:	.WORD	0		; PPU addresses of the dashboard
+DASH_PAL2:	.WORD	0		; palette element's two words
+
+; Fill line table elements: R0 = first plane address, R1 = table cursor,
+; R3 = address of the next element; the two inline words are the line
+; count and the stride.
+SET_LINES:	MOV	(R5)+,R2
+1$:		MOV	R0,(R1)+	; this line's plane address
+		MOV	R3,(R1)+	; link to the next element
+		ADD	@R5,R0
+		ADD	#4,R3
+		SOB	R2,1$
+		TST	(R5)+
+		RTS	R5
+
+; Clear all three planes over the whole 640x288 screen.
+CLS_SCREEN_PP:	MOV	#177010,R0	; plane address register
+		MOV	#177024,R1	; pixel octet register
+		MOV	#377,R2		; all eight pixels of the octet
+		CLR	@#177016	; colour 0
+		MOV	#100000,@R0
+		MOV	#11520.,R5	; 80*288 bytes, two per pass
+1$:		MOV	R2,@R1
+		INC	@R0
+		MOV	R2,@R1
+		INC	@R0
+		SOB	R5,1$
+		RETURN
+
+; ---- restore the firmware screen (COMMAND_1) ---------------------------
+; K2 restoration entry, called only after ring and commands have drained.
+PP_RESTORE:
+ MFPS -(SP)
+ MTPS #340
+ MOV R0,-(SP)
+ MOV R1,-(SP)
+ MOV R2,-(SP)
+ CLR PP_VSYNC_FLAG
+ CLR SX_HOOK
+ CLR MUS_PTR
+ ; Silence all channels on both AY chips.
+ MOV #177360,R1
+ MOV #2,R2
+1$: MOV #7,@R1
+ MOVB #77,@R1
+ MOV #8.,@R1
+ CLRB @R1
+ MOV #9.,@R1
+ CLRB @R1
+ MOV #10.,@R1
+ CLRB @R1
+ ADD #2,R1
+ SOB R2,1$
+ MOV K1_SAVE,@#330
+ MOV V100_SAVE,@#100
+ MOV KEYB_SAVE,@#300
+ MOVB PP_OLDRX,@#177066
+ MOV PC,R0
+ ADD #PP_END-.,R0
+ MOV #2300,R1
+ MOV #PP_SAVE_WORDS,R2
+2$: MOV (R0)+,(R1)+
+ SOB R2,2$
+ MOV PP_OLDROWS,@#22670
+ MOV PP_OLDSCROLL,@#22752
+ MOV PP_OLDSPRITE,@#177016
+ MOV PP_OLDBG0,@#177020
+ MOV PP_OLDBG1,@#177022
+ MOV PP_OLDMASK,@#177026
+ MOV #PP_ACTIVE/2,@#177010
+ CLR @#177014
+ MOV PP_OLDADDR,@#177010
+ MOV (SP)+,R2
+ MOV (SP)+,R1
+ MOV (SP)+,R0
+ MTPS (SP)+
+ RETURN
+COMMAND_1: RETURN ; restoration is an explicit K2 call, not a redraw
+PP_OLDADDR: .WORD 0
+PP_OLDSPRITE: .WORD 0
+PP_OLDBG0: .WORD 0
+PP_OLDBG1: .WORD 0
+PP_OLDMASK: .WORD 0
+PP_OLDROWS: .WORD 0
+PP_OLDSCROLL: .WORD 0
+PP_OLDRX: .WORD 0
+
+; ---- COMMAND_0: clear the screen and set the mode ----------------------
+COMMAND_0:	CALL	CLS_SCREEN_PP
+SET_MODE_PP:	MOV	#177010,R0
+		MOV	#CPU_MODE/2,@R0
+		MOV	@#177014,@#2372	; display control register
+		RETURN
+
+; ---- COMMAND_4: reload both palettes and the mode, no clear ------------
+; Reads five consecutive words out of CPU RAM: COLORWORD1..4 then
+; CPU_MODE (see src/gamevars.mac).
+COMMAND_4:	MOV	#177010,R0
+		MOV	#177014,R1
+		MOV	#COLORWORD1/2,@R0
+		MOV	@R1,@#2400	; space view, palette word 1
+		INC	@R0
+		MOV	@R1,@#2402	; space view, palette word 2
+		INC	@R0
+		MOV	@R1,@DASH_PAL1	; dashboard, palette word 1 - written
+		INC	@R0		;   through the element address NEW_TABLE
+		MOV	@R1,@DASH_PAL2	;   recorded when it built the table
+		INC	@R0
+		MOV	@R1,@#2372	; screen mode
+		RETURN
+
+; ---- COMMAND_6: fill whole lines with one colour in all planes ---------
+; CPU RAM: FILL_Y = first line, FILL_CNT = count, FILL_COLOR = 0..7.
+; K1_PP runs a command with interrupts off, which is fine for a short
+; one - but a whole-screen fill takes long enough that a key RELEASE
+; arriving during it would be lost, and its bit would then stay down for
+; ever.  Drop the priority so the keyboard handler can still get in;
+; K1_PP's RTI puts the old PSW back.
+COMMAND_6:	MTPS	#0
+		MOV	#177010,R0
+		MOV	#FILL_Y/2,@R0
+		MOV	@#177014,R2	; first line
+		INC	@R0
+		MOV	@#177014,R3	; line count
+		BEQ	39$
+		INC	@R0
+		MOV	@#177014,@#177016	; pixel colour
+		MOV	R2,R1
+		MUL	#80.,R1		; R1 odd - low product only
+		ADD	#100000,R1
+		MOV	#377,R4
+31$:		MOV	R1,@R0
+		MOV	#80.,R2		; 80 bytes per line in 640 mode
+32$:		MOV	R4,@#177024	; paint one octet in all planes
+		INC	@R0
+		SOB	R2,32$
+		ADD	#80.,R1
+		SOB	R3,31$
+		CLR	@#177016
+39$:		RETURN
+
+; ---- COMMAND_2: the overlay cache - PPU RAM to and from the window ------
+; OC_PPU, OC_WDS and OC_DIR in CPU RAM say which PPU address, how many
+; words, and which way: 0 copies the PPU's copy into the CPU's overlay
+; window at OVL_BASE, anything else copies the window out to the PPU.
+; CPU word A is plane address A/2, planes 1 and 2 (the low byte and the
+; high), so the pair at @#177010/@#177014 reaches the window a word at a
+; time.  Interrupts are let back in, as in COMMAND_6: the copy is tens of
+; milliseconds and the keyboard and the clock must not stop for it (the
+; tick saves and restores @#177010 itself).
+COMMAND_2:	MTPS	#0
+		MOV	#177010,R0
+		MOV	#OC_PPU/2,@R0
+		MOV	@#177014,R1	; the PPU address
+		INC	@R0
+		MOV	@#177014,R3	; words
+		INC	@R0
+		MOV	@#177014,R4	; which way
+		TST	R1		; 100000 up: plane 0, above the screen
+		BMI	5$
+		MOV	#OVL_BASE/2,@R0
+		MOV	#177014,R2
+		TST	R4
+		BNE	2$
+1$:		MOV	(R1)+,@R2	; the cache into the window
+		INC	@R0
+		SOB	R3,1$
+		RETURN
+2$:		MOV	@R2,(R1)+	; the window into the cache
+		INC	@R0
+		SOB	R3,2$
+		RETURN
+; Plane 0 above the screen (the part of the planes the display does not
+; reach; planes 1 and 2 there are the hull bank, and a write to
+; @#177012 leaves them alone) is a byte an address, so a word of the
+; window is two of its bytes, the low one first, and every byte wants
+; the address register set: R1 walks plane 0, R2 the window.
+5$:		MOV	#OVL_BASE/2,R2
+		TST	R4
+		BNE	7$
+6$:		MOV	R1,@R0		; plane 0 into the window
+		MOVB	@#177012,R5
+		BIC	#177400,R5
+		INC	R1
+		MOV	R1,@R0
+		MOVB	@#177012,R4
+		SWAB	R4
+		CLRB	R4
+		BIS	R4,R5
+		INC	R1
+		MOV	R2,@R0
+		MOV	R5,@#177014
+		INC	R2
+		SOB	R3,6$
+		RETURN
+7$:		MOV	R2,@R0		; the window into plane 0
+		MOV	@#177014,R5
+		MOV	R1,@R0
+		MOVB	R5,@#177012
+		INC	R1
+		MOV	R1,@R0
+		SWAB	R5
+		MOVB	R5,@#177012
+		INC	R1
+		INC	R2
+		SOB	R3,7$
+		RETURN
+
+; ---- COMMAND_3: the tune ------------------------------------------------
+; MUS_MODE in CPU RAM: 0 stops it, 1 plays it once, 2 round and round.
+; The tune plays on the SECOND AY chip (@#177362) from the PPU's own
+; clock (MUS_TICK), so the effects on the first neither stop it nor wait
+; for it, and it takes nothing from them.
+COMMAND_3:	MOV	#MUS_MODE/2,@#177010
+		MOV	@#177014,R0
+		MOV	R0,MUS_LOOP
+		DEC	MUS_LOOP	; nonzero: round again at the end
+		CLR	MUS_CNT
+		CLR	MUS_PTR
+		TST	R0
+		BEQ	9$
+		MOV	PC,R1
+		ADD	#MUSIC_TITLE-.,R1
+		MOV	R1,MUS_PTR
+9$:		RETURN
+
+MUS_PTR:	.WORD	0		; the next note, 0 = silent
+MUS_CNT:	.WORD	0		; ticks left on this one
+MUS_LOOP:	.WORD	0		; nonzero: the tune repeats
+MUS_PER:	.WORD	0		; the note's tone period
+MUS_VOL:	.WORD	0		; and its volume
+
+; MUS_TICK - one tick of the tune on the second chip's channel A: its
+; period in registers 0 and 1, its volume in 8, and the mixer with tone A
+; alone let through.  Silent, the volume is held at nought.  The notes are
+; (period, volume, frames) records (tools/music_gen.py).  Clobbers R0, R1.
+MUS_TICK:	MOV	MUS_PTR,R0
+		BEQ	9$
+		TST	MUS_CNT
+		BEQ	1$
+		DEC	MUS_CNT
+		BR	5$
+1$:		MOV	(R0)+,R1		; the period, or -1 at the end
+		CMP	R1,#-1
+		BNE	2$
+		TST	MUS_LOOP
+		BEQ	8$
+		MOV	PC,R0			; round again
+		ADD	#MUSIC_TITLE-.,R0
+		MOV	(R0)+,R1
+2$:		MOV	R1,MUS_PER
+		MOVB	(R0)+,R1
+		MOV	R1,MUS_VOL
+		MOVB	(R0)+,R1
+		BIC	#177400,R1
+		MOV	R1,MUS_CNT
+		MOV	R0,MUS_PTR
+5$:		MOV	#0,@#177362
+		MOVB	MUS_PER,@#177362
+		MOV	#1,@#177362
+		MOVB	MUS_PER+1,@#177362
+		MOV	#7,@#177362
+		MOVB	#76,@#177362		; tone A, nothing else
+		MOV	#8.,@#177362
+		MOVB	MUS_VOL,@#177362
+		RETURN
+8$:		CLR	MUS_PTR			; over
+9$:		MOV	#8.,@#177362		; silent
+		CLRB	@#177362
+		RETURN
+
+; SX_HOOK - the effects engine's address in this RAM (src/ppu_sfx.mac),
+; 0 until SFX_BOOT (src/sound.mac) has put it here.
+SX_HOOK:	.WORD	0
+
+; ---- COMMAND_7: how much does the PPU pay for the planes? ---------------
+; The CPU's BENCH, on this side: 20000 read-modify-writes of one plane
+; byte through @#177010/@#177014, then 20000 on a word of PPU RAM, each
+; timed in ticks of the 50 Hz clock and published into CPU RAM as
+; PPB_WIN and PPB_RAM.  Interrupts are let back in, as in COMMAND_6, so
+; that the clock runs while it does.  It XORs an even number of times,
+; so the screen is as it was.
+COMMAND_7:	MTPS	#0
+		MOV	PP_TICKS,R2		; start on a tick boundary
+1$:		CMP	PP_TICKS,R2
+		BEQ	1$
+		MOV	PP_TICKS,R2
+		MOV	#20000.,R3
+		MOV	#100000,R0		; the first byte of the screen
+		MOV	#1,R1
+2$:		MOV	R0,@#177010
+		XOR	R1,@#177014
+		SOB	R3,2$
+		MOV	PP_TICKS,R4
+		SUB	R2,R4
+		MOV	R4,-(SP)		; the window's ticks
+
+		MOV	PP_TICKS,R2
+		MOV	#20000.,R3
+		MOV	PC,R0
+		ADD	#PP_TICKS-.,R0		; a word of our own RAM
+		MOV	#1,R1
+3$:		MOV	R0,R4
+		XOR	R1,@R4
+		SOB	R3,3$
+		MOV	PP_TICKS,R4
+		SUB	R2,R4
+
+		MOV	#PPB_WIN/2,@#177010	; publish both
+		MOV	(SP)+,@#177014
+		INC	@#177010
+		MOV	R4,@#177014
+		RETURN
+
+RESET_COMP:	MTPS	#200
+		RESET
+		BIC	#20,@#177716
+		JMP	@#160300
+
+; ---- channel K1: the CPU's command port --------------------------------
+K1_PP:		MTPS	#340
+		MOV	@#177010,-(SP)
+		MOV	@#177016,-(SP)
+		MOV	R0,-(SP)
+		MOV	R1,-(SP)
+		MOV	R2,-(SP)
+		MOV	R3,-(SP)
+		MOV	R4,-(SP)
+		MOV	R5,-(SP)
+
+		MOVB	@#177062,R1	; the command byte from the CPU
+		ASL	R1
+		MOV	PC,R2
+		ADD	#PP_COMMANDS-.,R2
+		ADD	R1,R2
+		CALL	@(R2)+
+
+		MOV	(SP)+,R5
+		MOV	(SP)+,R4
+		MOV	(SP)+,R3
+		MOV	(SP)+,R2
+		MOV	(SP)+,R1
+		MOV	(SP)+,R0
+		MOV	(SP)+,@#177016
+		MOV	#PP_BUSY/2,@#177010
+		MOV	PC,@#177014	; tell the CPU the command is done
+		MOV	(SP)+,@#177010
+		RTI
+
+		.WORD	RESET_COMP	; command -1
+PP_COMMANDS:	.WORD	COMMAND_0,COMMAND_1,COMMAND_2,COMMAND_3
+		.WORD	COMMAND_4,COMMAND_0,COMMAND_6,COMMAND_7
+		.WORD	0
+
+; ---- 50 Hz line clock: publish the keyboard word and the vsync flag ----
+PP_V100:	MOV	R0,-(SP)
+		MOV	R1,-(SP)
+		MOV	@#177010,-(SP)
+		INC	PP_TICKS	; the PPU's own clock, for PP_BENCH
+		MOV #RT_IOBUSY/2,@#177010
+		TST @#177014
+		BNE PP_IO_TICK ; firmware disk transfers need short interrupt latency
+		TST	(PC)+
+PP_VSYNC_FLAG:	.WORD	0
+		BEQ	PP_IO_TICK
+		MOV	#PP_KEYS_DATA/2,@#177010
+		MOV	PP_KEYS_DATA,@#177014
+		INC	@#177010
+		MOV	PC,@#177014	; PP_VSYNC_READY in CPU RAM
+		INC	@#177010
+		MOV	PP_LASTKEY,@#177014
+		INC	@#177010
+		MOV	PP_KEYS2_DATA,@#177014	; the second key word
+		MOV	#PPB_TICKS/2,@#177010	; and its clock, for the bench
+		MOV	PP_TICKS,@#177014
+ MOV #CPU_VSYNC/2,@#177010
+ MOV PP_TICKS,@#177014
+ MOV #FRAMES/2,@#177010
+ INC @#177014
+ CALL PP_INPUT
+
+		MOV	SX_HOOK,R0		; Legend's effects on the first AY
+		BEQ	4$			;   chip, once the boot has handed
+		CALL	@R0			;   the engine over (src/ppu_sfx.mac)
+4$:		CALL	MUS_TICK		; and the tune on the second
+
+PP_IO_TICK:
+0$:		TST	@#7130		; keep the floppy motor bookkeeping alive
+		BEQ	3$
+		DEC	@#7130
+		BNE	3$
+		MOV	@#7132,R0
+		CALL	@R0
+
+; ---- the rasteriser ----------------------------------------------------
+; Every tick, if a drain is not already running underneath this
+; interrupt, look at the ring: anything waiting is drawn, here, with the
+; priority dropped so that the keyboard, the CPU's commands and this
+; very clock keep running while it does.  A tick that lands during a
+; drain does its publishing above and leaves the drawing to the drain
+; it interrupted.  The drain runs until the ring is empty - which in
+; flight it never is for long - so the latency is a tick to start and
+; nothing after that.
+3$:		TST	PP_DRAWING
+		BNE	2$
+		MOV	#RING_HEAD/2,@#177010
+		MOV	@#177014,R0	; what the CPU has written
+		CMP	R0,PP_TAIL	; ... against what is drawn
+		BEQ	2$
+		MOV	R0,PP_HEAD
+		MOV	#1,PP_DRAWING
+		MOV	R2,-(SP)
+		MOV	R3,-(SP)
+		MOV	R4,-(SP)
+		MOV	R5,-(SP)
+		MOV	PP_TICKS,PP_T0
+		MTPS	#0
+		CALL	PP_DRAIN
+		MTPS	#340		; no tick between the flag and the RTI
+		CLR	PP_DRAWING
+		MOV	PP_TICKS,R0	; how long that took, in ticks, kept
+		SUB	PP_T0,R0	;   as a running total in CPU RAM: the
+		ADD	R0,PP_BUSYT	;   measure of how busy this side is
+		MOV	#PPB_BUSY/2,@#177010
+		MOV	PP_BUSYT,@#177014
+		MOV	(SP)+,R5
+		MOV	(SP)+,R4
+		MOV	(SP)+,R3
+		MOV	(SP)+,R2
+2$:		MOV	(SP)+,@#177010
+		MOV	(SP)+,R1
+		MOV	(SP)+,R0
+		RTI
+
+; PP_DRAIN - draw records from PP_TAIL up to PP_HEAD, then look again;
+; return when the ring is empty.  A record is read through the window -
+; the three words of a walk (the head of src/gfx.mac) - and opened out
+; into the six PP_LINE_RUN reads, and PP_TAIL is published back into CPU
+; RAM after every record, which is what the CPU's RING_WAIT and its
+; full-ring wait watch.
+PP_DRAIN:	MOV	PP_TAIL,R0
+		ASR	R0		; byte offset -> the window's word address
+		ADD	#RING/2,R0
+		MOV	R0,@#PADDR
+		MOV	@#PDATA,R1	; dx, its sign and the start bit
+		INC	@#PADDR
+		MOV	@#PDATA,R2	; dy and its sign
+		INC	@#PADDR
+		MOV	@#PDATA,PP_LADDR
+		MOV	#1,R3		; the x step
+		TST	R1
+		BPL	2$
+		MOV	#-1,R3
+2$:		MOV	R3,PP_LSX
+		MOV	R1,R0
+		BIC	#176000,R1
+		MOV	R1,PP_LADX
+		SWAB	R0		; the bit, bits 10-12 down to 0-2,
+		ASR	R0		;   and the mask out of PP_BITS
+		ASR	R0
+		BIC	#177770,R0
+		ADD	PPBT,R0
+		MOVB	@R0,R0
+		BIC	#177400,R0	; MOVB sign-extends the top bit
+		MOV	R0,PP_LMASK
+		TST	R2
+		BNE	35$
+		TST	PP_LSX
+		BMI	35$
+		MOV	R0,R1		; flat rightward spans need no Bresenham state
+		MOV	PP_LADDR,R0
+		MOV	PP_LADX,R4
+		CALL	PP_FLAT_R
+		BR	4$
+35$:		MOV	#SCRWB,R3	; the y step
+		TST	R2
+		BPL	3$
+		MOV	#-SCRWB,R3
+		BIC	#100000,R2
+3$:		MOV	R3,PP_LSY
+		MOV	R2,PP_LADY
+		CALL	PP_LINE_RUN
+4$:		MOV	PP_TAIL,R0
+		ADD	#RECB,R0
+		CMP	R0,#RING_BYTES
+		BLO	1$
+		CLR	R0
+1$:		MOV	R0,PP_TAIL
+		MOV	#RING_TAIL/2,@#PADDR
+		MOV	R0,@#PDATA	; the CPU can see this one is drawn
+		CMP	R0,PP_HEAD
+		BNE	PP_DRAIN
+		MOV	#RING_HEAD/2,@#PADDR	; caught up: has more arrived?
+		MOV	@#PDATA,R1
+		MOV	R1,PP_HEAD
+		CMP	R1,R0
+		BNE	PP_DRAIN
+		RETURN
+
+PP_TAIL:	.WORD	0		; byte offset of the next record to draw
+PP_HEAD:	.WORD	0		; the CPU's RING_HEAD, as last read
+PP_DRAWING:	.WORD	0		; a drain is running
+PP_T0:		.WORD	0		; when it started, and the total
+PP_BUSYT:	.WORD	0		;   of all of them, in ticks
+PPAV_R:		.WORD	0		; where the two tables below landed
+PPAV_L:		.WORD	0
+PPBT:		.WORD	0		; ... and PP_BITS
+PP_BITS:	.BYTE	1,2,4,10,20,40,100,200	; a bit's mask, by its number
+PP_LADX:	.WORD	0		; the walk, in record order
+PP_LADY:	.WORD	0
+PP_LSX:		.WORD	0
+PP_LSY:		.WORD	0
+PP_LADDR:	.WORD	0
+PP_LMASK:	.WORD	0
+PP_LDXY:	.WORD	0		; PP_LADX - PP_LADY, what the span loop
+					;   adds back after every scanline
+; How many pixels lie between a bit and each end of its plane byte, read
+; by the span loop when a run crosses into the next byte.  Indexed by
+; the MASK, because the mask is what the walk carries; PP_START fills
+; them.
+PP_AVAIL_R:	.BLKB	129.		; the bit itself to the byte's last pixel
+PP_AVAIL_L:	.BLKB	129.		; ... and back to its first
+		.EVEN
+
+; =========================================================================
+; The pixel loops, moved here from src/gfx.mac word for word, with the
+; PPU's register pair in place of the CPU's.  Read the commentary there
+; on why they are shaped as they are; what follows is the code.
+; Everything they touch is reached PC-relative, because this block is
+; copied to wherever the PPU's firmware puts it.
+; =========================================================================
+; R0 address, R1 starting mask, R4 dx. Includes both endpoints, even
+; for a single pixel. The common span emitter returns when R3 is zero.
+PP_FLAT_R:	TST	R4
+		BEQ	1$
+		INC	R4
+		CLR	R3
+		JMP	PP_LSPAN_RE
+1$:		MOV	R0,@#PADDR
+		XOR	R1,@#PDATA
+		RETURN
+
+PP_LINE_RUN:	MOV	PP_LADDR,R0
+		MOV	PP_LMASK,R1
+		MOV	PP_LADY,R5
+		CMP	PP_LADX,R5
+		BLT	PP_LINE_Y
+		CMP	PP_LADX,#16.		; a short segment can never win back the
+		BLT	1$			; span loop's DIV, and this test is two
+					; instructions where the ratio below is
+					; five - which tells, because every
+					; segment in the frame pays for it
+		ASL	R5			; eight or more pixels a scanline: the
+		ASL	R5			; span loop below is cheaper than
+		ASL	R5			; walking them a bit at a time, and
+		CMP	PP_LADX,R5			; below that its DIV and its mask
+		BGE	PP_LINE_SPAN		; arithmetic cost more than they save
+
+; ---- x is the major axis: accumulate whole bytes ------------------------
+; Two loops, one per direction, rather than one loop testing PP_LSX every
+; pixel: that test was a memory read and a branch on the hottest path in
+; the program, and dropping it is worth about a quarter of the time spent
+; drawing lines.
+1$:		MOV	PP_LADX,R3
+		INC	R3		; pixels to draw
+		MOV	PP_LADX,R2
+		ASR	R2		; error accumulator
+		MOV	PP_LADY,R5		; the hot minor-axis step
+		CLR	R4		; bits pending in the current byte
+		TST	PP_LSX
+		BLT	PP_LINE_XN
+
+; ---- walking right ------------------------------------------------------
+PP_LINE_XP:	BIS	R1,R4
+		DEC	R3
+		BEQ	19$
+		ASLB	R1		; next pixel, one bit further left.  A
+		BCC	13$		; BYTE shift carries the bit out of the
+				; mask when it leaves the plane byte,
+				; which is the same test the compare
+				; against 400 was making and one 2-word
+				; instruction cheaper - on the hottest
+				; path in the program.  It also keeps
+				; the mask inside its byte, where a word
+				; shift walked it into the high half and
+				; so into plane 2.
+		MOV	R0,@#PADDR	; that byte is finished
+		XOR	R4,@#PDATA
+		CLR	R4
+		MOV	#1,R1
+		INC	R0
+13$:		SUB	R5,R2		; step y when the error runs out
+		BGE	PP_LINE_XP
+		ADD	PP_LADX,R2
+		TST	R4		; a new line means a new address
+		BEQ	14$
+		MOV	R0,@#PADDR
+		XOR	R4,@#PDATA
+		CLR	R4
+14$:		ADD	PP_LSY,R0
+		BR	PP_LINE_XP
+19$:		MOV	R0,@#PADDR
+		XOR	R4,@#PDATA
+		RETURN
+
+; ---- walking left -------------------------------------------------------
+PP_LINE_XN:	BIS	R1,R4
+		DEC	R3
+		BEQ	29$
+		ASR	R1
+		BNE	23$
+		MOV	R0,@#PADDR
+		XOR	R4,@#PDATA
+		CLR	R4
+		MOV	#200,R1
+		DEC	R0
+23$:		SUB	R5,R2
+		BGE	PP_LINE_XN
+		ADD	PP_LADX,R2
+		TST	R4
+		BEQ	24$
+		MOV	R0,@#PADDR
+		XOR	R4,@#PDATA
+		CLR	R4
+24$:		ADD	PP_LSY,R0
+		BR	PP_LINE_XN
+29$:		MOV	R0,@#PADDR
+		XOR	R4,@#PDATA
+		RETURN
+
+; ---- y is the major axis: every pixel is on its own line ---------------
+PP_LINE_Y:		MOV	PP_LADY,R3		; pixels after the first, which is
+		MOV	PP_LADY,R2		; drawn outside the loop so that SOB
+		ASR	R2		; can close it
+		MOV	PP_LADX,R5
+		MOV	PP_LSY,R4		; the y step, out of memory: it is read
+				; once a pixel down here
+		TST	R3
+		BEQ	29$
+20$:		MOV	R0,@#PADDR
+		XOR	R1,@#PDATA
+		ADD	R4,R0		; step y
+		SUB	R5,R2		; and step x when the error runs out
+		BGE	28$
+		ADD	PP_LADY,R2
+		TST	PP_LSX
+		BLT	22$
+		ASLB	R1		; as in PP_LINE_XP: the carry says the mask
+		BCC	28$		; has left the byte
+		MOV	#1,R1
+		INC	R0
+		BR	28$
+22$:		ASR	R1
+		BNE	28$
+		MOV	#200,R1
+		DEC	R0
+28$:		SOB	R3,20$
+29$:		MOV	R0,@#PADDR	; the last pixel, which the loop above
+		XOR	R1,@#PDATA	; steps up to but does not draw
+		RETURN
+
+
+; =========================================================================
+; PP_LINE_SPAN - the same line, a run at a time.
+;
+; A line of slope under a quarter puts four or more pixels on every
+; scanline it touches, and PP_LINE_XP pays seven instructions for each one.
+; This works the whole run out at once and paints it with one XOR per
+; plane byte instead of one per pixel.
+;
+; It is the SAME recurrence, which it has to be: every segment is drawn
+; twice, once to put it on the screen and once to rub it out, so a run
+; loop that put a pixel anywhere else would leave dirt behind.  Walking
+; the error one pixel at a time until it goes negative arrives at
+;
+;       run = e / dy + 1        e' = e mod dy + dx - dy
+;
+; so one DIV replaces the walk.  The runs of the last scanline overrun
+; the segment (they are the runs of the line the segment is a piece of),
+; so the pixel count caps them - and it is the loop's end as well, which
+; is what leaves a register free for the mask arithmetic.
+;
+; A run that stays inside its plane byte needs no table at all: the mask
+; shifted by the run is the mask the run ends on, and the bits between
+; the two ARE the run.  One that does not goes the long way round -
+; fill to the end of the byte, whole bytes, then the tail.
+;
+; R0 = plane byte, R1 = bit mask, R2 = scratch, R3 = pixels left,
+; R4 = the run, R5 = the error.
+; =========================================================================
+PP_LINE_SPAN:	MOV	PP_LADX,R3
+		INC	R3			; pixels to draw
+		MOV	PP_LADX,R5
+		ASR	R5			; the error the bit loop starts with
+		MOV	PP_LADX,R4
+		SUB	PP_LADY,R4
+		MOV	R4,PP_LDXY			; what each scanline adds back
+		TST	PP_LADY
+		BEQ	PP_LSPAN_F			; flat: one run, and no error at all
+		TST	PP_LSX
+		BLT	PP_LSPAN_L
+		BR	PP_LSPAN_R
+
+; A flat line is the whole segment in one run, which is what the spilling
+; half of the emitter is for.
+PP_LSPAN_F:	MOV	R3,R4
+		CLR	R3
+		TST	PP_LSX
+		BLT	1$
+		JMP	PP_LSPAN_RE
+1$:		JMP	PP_LSPAN_LE
+
+; ---- walking right ------------------------------------------------------
+PP_LSPAN_R:	CLR	R4			; R4:R5 = the error, divided by dy
+		DIV	PP_LADY,R4			; R4 = run - 1, R5 = what is left over
+		ADD	PP_LDXY,R5			; the error the next scanline starts on
+		INC	R4
+		CMP	R4,R3			; the last run is only what remains
+		BLE	1$
+		MOV	R3,R4
+1$:		SUB	R4,R3
+
+PP_LSPAN_RE:	CMP	R4,#8.			; a run longer than a byte always spills
+		BGT	30$
+		MOV	R1,R2
+		ASH	R4,R2			; the mask the run ends on
+		CMP	R2,#400			; UNSIGNED: a run of 8 from bit 7
+		BHI	30$			; shifts the mask to 100000, which
+					; a signed compare reads as small.
+					; This drew the run a byte to the
+					; left, in plane 2 as well, and the
+					; rest of the segment not at all
+		SUB	R2,R1			; the bits between the two masks are
+		NEG	R1			; exactly the run
+		MOV	R0,@#PADDR
+		XOR	R1,@#PDATA
+		MOV	R2,R1
+		CMP	R1,#400			; it ended on the byte's last pixel
+		BLO	2$			; (unsigned, for the same reason)
+		MOV	#1,R1
+		INC	R0
+2$:		TST	R3			; the segment may end mid-scanline
+		BEQ	9$
+		ADD	PP_LSY,R0
+		BR	PP_LSPAN_R
+9$:		RETURN
+
+30$:		MOV	R1,R2			; to the end of this byte first:
+		ADD	PPAV_R,R2		;   the table's PPU address is in a
+		MOVB	@R2,R2			;   word, because this block cannot
+		BIC	#177400,R2		;   index off an assembled address
+		SUB	R2,R4			; what is left for the bytes after it
+		MOV	R1,R2
+		NEG	R2			; bits a..7, out of the mask itself
+		BIC	#177400,R2
+		MOV	R0,@#PADDR
+		XOR	R2,@#PDATA
+		INC	R0
+		MOV	#377,R2			; then whole bytes, eight at a time
+31$:		CMP	R4,#8.
+		BLT	32$
+		MOV	R0,@#PADDR
+		XOR	R2,@#PDATA
+		INC	R0
+		SUB	#8.,R4
+		BR	31$
+32$:		MOV	#1,R1			; and the tail, in the byte the next
+		TST	R4			; scanline starts in
+		BEQ	2$
+		MOV	#1,R2
+		ASH	R4,R2
+		MOV	R2,R1			; the mask after the tail
+		DEC	R2			; bits 0..run-1
+		MOV	R0,@#PADDR
+		XOR	R2,@#PDATA
+		BR	2$
+
+; ---- walking left -------------------------------------------------------
+PP_LSPAN_L:	CLR	R4
+		DIV	PP_LADY,R4
+		ADD	PP_LDXY,R5
+		INC	R4
+		CMP	R4,R3
+		BLE	1$
+		MOV	R3,R4
+1$:		SUB	R4,R3
+
+PP_LSPAN_LE:	CMP	R4,#8.
+		BGT	30$
+		MOV	R1,R2
+		NEG	R4			; ASH shifts right on a negative count
+		ASH	R4,R2			; the mask the run ends on, walking down
+		NEG	R4			; the run is wanted again below
+		TST	R2			; the test has to come off the mask, not
+		BEQ	30$			; off the NEG that restored the run
+		SUB	R2,R1			; twice the gap between the two masks
+		ASL	R1			; is the run
+		MOV	R0,@#PADDR
+		XOR	R1,@#PDATA
+		MOV	R2,R1
+2$:		TST	R3
+		BEQ	9$
+		ADD	PP_LSY,R0
+		BR	PP_LSPAN_L
+9$:		RETURN
+
+30$:		MOV	R1,R2			; back to the start of this byte first
+		ADD	PPAV_L,R2
+		MOVB	@R2,R2
+		BIC	#177400,R2
+		SUB	R2,R4
+		MOV	R1,R2			; bits 0..a is twice the mask, less one
+		ASL	R2
+		DEC	R2
+		MOV	R0,@#PADDR
+		XOR	R2,@#PDATA
+		DEC	R0
+		MOV	#377,R2
+31$:		CMP	R4,#8.
+		BLT	32$
+		MOV	R0,@#PADDR
+		XOR	R2,@#PDATA
+		DEC	R0
+		SUB	#8.,R4
+		BR	31$
+32$:		MOV	#200,R1			; the tail sits in the byte's high bits
+		TST	R4
+		BEQ	2$
+		MOV	#400,R2
+		NEG	R4
+		ASH	R4,R2			; the bit just below the tail
+		MOV	R2,R1
+		ASR	R1			; where the next scanline starts
+		NEG	R2			; and the tail itself
+		BIC	#177400,R2
+		MOV	R0,@#PADDR
+		XOR	R2,@#PDATA
+		BR	2$
+
+
+
+; ---- keyboard: one bit per key in PP_KEYS_DATA, and a second word ------
+; A make code sets its bits in both words through the two ON tables, a
+; release code (bit 7 and the matrix ROW) clears its row's bits through
+; the two OFF tables.  The walk is a subroutine: the PPU has a stack, and
+; a CALL is PC-relative, so the block stays position-independent.
+PP_KEYB:	MOV	R0,-(SP)
+		MOV	R1,-(SP)
+		MOV	R2,-(SP)
+		MOVB	@#177702,R0
+		MOV	R0,PP_LASTKEY	; published for tools/keymap.py
+		BIC	#177400,PP_LASTKEY
+		TSTB	R0		; ... and the flags put back, because the
+		BMI	PP_KEY_OFF	; branch reads bit 7 as "key released"
+
+PP_KEY_ON:	MOV	PP_KEYS_DATA,R1
+		MOV	PC,R2
+		ADD	#KEYON_CODES-.,R2
+		CALL	KEY_SET
+		MOV R1,R2
+		BIC PP_KEYS_DATA,R2
+		BIS R2,PP_PENDING
+		MOV	R1,PP_KEYS_DATA
+		MOV	PP_KEYS2_DATA,R1
+		MOV	PC,R2
+		ADD	#KEYON2_CODES-.,R2
+		CALL	KEY_SET
+		MOV R1,R2
+		BIC PP_KEYS2_DATA,R2
+		BIS R2,PP_PENDING2
+		BR	SAVE_KEYCODES
+
+PP_KEY_OFF:	BIC	#177600,R0	; the row
+		MOV	PP_KEYS_DATA,R1
+		MOV	PC,R2
+		ADD	#KEYOFF_CODES-.,R2
+		CALL	KEY_CLR
+		MOV	R1,PP_KEYS_DATA
+		MOV	PP_KEYS2_DATA,R1
+		MOV	PC,R2
+		ADD	#KEYOFF2_CODES-.,R2
+		CALL	KEY_CLR
+SAVE_KEYCODES:	MOV	R1,PP_KEYS2_DATA
+		MOV	(SP)+,R2
+		MOV	(SP)+,R1
+		MOV	(SP)+,R0
+		RTI
+
+; KEY_SET / KEY_CLR - walk the (code, bits) table at R2 for the code in
+; R0 and set or clear its bits in R1.  A table ends on bits of 0.
+KEY_SET:	CMP	(R2)+,R0
+		BEQ	1$
+		TST	(R2)+
+		BNE	KEY_SET
+		RETURN
+1$:		BIS	(R2)+,R1
+		BR	KEY_SET
+KEY_CLR:	CMP	(R2)+,R0
+		BEQ	1$
+		TST	(R2)+
+		BNE	KEY_CLR
+		RETURN
+1$:		BIC	(R2)+,R1
+		BR	KEY_CLR
+
+
+; Keyboard IRQ records edges even during RT-11 I/O. The timer publishes
+; pending packets after I/O, with one producer/consumer and a flush handshake.
+PP_INPUT:
+ MOV PP_KEYS_DATA,R0
+ MOV #KEYS/2,@#177010
+ MOV R0,@#177014
+ MOV PP_KEYS2_DATA,R1
+ MOV #KEYS2/2,@#177010
+ MOV R1,@#177014
+ MOV #KB_FLUSH/2,@#177010
+ MOV @#177014,R0
+ CMP R0,PP_FLUSH
+ BEQ 1$
+ MOV R0,PP_FLUSH
+ CLR PP_PENDING
+ CLR PP_PENDING2
+ MOV #KB_ACK/2,@#177010
+ MOV PP_SEQ,@#177014
+ MOV #KB_FLUSHED/2,@#177010
+ MOV R0,@#177014
+ RETURN
+1$: MOV #KB_ACK/2,@#177010
+ CMP @#177014,PP_SEQ
+ BNE 9$
+ MOV PP_PENDING,R0
+ BIS PP_PENDING2,R0
+ BEQ 9$
+ MOV #KEYS_ACC/2,@#177010
+ MOV PP_PENDING,@#177014
+ MOV #KEYS2_ACC/2,@#177010
+ MOV PP_PENDING2,@#177014
+ CLR PP_PENDING
+ CLR PP_PENDING2
+ INC PP_SEQ
+ MOV #KB_SEQ/2,@#177010
+ MOV PP_SEQ,@#177014
+9$: RETURN
+PP_PENDING: .WORD 0
+PP_PENDING2: .WORD 0
+PP_SEQ: .WORD 0
+PP_FLUSH: .WORD 0

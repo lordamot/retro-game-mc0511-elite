@@ -1,0 +1,212 @@
+; =========================================================================
+; ovl_pause.mac - the pause menu (Cmd_PauseInGame, Menu/PauseInGame.a80)
+; and the launch prompt (BeginLaunch, Engine/eJumpLow.a80).  AN OVERLAY
+; (src/ovl.list), called through its first word: R0 = 0 the menu, until
+; ПРОБЕЛ or the pause key again (PAUSE in src/main.mac redraws what was
+; under it); R0 = 1 the prompt, C clear to launch.
+;
+; Legend's letters are the PC's (Q, S, B, Y ...), and a PC keyboard under
+; `make run` types by position, so each option is the УКНЦ letter on the
+; key where Legend's letter is: Q is Й, S is Ы, and so on (KEYBOARD.md).
+; They are read as raw scancodes, as a name is, not through the key file.
+; Legend's K (the joystick) and L (the locator, a second scanner) are not
+; here; G was the General Sound card.
+; =========================================================================
+
+		JMP	PZ_ENTRY		; the overlay's entry, at OVL_BASE
+
+PZ_ENTRY:	TST	R0
+		BEQ	PZ_MENU
+		JMP	PZ_LAUNCH
+
+PZ_X	= 14.			; the menu's columns: the letter, the option,
+PZ_XT	= 17.			;   its state
+PZ_XS	= 53.
+PZ_Y0	= 36.			; the first option's line, and the step
+PZ_DY	= 12.
+
+; the options: scancode, label, the byte it lives in and the bit - or a
+; byte of 0 and the routine the key runs.  OPTIONS' low byte holds the
+; OPT_* bits; the auto-ECM's and the auto-eject's are bit 5 of their own
+; device bytes, which the pause menu flips whether they are fitted or
+; not, as Legend's does.
+PZ_TAB:	.WORD	27, S_PZ_NEW, 0, PZ_NEW			; Й (Q)
+	.WORD	70, S_PZ_SOUND, OPTIONS, OPT_SOUND	; Ы (S)
+	.WORD	73, S_PZ_INV, OPTIONS, OPT_INV		; И (B)
+	.WORD	54, S_PZ_INVUD, OPTIONS, OPT_INVUD	; Н (Y)
+	.WORD	52, S_PZ_INERT, OPTIONS, OPT_INERT	; К (R)
+	.WORD	71, S_PZ_STEADY, OPTIONS, OPT_STEADY	; В (D)
+	.WORD	51, S_PZ_AUTOECM, P_AUTOECM, AUTOECM_ARMED ; У (E)
+	.WORD	157, S_PZ_AUTOPOD, P_AUTOPOD, AUTOECM_ARMED ; З (P)
+	.WORD	72, S_PZ_WITCH, OPTIONS, OPT_WITCH	; А (F)
+	.WORD	111, S_PZ_EASY, OPTIONS, OPT_EASY	; С (C)
+	.WORD	55, S_PZ_LAUNCH, OPTIONS, OPT_LAUNCH	; Г (U)
+	.WORD	47, S_PZ_TURRET, 0, PZ_TURRET		; Ф (A)
+	.WORD	110, PZ_EXIT_TEXT, 0, RT_EXIT	; Ч (PC X)
+	.WORD	0
+PZ_EXIT_TEXT: .ASCIZ /WYHOD W OS/
+	.EVEN
+PZ_LETTERS:	.ASCII	/JYINKWUZASGF^/	; the same keys in KOI-7: Й Ы И Н
+		.EVEN			;   К В У З А С Г Ф
+
+PZ_LAST:	.WORD	0		; the last raw code seen
+PZ_I:		.WORD	0
+
+; =========================================================================
+; PZ_MENU - draw the menu, then a key at a time until it is left.
+; =========================================================================
+PZ_MENU:	MOV	PP_LASTKEY,PZ_LAST	; the key that opened it is not
+		CALL	PAGE_CLEAR		;   a choice
+		MOV	#31.,TX
+		MOV	#12.,TY
+		MOV	#S_PZ_TITLE,R1
+		CALL	PUTS2
+		CLR	PZ_I
+		MOV	#PZ_TAB,R5
+1$:		TST	@R5
+		BEQ	2$
+		MOV	R5,-(SP)
+		CALL	PZ_LINE
+		MOV	(SP)+,R5
+		ADD	#8.,R5
+		INC	PZ_I
+		BR	1$
+2$:		MOV	#24.,TX
+		MOV	#204.,TY
+		MOV	#S_PZ_GO,R1
+		CALL	PUTS
+		CALL	INPUT_FLUSH
+
+10$:		CALL	VSYNC
+		CALL	INPUT_POLL
+		BIT	#K_PAUSE,KEYS_EDGE	; the pause key again, whichever
+		BNE	90$			;   it is, or the space bar
+		MOV	PP_LASTKEY,R0
+		CMP	R0,PZ_LAST
+		BEQ	10$
+		MOV	R0,PZ_LAST
+		BIT	#200,R0			; a release
+		BNE	10$
+		CMP	R0,#113			; ПРОБЕЛ - on with the game
+		BEQ	90$
+		CLR	PZ_I
+		MOV	#PZ_TAB,R5
+11$:		TST	@R5
+		BEQ	10$
+		CMP	R0,@R5
+		BEQ	12$
+		ADD	#8.,R5
+		INC	PZ_I
+		BR	11$
+12$:		MOV	4(R5),R2		; a routine, or a bit to flip
+		BNE	13$
+		CALL	PZ_RUN
+		BR	10$
+13$:		MOVB	@R2,R0
+		MOV	6(R5),R3
+		XOR	R3,R0
+		MOVB	R0,@R2
+		MOV	R5,-(SP)
+		CALL	PZ_STATE
+		MOV	(SP)+,R5
+		CMP	6(R5),#OPT_SOUND	; the sound: off is off at once,
+		BNE	14$			;   and on is heard
+		CMP	4(R5),#OPTIONS
+		BNE	14$
+		CALL	SFX_STOP
+		CLR	R0
+		CALL	TUNE
+14$:		MOV	#FX_PAUSE,R0		; Legend's setFX_InPause
+		CALL	SFX_PLAY
+		BR	10$
+90$:		JMP	SFX_STOP
+
+; PZ_LINE - option PZ_I, the entry at R5: its letter, its name, its
+; state.  Clobbers R0..R5.
+PZ_LINE:	MOV	#PZ_X,TX
+		CALL	PZ_ROW
+		MOV	PZ_I,R0
+		MOVB	PZ_LETTERS(R0),R0
+		MOV	R5,-(SP)
+		CALL	PUTC
+		MOV	(SP)+,R5
+		MOV	#PZ_XT,TX
+		MOV	2(R5),R1
+		MOV	R5,-(SP)
+		CALL	PUTS
+		MOV	(SP)+,R5
+		TST	4(R5)
+		BEQ	9$
+		JMP	PZ_STATE
+9$:		RETURN
+
+; PZ_STATE - ВКЛ. or ВЫКЛ. for the entry at R5, on line PZ_I.
+; Clobbers R0..R5.
+PZ_STATE:	CALL	PZ_ROW
+		MOV	R5,-(SP)
+		MOV	#PZ_XS,R0
+		MOV	TY,R1
+		MOV	#5,R2
+		CALL	TEXT_CLEAR
+		MOV	(SP)+,R5
+		MOV	#PZ_XS,TX
+		MOV	#S_PZ_OFF,R1
+		BITB	6(R5),@4(R5)
+		BEQ	1$
+		MOV	#S_PZ_ON,R1
+1$:		JMP	PUTS
+
+; PZ_ROW - TY for line PZ_I.  Clobbers R0, R1.
+PZ_ROW:		MOV	PZ_I,R1
+		MUL	#PZ_DY,R1		; R1 odd: the low word, small
+		ADD	#PZ_Y0,R1
+		MOV	R1,TY
+		RETURN
+
+; PZ_RUN - the routine of the entry at R5 (the assembler will have no
+; JMP through a register: push the address and return to it).
+PZ_RUN:		MOV	6(R5),-(SP)
+		RETURN
+
+; Q: the game again from the title, with no question (NewGame) - the
+; commander as the disk last had him, which is what the chooser reads.
+PZ_NEW:		CALL	SFX_STOP
+		JMP	MAIN_RESTART
+
+; A: the turrets turn (RotateLasers); TURRET_KEY says so, or buzzes.
+PZ_TURRET:	JMP	TURRET_KEY
+
+; =========================================================================
+; PZ_LAUNCH - НАЧАТЬ РАССТЫКОВКУ? (Msg_Launch): Н yes, Т no, Ф always -
+; which launches and turns the question off.  PC Y, N and A.  No puts
+; the bay's page back.  C clear to launch.
+; =========================================================================
+PZ_LAUNCH:	MOV	PP_LASTKEY,PZ_LAST
+		CALL	PAGE_CLEAR
+		MOV	#3,TX			; 37 characters, doubled
+		MOV	#80.,TY
+		MOV	#S_PZ_ASK,R1
+		CALL	PUTS2
+		MOV	#25.,TX
+		MOV	#104.,TY
+		MOV	#S_PZ_YNA,R1
+		CALL	PUTS
+1$:		CALL	VSYNC
+		MOV	PP_LASTKEY,R0
+		CMP	R0,PZ_LAST
+		BEQ	1$
+		MOV	R0,PZ_LAST
+		CMP	R0,#54			; Н - yes
+		BEQ	8$
+		CMP	R0,#47			; Ф - always
+		BEQ	7$
+		CMP	R0,#114			; Т - no
+		BEQ	2$
+		CMP	R0,#4			; and СТОП means no as well
+		BNE	1$
+2$:		CALL	DRAW_DOCKED
+		SEC
+		RETURN
+7$:		BICB	#OPT_LAUNCH,OPTIONS
+8$:		CLC
+		RETURN

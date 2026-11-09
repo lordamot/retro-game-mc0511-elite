@@ -1,0 +1,75 @@
+; A shot lives for one frame.  Record the target slot (or -1 for the
+; commander) in the AI, then draw after all hulls have been projected.
+; The muzzle is Legend's laser vertex, through the same Q14 pipeline.
+NP_I:		.WORD	0
+NP_P:		.WORD	0
+NP_X:		.WORD	0
+NP_Y:		.WORD	0
+NPC_CLEAR:	MOV	#NPSHOT,R0
+		MOV	#NUNIV,R1
+1$:		CLR	(R0)+
+		SOB	R1,1$
+		RETURN
+NPC_PLAYER:	MOV	AI_I,R0
+		ASL	R0
+		MOV	#-1,NPSHOT(R0)
+		RETURN
+NPC_TARGET:	MOV	AI_I,R0
+		ASL	R0
+		MOV	R4,NPSHOT(R0)
+		RETURN
+NPC_BEAMS:	CLR	NP_I
+		MOV	#UNIV,NP_P
+1$:		MOV	NP_I,R0
+		TST	NPSHOT(R0)
+		BEQ	2$
+		CALL	NPC_DRAW
+2$:		ADD	#U.SIZE,NP_P
+		ADD	#2,NP_I
+		CMP	NP_I,#NUNIV*2
+		BLT	1$
+		RETURN
+NPC_DRAW:	MOV	NP_P,R5
+		TST	U.TYPE(R5)
+		BEQ	9$
+		TST	U.SX(R5)
+		BEQ	9$
+		MOV	U.TYPE(R5),R0
+		DEC	R0
+		MOVB	SHIP_LVERT(R0),R1
+		BIC	#177400,R1
+		ASL	R0
+		MOV	SHIP_TABLE(R0),R4
+		BEQ	9$
+		MOV	R4,R0
+		CALL	HULL_FETCH
+		MOV	R0,R4
+		CMP	R1,(R4)
+		BHIS	9$
+		MUL	#6,R1			; vertex index, into a 4x hull
+		ADD	R1,R4
+		ADD	#8.,R4
+		MOV	R4,-(SP)
+		CALL	VIEW_APPLY
+		MOV	(SP)+,R4
+		MOV	SD_MAT,R5
+		CALL	VERT_PROJECT
+		BCS	9$
+		MOV	R0,NP_X
+		MOV	R1,NP_Y
+		MOV	NP_I,R0
+		MOV	NPSHOT(R0),R4
+		BMI	1$
+		TST	U.TYPE(R4)
+		BEQ	9$
+		TST	U.SX(R4)
+		BEQ	9$
+		MOV	U.SX(R4),LX1
+		MOV	U.SY(R4),LY1
+		BR	2$
+1$:		MOV	#VIEW_XC,LX1
+		MOV	#VIEW_H-1,LY1
+2$:		MOV	NP_X,LX0
+		MOV	NP_Y,LY0
+		JMP	SEG_LINE
+9$:		RETURN

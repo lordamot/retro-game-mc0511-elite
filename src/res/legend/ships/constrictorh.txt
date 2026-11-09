@@ -1,0 +1,70 @@
+# d_ConstrictorH - extracted from orig/legend by tools/legend_ships.py;
+# object 31 of AdrDataShips, hull d_Constrictor.
+# `make extract` overwrites it.
+name CONSTRICTORH
+index 31
+class 3
+speed 48
+energy 159
+bounty 215
+laser 144
+collide 95
+cargo 2
+launch 1
+dot 50
+rating 592
+flags 140
+flags2 1
+laservert 2
+type 11
+objflags 104
+shipnum 7
+radius 80
+vertex    20    -7    80
+vertex   -20    -7    80
+vertex   -54    -7    40
+vertex   -54    -7   -40
+vertex    54    -7   -40
+vertex    54    -7    40
+vertex   -20    13   -40
+vertex    20    13   -40
+vertex    20    13     5
+vertex   -20    13     5
+vertex    20    -7    62
+vertex   -20    -7    62
+vertex    25    -7   -25
+vertex   -25    -7   -25
+vertex    15    -7   -15
+vertex   -15    -7   -15
+edge 9 8 31 5 0
+edge 8 0 31 2 0
+edge 0 1 31 7 0
+edge 1 9 31 1 0
+edge 2 9 31 4 1
+edge 1 2 31 7 1
+edge 8 5 31 3 2
+edge 5 0 31 7 2
+edge 8 4 31 3 3
+edge 4 5 31 7 3
+edge 9 3 31 4 4
+edge 3 2 31 7 4
+edge 3 6 31 6 4
+edge 6 9 31 5 4
+edge 6 7 31 6 5
+edge 7 8 31 3 5
+edge 7 4 31 6 3
+edge 4 3 31 7 6
+edge 14 10 31 7 7
+edge 10 12 31 7 7
+edge 12 14 31 7 7
+edge 13 11 31 7 7
+edge 11 15 31 7 7
+edge 15 13 31 7 7
+normal    0   61   16
+normal  -18   59   15
+normal   18   59   15
+normal   32   55    0
+normal  -32   55    0
+normal    0   96    0
+normal    0    0  -96
+normal    0  -96    0

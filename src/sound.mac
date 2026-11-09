@@ -1,0 +1,73 @@
+; =========================================================================
+; sound.mac - the CPU's half of the sound.
+;
+; Since 2026-09-26 the sound is Legend's: its AY effects engine and its
+; own effects run on the PPU (src/ppu_sfx.mac) and play on the FIRST AY
+; chip, three channels with eight priorities each; the tune plays on the
+; SECOND chip (MUS_TICK, src/ppu.mac), so neither ever waits for or cuts
+; into the other.  All the CPU does is ask: SFX_PLAY writes an FX_* word
+; (src/defs.mac - the effect, its channel and its priority) into a small
+; queue in its own RAM, which the PPU drains every tick.  The CPU writes
+; the entry before it moves the count, and only the PPU moves its own
+; count, so neither side can catch the other half-way.
+; =========================================================================
+
+SX_Q:		.WORD	0,0,0,0,0,0,0,0	; the requests, round and round
+SX_QH:		.WORD	0		; how many have been written
+
+; SFX_PLAY - the FX_* request in R0, unless the pause menu's S has the
+; sound off.  Nothing is clobbered.
+SFX_PLAY:	BIT	#OPT_SOUND,OPTIONS
+		BNE	SX_SEND
+		RETURN
+SX_SEND:	MOV	R1,-(SP)
+		MOV	SX_QH,R1
+		BIC	#^C7,R1
+		ASL	R1
+		MOV	R0,SX_Q(R1)
+		INC	SX_QH
+		MOV	(SP)+,R1
+		RETURN
+
+; SFX_BIG - Legend's SoundOff and then the effect in R0: the jump, a
+; launch, a docking, the end.  The lasers' and the ECM's slot on B goes
+; quiet first, so the big one is heard over the fight.
+SFX_BIG:	MOV	R0,-(SP)
+		MOV	#FX_OFFB,R0
+		CALL	SFX_PLAY
+		MOV	(SP)+,R0
+		BR	SFX_PLAY
+
+; SFX_STOP - every effect stopped at once (the pause, the sound switched
+; off).  Sent whatever the option says.  Nothing is clobbered.
+SFX_STOP:	MOV	R0,-(SP)
+		MOV	#FX_STOP,R0
+		CALL	SX_SEND
+		MOV	(SP)+,R0
+		RETURN
+
+; =========================================================================
+; SFX_BOOT - hand the engine to the PPU, once, at boot.  It is an overlay
+; read before any other the cache keeps, so the cache takes its copy
+; straight after the flight overlay's place and never lets it go: the
+; engine runs in the PPU's RAM where the copy is.  SX_HOOK, in the PPU's
+; program, is then pointed at it, and the next tick starts it.  With no
+; cache (a firmware that would not give the block) there is no sound.
+; Clobbers R0..R5.
+; =========================================================================
+SFX_BOOT:	MOV	#OVL_SFX,R0
+		CALL	OVL_LOAD
+		MOV	OVL_DIR+<OVL_N*2>+<OVL_SFX*2>,R0 ; where the cache keeps
+					;   it: OC_TAB's entry, spelt out,
+					;   because OC_TAB is an equate on a
+					;   later label (see src/ovl.mac)
+		BEQ	9$
+		MOV	R0,OVL_BASE		; that address, into SX_HOOK
+		MOV	L2372$,R0
+		ADD	#SX_HOOK-PP_START,R0
+		MOV	R0,OC_PPU
+		MOV	#1,OC_WDS
+		MOV	#1,OC_DIR		; out of the window
+		CALL	OC_COPY
+		MOV	#-1,OVL_CUR		; the window's first word is spoilt
+9$:		RETURN

@@ -1,0 +1,174 @@
+; =========================================================================
+; ppucomm.mac - CPU side of the PPU link: push the PPU program over
+; channel K2, then drive it with one-byte commands over channel K1.
+; Follows this family of ports (OPEN60 -> ../mc0511-openit).
+;
+;   0 clear the screen + set the mode from CPU_MODE
+;   1 restore the firmware screen
+;   2 copy between the PPU's overlay cache and the window (OC_*)
+;   3 the tune: stop, once, or round and round (MUS_MODE)
+;   4 reload both palettes and the mode, no clear
+;   6 fill whole lines with FILL_COLOR
+;  -1 reset the machine
+; =========================================================================
+
+PP_MAIN_LOAD:
+ MOVB #1,L2377$
+ MOV #<PP_END-PP_START>/2+PP_SAVE_WORDS,L2404$
+ CALL K2WAIT
+ BCS 8$
+ MOV L2402$,L2372$
+ MOVB #20,L2377$
+ MOV #PP_START,L2404$
+ MOV #<PP_END-PP_START>/2,L2406$
+ CALL K2SEND
+ MOVB #30,L2377$
+ MOV L2372$,L2402$
+ CLR PP_BUSY
+ CALL K2SEND
+1$: TST PP_BUSY
+ BEQ 1$
+ MOV #1,PP_ACTIVE
+ MOVB #1,L2377$
+ MOV #OC_WORDS,L2404$
+ CALL K2WAIT
+ BCS 9$
+ MOV L2402$,OC_BASE
+9$: CLC
+ RETURN
+7$: MOVB #2,L2377$
+ MOV L2372$,L2402$
+ CALL K2WAIT
+8$: SEC
+ RETURN
+
+PP_UNLOAD:
+ TST PP_ACTIVE
+ BEQ 9$
+ CALL RING_WAIT
+ CALL PP_WAIT
+ MOVB #30,L2377$
+ MOV L2372$,L2402$
+ ADD #PP_RESTORE-PP_START,L2402$
+ CALL K2SEND
+1$: TST PP_ACTIVE
+ BNE 1$
+ TST OC_BASE
+ BEQ 2$
+ MOV OC_BASE,L2402$
+ MOVB #2,L2377$
+ CALL K2WAIT
+ CLR OC_BASE
+2$: MOV L2372$,L2402$
+ MOVB #2,L2377$
+ CALL K2WAIT
+3$: TSTB @#177564
+ BPL 3$
+ MOVB #14,@#177566
+ CLR R0
+4$: SOB R0,4$
+9$: RETURN
+PP_ACTIVE: .WORD 0
+
+K2WAIT:
+ MOVB #-1,L2376$
+ CALL K2SEND
+1$: CMPB L2376$,#-1
+ BEQ 1$
+ TSTB L2376$
+ BEQ 2$
+ SEC
+ RETURN
+2$: CLC
+ RETURN
+
+K2SEND:		MOV	#L2410$,R1
+		MOV	#5,R3
+		BR	2$
+1$:		MOVB	(R1)+,@#176676
+2$:		TSTB	@#176674	; channel K2 ready to transmit?
+		BPL	2$
+		SOB	R3,1$
+		RETURN
+
+PP_BUSY:	.WORD	0		; 0 while the PPU is working on a command
+OC_BASE:	.WORD	0		; the cache's PPU address, 0 = none
+OC_PPU:		.WORD	0		; COMMAND_2's three words, in this
+OC_WDS:		.WORD	0		;   order: the PPU address, the words,
+OC_DIR:		.WORD	0		;   0 into the window, else out of it
+MUS_MODE:	.WORD	0		; COMMAND_3's: 0 stop, 1 once, 2 round
+L2372$:		.BLKW	1
+L2374$:		.BLKW	1
+L2376$:		.BLKB	1		; error code
+L2377$:		.BLKB	1		; request code
+L2400$:		.WORD	32		; device - PPU memory
+L2402$:		.BLKW	1
+L2404$:		.BLKW	1
+L2406$:		.BLKW	1
+L2410$:		.WORD	L2376$,-1
+
+; ---- K1 command senders -------------------------------------------------
+
+SEND_FILL:	MOV	#CMD_FILL,SEND_TYPE+2
+		BR	SEND_PP_COMM
+SEND_PPBENCH:	MOV	#CMD_PPBENCH,SEND_TYPE+2
+		BR	SEND_PP_COMM
+SEND_PAL:	MOV	#CMD_PAL,SEND_TYPE+2
+		BR	SEND_PP_COMM
+SEND_OLD:	MOV	#CMD_OLD,SEND_TYPE+2
+		BR	SEND_PP_COMM
+SEND_CLS:	CLR	SEND_TYPE+2
+
+SEND_PP_COMM:	CALL	RING_WAIT	; the PPU draws what it was handed
+					;   before it is told anything else
+		TST	PP_BUSY		; previous command still running?
+		BEQ	.-4
+		TSTB	@#176664	; channel K1 ready to transmit?
+		BPL	.-4
+SEND_TYPE:	MOVB	#0,@#176666
+		CLR	PP_BUSY
+		RETURN
+
+; OC_COPY - COMMAND_2 with OC_PPU/OC_WDS/OC_DIR set, and wait for it.
+OC_COPY:	MOV	#CMD_OCOPY,SEND_TYPE+2
+		CALL	SEND_PP_COMM
+		BR	PP_WAIT
+
+; TUNE - R0 = 0 stops the tune, 1 plays it once, 2 round and round.
+; It plays on the PPU (COMMAND_3), on channel B, beside the effects.
+TUNE:		BIT	#OPT_SOUND,OPTIONS	; the pause menu's S silences it
+		BNE	1$
+		CLR	R0
+1$:		MOV	R0,MUS_MODE
+		MOV	#CMD_TUNE,SEND_TYPE+2
+		CALL	SEND_PP_COMM
+		BR	PP_WAIT
+
+PP_WAIT:	TST	PP_BUSY
+		BEQ	PP_WAIT
+		RETURN
+
+; CLS_SCREEN - clear all three planes and (re)assert 640 mode.
+CLS_SCREEN:	MOV	#MODE_640,CPU_MODE
+		CALL	SEND_CLS
+		BR	PP_WAIT
+
+; SET_COLORS - push COLORWORD1..4 and CPU_MODE without clearing.
+SET_COLORS:	CALL	SEND_PAL
+		BR	PP_WAIT
+
+; FILL_LINES - fill lines R0..R0+R1-1 with the 3-bit colour R2.
+FILL_LINES:	MOV	R0,FILL_Y
+		MOV	R1,FILL_CNT
+		MOV	R2,FILL_COLOR
+		CALL	SEND_FILL
+		BR	PP_WAIT
+
+; PP_BENCH - time the PPU's plane access; the answers land in PPB_WIN
+; and PPB_RAM.  Run from the flight loop when PPB_GO is poked, so that
+; it costs nothing at boot.
+PP_BENCH:	CALL	SEND_PPBENCH
+		BR	PP_WAIT
+
+DO_RESET:	MOV	#-1,SEND_TYPE+2
+		BR	SEND_PP_COMM

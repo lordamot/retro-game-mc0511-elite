@@ -1,0 +1,85 @@
+# d_PlatformH - extracted from orig/legend by tools/legend_ships.py;
+# object 18 of AdrDataShips, hull d_Platform.
+# `make extract` overwrites it.
+# NOTE: the header counts 24v 30e 14n, the hull has 18v 30e 14n.
+name PLATFORMH
+index 18
+class 0
+speed 5
+energy 240
+bounty 0
+laser 0
+collide 160
+cargo 0
+launch 255
+dot 127
+rating 0
+flags 134
+flags2 0
+laservert 0
+type 23
+objflags 4
+shipnum 0
+radius 250
+vertex     0   187  -250
+vertex     0  -187  -250
+vertex   250   250     0
+vertex  -250   250     0
+vertex  -250  -250     0
+vertex   250  -250     0
+vertex   187     0  -250
+vertex  -187     0  -250
+vertex   187  -187   250
+vertex  -187  -187   250
+vertex   187   187   250
+vertex  -187   187   250
+vertex   -19   -66   250
+vertex    19   -66   250
+vertex    19    66   250
+vertex   -19    66   250
+vertex    46     0   250
+vertex   -46     0   250
+edge 0 2 31 1 0
+edge 2 6 31 10 0
+edge 6 0 31 5 0
+edge 0 3 31 2 1
+edge 3 2 31 11 1
+edge 7 3 31 3 2
+edge 0 7 31 5 2
+edge 7 4 31 4 3
+edge 4 3 31 12 3
+edge 7 1 31 5 4
+edge 1 4 31 7 4
+edge 6 1 31 6 5
+edge 5 1 31 7 6
+edge 6 5 31 10 6
+edge 5 4 31 8 7
+edge 5 8 31 9 8
+edge 8 9 31 13 8
+edge 9 4 31 12 8
+edge 5 2 31 10 9
+edge 2 10 31 11 9
+edge 10 8 31 13 9
+edge 3 11 31 12 11
+edge 11 10 31 13 11
+edge 9 11 31 13 12
+edge 12 13 31 13 13
+edge 13 16 31 13 13
+edge 16 14 31 13 13
+edge 14 15 31 13 13
+edge 15 17 31 13 13
+edge 17 12 31 13 13
+normal   34   34  -42
+normal    0   62  -15
+normal  -34   34  -42
+normal  -62    0  -15
+normal  -34  -34  -42
+normal    0    0 -128
+normal   34  -34  -42
+normal    0  -62  -15
+normal    0  -62   15
+normal   62    0   15
+normal   62    0  -15
+normal    0   62   15
+normal  -62    0   15
+normal    0    0  128

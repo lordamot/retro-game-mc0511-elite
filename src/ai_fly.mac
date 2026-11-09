@@ -1,0 +1,1278 @@
+; =========================================================================
+; ai_fly.mac - the ships' minds, frame by frame: the half of src/ai.mac
+; that runs only while the sky moves, in the flight overlay
+; (src/ovl_fly.mac).  The state it keeps is in src/ai.mac, resident, and
+; so are the spawner and SLOT_MIND, which a launch and a jump call from
+; outside the flight frame.
+; =========================================================================
+; =========================================================================
+; AI_STEP - once a flight frame, after UNIV_STEP: MoveAllObjects' minds
+; and MoveAllObjAI.  Clobbers everything.
+; =========================================================================
+AI_STEP:	CALL	NPC_CLEAR
+		INC	FRAME_SET		; the frame (MoveAllObjAI's head)
+		BIC	#^C3,FRAME_SET
+		BNE	1$
+		INC	FRAME_SET
+1$:		CALL	AI_SCAN
+		MOV	#UNIV,AI_P
+		CLR	AI_I
+10$:		MOV	AI_P,R5
+		TST	U.TYPE(R5)
+		BNE	11$
+79$:		JMP	80$			; the loop outgrew a branch
+11$:		BIT	#UF_PLANET!UF_SUN!UF_MISSILE,U.FLAGS(R5)
+		BNE	79$
+		TST	U.EXPL(R5)
+		BNE	79$
+		BIT	#UF_DOCK!UF_DROP,U.FLAGS(R5)	; gone over the horizon
+		BNE	14$			;   (ReCalcCrdObj's #60): a bay
+		CALL	U_NEAR			;   stays, and so does a drop, for
+		BCS	13$			;   the bench's sake
+		MOV	U.Z(R5),R0
+		BGE	12$
+		NEG	R0
+12$:		CMP	R0,#AI_GONE
+		BLO	14$
+13$:		CLR	U.TYPE(R5)
+		BR	79$
+14$:		MOVB	U.AIF(R5),R0		; leaving by hyperspace: eight
+		BIC	#^C170,R0		;   frames, then gone
+		CMP	R0,#AI_HYPER
+		BNE	15$
+		INCB	U.AIF(R5)
+		BITB	#7,U.AIF(R5)
+		BNE	78$			; still going: it moves, it does
+		CLR	U.TYPE(R5)		;   not think
+		BR	79$
+15$:		MOV	MISS_OUT,R0		; the sky turns on you: your
+		BIS	PIRATE_FLAG,R0		;   missile is out, or someone whose
+		BEQ	16$			;   anger counts is angry (goto436)
+		TST	AGGRESSOR
+		BNE	151$
+		BIT	#UF_DROP,U.FLAGS(R5)
+		BNE	16$
+151$:		BITB	#KB_PLAYER,U.TYP(R5)
+		BNE	16$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+16$:		BIT	#UF_DERELICT,U.FLAGS(R5)	; nobody aboard
+		BNE	78$
+		MOV	AI_I,R0
+		INC	R0
+		MOV	R0,AI_SELF
+		BITB	#1,U.CNT(R5)		; odd: after its target; even:
+		BEQ	20$			;   one frame in four, a reaction
+		CALL	OBJ_CHASE
+		BR	78$
+20$:		BITB	#KB_PLAYER,U.TYP(R5)	; yours only chases (goto728)
+		BNE	78$
+		CALL	OBJ_REACT4
+78$:		MOV	AI_P,R5
+		CALL	OBJ_MOVE
+80$:		ADD	#U.SIZE,AI_P
+		INC	AI_I
+		CMP	AI_I,#NUNIV
+		BGE	9$
+		JMP	10$
+9$:		JMP	AI_DECIDE
+
+; OBJ_REACT4 - R5 = a ship: ReactionObject, on the frames that are its
+; (goto660: the slot number against the frame counter).
+OBJ_REACT4:	MOV	AI_I,R0
+		ADD	FLY_TICK,R0
+		BIT	#3,R0
+		BNE	9$
+		JMP	OBJ_REACT
+9$:		RETURN
+
+
+; =========================================================================
+; OBJ_TESTTGT - TestTargetObj: R5 = a ship.  The first target is dropped
+; if it has gone and the second moves up.  Z set if it has none, else
+; R0 = the first, a slot+1.  Clobbers R1, R4.
+; =========================================================================
+OBJ_TESTTGT:	MOV	U.TARGET(R5),R0
+		BLE	1$
+		CALL	SLOT_OF
+		TST	U.TYPE(R4)
+		BEQ	1$
+		TST	U.EXPL(R4)
+		BEQ	9$
+1$:		MOV	U.TGT1(R5),R0
+		MOV	R0,U.TARGET(R5)
+		CLR	U.TGT1(R5)
+		BLE	2$
+		CALL	SLOT_OF
+		TST	U.TYPE(R4)
+		BEQ	2$
+		TST	U.EXPL(R4)
+		BEQ	9$
+2$:		CLR	U.TARGET(R5)
+		CLR	R0
+9$:		TST	R0
+		RETURN
+
+; =========================================================================
+; OBJ_CHASE - MoveAllObjects on an odd counter: after its target, or its
+; container, or a new target; and with none, home to the station one
+; time in eight, or a reaction.  R5 = the ship.  Clobbers everything.
+; =========================================================================
+OBJ_CHASE:	CALL	OBJ_TESTTGT
+		BEQ	1$
+		JMP	OBJ_TOTARGET
+1$:		BITB	#KB_PLAYER,U.TYP(R5)	; yours, with its target gone
+		BEQ	12$			;   (goto729, src/drone.mac)
+		JMP	DRONE_LOST
+12$:		MOVB	U.TGT2(R5),R0		; the container it was after, if
+		BIC	#^C377,R0		;   it is still one
+		BEQ	2$
+		CALL	SLOT_OF
+		TST	U.TYPE(R4)
+		BEQ	11$
+		BIT	#UF_DROP,U.FLAGS(R4)
+		BEQ	11$
+		JMP	OBJ_TOTARGET
+11$:		CLRB	U.TGT2(R5)
+2$:		BITB	#AI_ATTACK,U.AIF(R5)
+		BEQ	8$
+		CALL	OBJ_NEWTARGET
+		BCS	3$
+		TST	R0			; 0 is you, a slot a container
+		BGE	3$
+		BITB	#AI_PIRATE!AI_NEARBAY,U.AIF(R5)	; nobody: a pirate, or one
+		BNE	8$			;   born beside the station, stays
+		TST	STN_NEAR		;   out; anyone else may go home
+		BEQ	8$
+		CALL	AI_RND
+		BIT	#10,R0
+		BEQ	8$
+		MOV	STN_NEAR,R0
+		MOVB	R0,U.TGT2(R5)
+3$:		JMP	OBJ_TOTARGET
+8$:		JMP	OBJ_REACT4
+
+; =========================================================================
+; OBJ_NEWTARGET - SetNewTargetObj: R5 = a ship; who it goes for, by its
+; kind's list.  C set: R0 = a slot+1, now its first target.  C clear:
+; R0 = 0, you (the first target cleared), -1 nobody, or a container's
+; slot+1, now its container target.  Clobbers R0..R4.
+;
+; The list, a bit a priority (ListTypeObj): 0 a container if it collects
+; them, 1 a Targon, 2 you if you have turned pirate, 3 a pirate, 4 the
+; police, 5 you if the law wants you, 6 a container again, 7 one in four
+; the nearest anything and otherwise you.
+; =========================================================================
+LIST_TYPEOBJ:	.BYTE	3, 56, 322, 156, 377, 0, 0, 0
+		.EVEN
+OBJ_NEWTARGET:	MOVB	U.TYP(R5),R1
+		BIC	#^C7,R1
+		MOVB	LIST_TYPEOBJ(R1),R0
+		BIC	#^C377,R0
+		MOV	R0,NT_BITS
+		BIT	#1,NT_BITS
+		BEQ	1$
+		CALL	NT_CARGO
+		BNE	85$
+1$:		BIT	#2,NT_BITS
+		BEQ	2$
+		MOV	#OBJ_SLOTS+<4*4>,R1
+		CALL	OBJ_PICK
+		BCS	8$
+2$:		BIT	#4,NT_BITS
+		BEQ	3$
+		TST	PIRATE_FLAG
+		BNE	7$
+3$:		BIT	#10,NT_BITS
+		BEQ	4$
+		MOV	#OBJ_SLOTS+<2*4>,R1
+		CALL	OBJ_PICK
+		BCS	8$
+4$:		BIT	#20,NT_BITS
+		BEQ	5$
+		MOV	#OBJ_SLOTS+<1*4>,R1
+		CALL	OBJ_PICK
+		BCS	8$
+5$:		BIT	#40,NT_BITS
+		BEQ	6$
+		CMP	LEGAL,#256.
+		BHIS	7$
+6$:		BIT	#100,NT_BITS
+		BEQ	61$
+		CALL	NT_CARGO
+		BNE	85$
+61$:		BIT	#200,NT_BITS
+		BEQ	86$
+		CALL	AI_RND
+		CMP	R0,#300
+		BLO	7$
+		MOV	#OBJ_SLOTS+<5*4>,R1	; rocks, Targons, hunters, pirates,
+		MOV	#6,R2			;   the police, traders: the first
+62$:		MOV	R2,-(SP)		;   kind with anyone in it
+		MOV	R1,-(SP)
+		CALL	OBJ_PICK
+		MOV	(SP)+,R1
+		MOV	(SP)+,R2
+		BCS	8$
+		SUB	#4,R1
+		SOB	R2,62$
+7$:		CLR	U.TARGET(R5)		; you
+		CLR	R0
+85$:		CLC
+		RETURN
+86$:		MOV	#-1,R0
+		CLC
+		RETURN
+8$:		MOV	R0,U.TARGET(R5)
+		SEC
+		RETURN
+
+; NT_CARGO - a container, if this ship picks them up: R0 = its slot+1,
+; put in U.TGT2; else 0.  Z set if none.
+NT_CARGO:	MOV	OBJ_SLOTS+OS_DROPS,R0
+		BIC	#^C377,R0
+		BEQ	9$
+		BITB	#AI_COLLECT,U.AIF(R5)
+		BNE	1$
+		CLR	R0
+		BR	9$
+1$:		MOVB	R0,U.TGT2(R5)
+9$:		TST	R0
+		RETURN
+
+; OBJ_PICK - R1 = an OBJ_SLOTS entry: C set with R0 = its slot+1 if it
+; is somebody, not this ship, and not of its frame (goto629).  Clobbers
+; R0, R1, R3.
+OBJ_PICK:	MOV	(R1),R0
+		MOV	R0,R1
+		BIC	#^C377,R0
+		BEQ	9$
+		CMP	R0,AI_SELF
+		BEQ	9$
+		SWAB	R1			; its frame against mine
+		MOVB	U.AIF(R5),R3
+		XOR	R3,R1
+		BIT	#AI_FRAME,R1
+		BEQ	9$
+		SEC
+		RETURN
+9$:		CLC
+		RETURN
+
+; =========================================================================
+; OBJ_TOTARGET - MoveObjToTarget: R5 = a ship, R0 = a slot+1 it is after,
+; or 0 for you.  Reached (inside AI_RAM on every axis) a bay takes it in,
+; a container is picked up, and a drone of yours boards; anything else
+; it steers for.  A ram is COLLIDE_STEP's business.  Clobbers
+; everything.
+; =========================================================================
+OBJ_TOTARGET:	TST	R0
+		BNE	1$
+		JMP	OBJ_ATKPLAYER
+1$:		CALL	SLOT_OF
+		CALL	U_NEAR4			; either beyond sixteen bits: not
+		BCS	9$			;   this frame
+		CALL	U_NEAR
+		BCS	9$
+		MOV	U.X(R4),R0
+		SUB	U.X(R5),R0
+		BVS	9$			; too far apart to subtract
+		MOV	R0,ST_D
+		MOV	U.Y(R4),R0
+		SUB	U.Y(R5),R0
+		BVS	9$
+		MOV	R0,ST_D+2
+		MOV	U.Z(R4),R0
+		SUB	U.Z(R5),R0
+		BVS	9$
+		MOV	R0,ST_D+4
+		MOV	#3,R1			; reached it?
+		MOV	#ST_D,R2
+2$:		MOV	(R2)+,R0
+		BGE	3$
+		NEG	R0
+3$:		CMP	R0,#AI_RAM
+		BHIS	5$
+		SOB	R1,2$
+		BITB	#KB_PLAYER,U.TYP(R5)	; yours: the boarding (goto740's
+		BEQ	31$			;   bit 7, src/drone.mac)
+		JMP	DRONE_REACHED
+31$:		BIT	#UF_DOCK,U.FLAGS(R4)	; home: it is in
+		BEQ	4$
+		CLR	U.TYPE(R5)
+		RETURN
+4$:		BIT	#UF_DROP,U.FLAGS(R4)	; a container: it has it
+		BEQ	9$
+		CLR	U.TYPE(R4)
+		RETURN
+5$:		CLR	AI_ATPL
+		JMP	OBJ_STEER
+9$:		RETURN
+
+; =========================================================================
+; OBJ_ATKPLAYER - MoveObjToPlayerAttack: R5 = a ship whose target is you.
+; A runner keeps running inside AI_FLEE_*, and turns on you outside;
+; anyone else keeps its collision distance and sixteen, and closes
+; beyond it.  Clobbers everything.
+; =========================================================================
+OBJ_ATKPLAYER:	CALL	U_NEAR
+		BCS	9$
+		BITB	#F3_FLEE,U.FL3(R5)
+		BEQ	2$
+		MOV	#AI_FLEE_XY,R2
+		MOV	#AI_FLEE_Z,R3
+		CALL	NEAR_BOX
+		BCS	3$
+		BICB	#F3_FLEE,U.FL3(R5)
+		JMP	OBJ_TOPLAYER
+2$:		MOV	U.TYPE(R5),R0
+		MOV	#SS_COLLIDE,R1
+		CALL	SHIP_STAT
+		ADD	#16.,R0
+		MOV	R0,R2
+		MOV	R0,R3
+		ADD	#256.,R3
+		CALL	NEAR_BOX
+		BCS	3$
+		JMP	OBJ_TOPLAYER
+3$:		JMP	OBJ_FROMPLAYER
+9$:		RETURN
+
+; =========================================================================
+; OBJ_DIRECT - DirectObject: R5 = a ship with no target of its own.  A
+; ship that minds the law turns hostile when it wants you.  Inside its
+; reaction radius it keeps away from you; outside, a hostile one closes
+; - or, with the station near and shy of it, keeps away; with no station
+; and no faith left in its hull, it runs.  A peaceful one flies on.
+; Clobbers everything.
+; =========================================================================
+OBJ_DIRECT:	TST	U.TARGET(R5)
+		BNE	9$
+		BITB	#F2_LEGAL,U.FL2(R5)
+		BEQ	1$
+		CMP	LEGAL,#LEGAL_FUGITIVE
+		BLO	1$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+1$:		CALL	U_NEAR
+		BCS	9$
+		MOV	#AI_REACT_XY,R2
+		MOV	#AI_REACT_Z,R3
+		BIT	#UF_REACTFAR,U.FLAGS(R5)
+		BEQ	2$
+		MOV	#AI_REACTF_XY,R2
+		MOV	#AI_REACTF_Z,R3
+2$:		CALL	NEAR_BOX
+		BCS	8$
+		BIT	#UF_HOSTILE,U.FLAGS(R5)
+		BEQ	9$
+		TST	STN_NEAR
+		BEQ	3$
+		BITB	#F2_SHY,U.FL2(R5)
+		BNE	8$
+		BR	7$
+3$:		MOVB	U.FL3(R5),R0
+		BIC	#^C177,R0
+		CMP	R0,#16.
+		BHIS	7$
+		BISB	#F3_FLEE,U.FL3(R5)	; it has had enough
+8$:		JMP	OBJ_FROMPLAYER
+7$:		JMP	OBJ_TOPLAYER
+9$:		RETURN
+
+; =========================================================================
+; OBJ_TOPLAYER / OBJ_FROMPLAYER - MoveObjToPlayer and MoveObjFromPlayer:
+; the direction is yours, or away from you.  R5 = the ship.
+; =========================================================================
+OBJ_TOPLAYER:	MOV	U.X(R5),ST_D
+		MOV	U.Y(R5),ST_D+2
+		MOV	U.Z(R5),ST_D+4
+		NEG	ST_D
+		NEG	ST_D+2
+		NEG	ST_D+4
+		MOV	#1,AI_ATPL
+		BIC	#UF_REACTFAR,U.FLAGS(R5)
+		BR	OBJ_STEER
+OBJ_FROMPLAYER:	MOV	U.X(R5),ST_D
+		MOV	U.Y(R5),ST_D+2
+		MOV	U.Z(R5),ST_D+4
+		MOV	#1,AI_ATPL
+
+; =========================================================================
+; OBJ_STEER - MoveObject: R5 = a ship, ST_D = the direction it wants.
+;
+; The direction is taken into the ship's own frame (M^T d, MATVEC_T:
+; the columns are its side, roof and nose) and its length taken as the
+; largest component and three eighths of the other two, which is within
+; a few per cent and costs no root.  Then Legend's rules: roll while the
+; target is off the vertical plane, by how far it is (up to fifteen
+; frames of AI_ROLL_K), rolling the way that brings it in; with little
+; roll left, pitch it onto the nose (up to seven frames of AI_PITCH_K,
+; seven when it is behind); and the throttle - two a frame away from
+; anything if it is running, else closing beyond AI_HOLD (two beyond
+; AI_FAST), slowing when the target is behind and beyond AI_BACK, and
+; holding inside.  Closing on YOU inside AI_HOLD is when it shoots.
+; Clobbers everything.
+; =========================================================================
+OBJ_STEER:	MOV	ST_D,R0			; the length: max + 3/8 (mid + min)
+		BGE	1$
+		NEG	R0
+1$:		MOV	R0,R1			; the largest so far
+		MOV	R0,R2			; and the sum
+		MOV	ST_D+2,R0
+		BGE	2$
+		NEG	R0
+2$:		ADD	R0,R2
+		CMP	R0,R1
+		BLOS	3$
+		MOV	R0,R1
+3$:		MOV	ST_D+4,R0
+		BGE	4$
+		NEG	R0
+4$:		ADD	R0,R2
+		CMP	R0,R1
+		BLOS	5$
+		MOV	R0,R1
+5$:		SUB	R1,R2			; the other two
+		CLC
+		ROR	R2			; unsigned: they can sum past 32767
+		ASR	R2
+		ASR	R2
+		MOV	R2,R0
+		ASL	R2
+		ADD	R0,R2
+		ADD	R1,R2			; R2 = the length, unsigned
+		MOV	R2,R0			; the distance /512
+		SWAB	R0
+		BIC	#^C377,R0
+		ASR	R0
+		MOV	R0,ST_DIST
+		TST	R1			; nothing to steer by
+		BEQ	9$
+6$:		CMP	R1,#20000		; scale the direction so the largest
+		BLO	7$			;   component is in 0x2000..0x3FFF,
+		ASR	ST_D			;   which keeps the projections and
+		ASR	ST_D+2			;   the divisions in sixteen bits
+		ASR	ST_D+4
+		ASR	R1
+		CLC
+		ROR	R2
+		BR	6$
+7$:		CMP	R1,#10000
+		BHIS	8$
+		ASL	ST_D
+		ASL	ST_D+2
+		ASL	ST_D+4
+		ASL	R1
+		ASL	R2
+		BR	7$
+8$:		MOV	R2,ST_L
+		MOV	R5,-(SP)		; into the ship's frame
+		ADD	#U.MAT,R5
+		MOV	#ST_D,R4
+		CALL	MATVEC_T
+		MOV	(SP)+,R5
+		MOV	VOUT,ST_S
+		MOV	VOUT+2,ST_S+2
+		MOV	VOUT+4,ST_S+4
+		JMP	ST_ROLL
+9$:		RETURN
+
+ST_ROLL:	MOV	ST_S,R2			; frames of roll: the cosine on
+		BGE	1$			;   Legend's scale of 63, times
+		NEG	R2			;   nine over thirty-two - 18 / L
+1$:		MUL	#18.,R2			;   here - at most fifteen.  R2 is
+					;   EVEN: R2:R3
+		DIV	ST_L,R2
+		CMP	R2,#15.
+		BLOS	2$
+		MOV	#15.,R2
+2$:		MOV	ST_S,R0			; the way that brings the target
+		MOV	ST_S+2,R1		;   into the vertical plane: with
+		XOR	R1,R0			;   MAT_TURN's shears a positive
+		BPL	3$			;   roll moves it from the side
+		NEG	R2			;   toward the roof when their signs
+3$:		MOVB	R2,U.TLR(R5)		;   agree (measured 2026-09-24)
+		TST	R2
+		BGE	4$
+		NEG	R2
+4$:		CMP	R2,#4			; rolling hard: no pitch yet
+		BHIS	ST_ACCEL
+		MOV	#7,R0			; frames of pitch: the target behind
+		MOV	ST_S+4,R2		;   is seven, ahead four to seven by
+		BLE	6$			;   how far off the nose it is: the
+		MUL	#63.,R2			;   cosine on the scale of 63 (a
+		DIV	ST_L,R2			;   ship never stops hunting the
+		ADD	#80.,R2			;   target, it overshoots and comes
+		ASR	R2			;   back, which is Legend's aim)
+		MOV	#103.,R0
+		SUB	R2,R0
+		BGE	5$
+		CLR	R0
+5$:		ASR	R0
+		ASR	R0
+		ASR	R0
+6$:		TST	ST_S+2			; and the way the roof says: a
+		BGE	7$			;   positive pitch lifts the nose
+		NEG	R0			;   toward the roof (measured)
+7$:		MOVB	R0,U.TDU(R5)
+ST_ACCEL:	BITB	#F3_FLEE,U.FL3(R5)	; running: flat out, away
+		BEQ	1$
+		MOVB	#2,U.ACC(R5)
+		RETURN
+1$:		CLRB	U.ACC(R5)
+		TST	ST_S+4
+		BLE	3$
+		CMP	ST_DIST,#AI_HOLD	; ahead: close on it
+		BLO	2$
+		MOVB	#1,U.ACC(R5)
+		CMP	ST_DIST,#AI_FAST
+		BLO	2$
+		MOVB	#2,U.ACC(R5)
+2$:		TST	AI_ATPL
+		BEQ	9$
+		JMP	OBJ_LASER
+3$:		CMP	ST_DIST,#AI_BACK	; behind: slow down to turn
+		BLO	9$
+		MOVB	#-1,U.ACC(R5)
+		CMP	ST_DIST,#AI_BACK2
+		BLO	9$
+		MOVB	#-2,U.ACC(R5)
+9$:		RETURN
+
+; =========================================================================
+; OBJ_LASER - MoveObject's shot at you: R5 = a ship closing on you with
+; you ahead of it, ST_DIST and ST_S set.  A hostile whose nose points
+; your way rolls its header's chance, scaled by your rating - full from
+; a rating byte of 64, half at nothing - and shoots from inside AI_SHOT
+; unless it is the police and you have wronged nobody, or it is busy
+; with a target of its own this frame; under the cloak it acts on a
+; roll under how seen you are.  It lands from inside AI_SURE, or within
+; sixty degrees: LASER_BLOW on the shield that faces it.
+; =========================================================================
+OBJ_LASER:	BIT	#UF_HOSTILE,U.FLAGS(R5)
+		BEQ	9$
+		MOV	U.MAT+20(R5),R0		; the nose's z against yours
+		MOV	U.Z(R5),R1
+		XOR	R1,R0
+		BPL	9$			; the same sign: it is pointing away
+		MOV	U.TYPE(R5),R0		; the chance
+		MOV	#SS_LASER,R1
+		CALL	SHIP_STAT
+		MOV	R0,R2
+		MOV	RATING_H,R1		; PilotRating2 and 3
+		BIC	#^C377,R1
+		CMP	RATING_H,#256.
+		BHIS	1$
+		CMP	R1,#100
+		BHIS	1$
+		ASR	R1			; (rating2 >> 2) & 15: sixteenths
+		ASR	R1			;   of the chance above the half
+		ADD	#16.,R1
+		MUL	R1,R2			; R2 is EVEN: the product is under
+		MOV	R3,R2			;   8160, all in R3
+		ASR	R2			; /32
+		ASR	R2
+		ASR	R2
+		ASR	R2
+		ASR	R2
+1$:		MOV	R2,-(SP)
+		CALL	AI_RND
+		CMP	R0,(SP)+
+		BHIS	9$
+		CMP	ST_DIST,#AI_SHOT
+		BHIS	9$
+		BITB	#AI_FRAME,U.AIF(R5)	; the police: only an aggressor
+		BNE	2$
+		TST	AGGRESSOR
+		BEQ	9$
+2$:		MOV	U.TARGET(R5),R0		; busy with a quarrel of its own,
+		BIS	U.TGT1(R5),R0		;   half the frames
+		MOVB	U.TGT2(R5),R1
+		BIC	#^C377,R1
+		BIS	R1,R0
+		BEQ	3$
+		BITB	#2,U.CNT(R5)
+		BNE	9$
+3$:		TST	CLOAK_ON		; under the cloak it acts on a
+		BEQ	4$			;   roll under how seen you are
+		CALL	AI_RND
+		CMP	R0,CLOAK_SEEN
+		BHIS	9$
+4$:		CMP	ST_DIST,#AI_SURE	; a hit from close in, or from
+		BLO	5$			;   within sixty degrees
+		MOV	ST_S+4,R0
+		BGE	41$
+		NEG	R0
+41$:		ASL	R0
+		CMP	R0,ST_L
+		BLO	9$
+5$:		CALL	NPC_PLAYER
+		MOV	#LASER_BLOW,R0
+		CLR	R1
+		TST	U.Z(R5)
+		BPL	6$
+		INC	R1
+6$:		JMP	HIT_PLAYER
+9$:		RETURN
+
+; =========================================================================
+; OBJ_MOVE - ReCalcCrdObj's part: R5 = a slot with frames of roll and
+; pitch to spend, and a throttle.  A frame of each turns the matrix by
+; AI_ROLL_K / AI_PITCH_K, +-64 for ever; the speed changes by the
+; throttle, to the hull's top (four times it with F2_SPEED4).  Clobbers
+; everything.
+; =========================================================================
+OBJ_MOVE:	MOVB	U.TLR(R5),R0
+		BEQ	3$
+		MOV	#AI_ROLL_K,R1
+		CLR	R2			; the plane
+		CALL	OM_TURN
+		MOVB	U.TLR(R5),R0
+		CMP	R0,#64.
+		BEQ	3$
+		CMP	R0,#-64.
+		BEQ	3$
+		TST	R0
+		BMI	2$
+		DECB	U.TLR(R5)
+		BR	3$
+2$:		INCB	U.TLR(R5)
+3$:		MOVB	U.TDU(R5),R0
+		BEQ	6$
+		MOV	#AI_PITCH_K,R1
+		MOV	#2,R2
+		CALL	OM_TURN
+		MOVB	U.TDU(R5),R0
+		CMP	R0,#64.
+		BEQ	6$
+		CMP	R0,#-64.
+		BEQ	6$
+		TST	R0
+		BMI	5$
+		DECB	U.TDU(R5)
+		BR	6$
+5$:		INCB	U.TDU(R5)
+6$:		MOVB	U.ACC(R5),R0		; the throttle
+		BEQ	9$
+		ADD	U.SPEED(R5),R0
+		BGE	7$
+		CLR	R0
+7$:		MOV	R0,-(SP)
+		MOV	U.TYPE(R5),R0
+		MOV	#SS_SPEED,R1
+		CALL	SHIP_STAT
+		BITB	#F2_SPEED4,U.FL2(R5)
+		BEQ	8$
+		ASL	R0
+		ASL	R0
+8$:		CMP	(SP),R0
+		BLE	81$
+		MOV	R0,(SP)
+81$:		MOV	(SP)+,U.SPEED(R5)
+9$:		RETURN
+
+; OM_TURN - R0 = frames left (its sign is the way), R1 = the angle, R2
+; = the plane: turn the ship at R5.  Preserves R5.
+OM_TURN:	TST	R0
+		BPL	1$
+		NEG	R1
+1$:		MOV	R1,R0
+		MOV	R2,R1
+		MOV	R5,-(SP)
+		ADD	#U.MAT,R5
+		CALL	MAT_TURN
+		MOV	(SP)+,R5
+		RETURN
+
+; =========================================================================
+; OBJ_REACT - ReactionObject: R5 = a ship or a bay, on its frame.  Its
+; hull knits itself a point a frame (four with 240 or more).  With
+; energy under half it launches, half the time, what its header says it
+; carries (ShipSetShip's codes, SHIP_LAUNCH); under an eighth it fires
+; its capsule on a roll at or above its faith in the hull, else lets a
+; canister go if it has cargo.  A Targlet with no Targon left becomes a
+; container.  A bay, with fewer than seven ships about, launches what
+; its kind launches.  Anything else then takes its direction from you
+; (OBJ_DIRECT).  The ECM's answer to your missile is MISSILE_STEP's.
+; Clobbers everything.
+; =========================================================================
+OBJ_REACT:	MOV	U.TYPE(R5),R0		; the hull knits itself
+		MOV	#SS_ENERGY,R1
+		CALL	SHIP_STAT
+		MOV	R0,R1
+		MOV	U.ENERGY(R5),R0
+		CMP	R0,R1			; a poked hull past its most is
+		BGE	2$			;   left as it is
+		INC	R0
+		CMP	R1,#240.
+		BLO	1$
+		ADD	#3,R0
+1$:		CMP	R0,R1
+		BLE	11$
+		MOV	R1,R0
+11$:		MOV	R0,U.ENERGY(R5)
+2$:		CALL	MS_CLOAKE		; the cloaked Asp (src/mission_fly)
+		ASL	R0			; the bands: half and up, an
+		CMP	R0,R1			;   eighth and under
+		BHIS	30$
+		ASL	R0
+		ASL	R0
+		CMP	R0,R1
+		BLO	20$
+		MOVB	U.NLA(R5),R0		; under half: a launch, half the
+		BIC	#^C7,R0			;   time, if nothing is jamming
+		BEQ	30$
+		CALL	AI_RND
+		CMP	R0,#200
+		BHIS	30$
+		TST	ECM_TIME
+		BNE	30$
+		MOV	U.TYPE(R5),R0
+		MOV	#SS_LAUNCH,R1
+		CALL	SHIP_STAT
+		ASR	R0
+		ASR	R0
+		ASR	R0
+		BIC	#^C37,R0
+		CALL	SHIP_LAUNCH
+		BCS	30$
+		DECB	U.NLA(R5)
+		BR	30$
+20$:		CALL	AI_RND			; critical: the capsule, or the
+		MOVB	U.FL3(R5),R1		;   cargo
+		BIC	#^C377,R1
+		CMP	R0,R1
+		BLO	40$
+		BIT	#UF_POD,U.FLAGS(R5)
+		BEQ	21$
+		MOV	#SH_ESCAPEPODH,R0
+		CALL	SHIP_DROP
+		BCS	30$
+		BIC	#UF_POD,U.FLAGS(R5)	; and nobody is flying it now
+		BIS	#UF_DERELICT,U.FLAGS(R5)
+		ASR	U.SPEED(R5)
+		CLRB	U.ACC(R5)
+		RETURN
+21$:		MOV	U.TYPE(R5),R0
+		MOV	#SS_CARGO,R1
+		CALL	SHIP_STAT
+		BIT	#17,R0
+		BEQ	30$
+		MOV	#SH_CANISTER,R0
+		CALL	SHIP_DROP
+30$:		CMP	U.TYPE(R5),#SH_TARGLETH	; a Targlet: after its Targon, or
+		BNE	40$			;   a container of alien items
+		BITB	#KB_PLAYER,U.TYP(R5)
+		BNE	40$
+		TST	OBJ_SLOTS+<4*4>+2
+		BEQ	31$
+		JMP	OBJ_DIRECT
+31$:		BIS	#UF_DROP!UF_DERELICT!UF_ALIENITEM,U.FLAGS(R5)
+		ASR	U.SPEED(R5)
+		RETURN
+40$:		BIT	#UF_DOCK,U.FLAGS(R5)
+		BNE	50$
+		JMP	OBJ_DIRECT
+50$:		CMP	NACTIVE,#7		; a bay: what its kind launches
+		BHIS	9$
+		CALL	AI_RND
+		MOV	R0,R2
+		CALL	BASE_KIND
+		CMP	R0,#BK_STATION
+		BEQ	55$
+		CMP	R0,#BK_MILITARY
+		BNE	51$
+		MOV	#15.,R0			; an Asp
+		BR	53$
+51$:		CMP	R0,#BK_HERMIT
+		BNE	52$
+		MOV	#8.,R0			; a Gecko, a Mamba, a Moray
+		BR	53$
+52$:		CMP	R0,#BK_PORTAL		; a ring, a service station: traders
+		BLO	59$
+		CMP	R0,#BK_GENSHIP		; a generation ship: nothing; a
+		BEQ	9$			;   portal or the platform, only
+		TST	WITCH			;   in deep space, a Cougar on a
+		BEQ	9$			;   fresh roll under #88 (goto497)
+		CALL	AI_RND
+		CMP	R0,#210
+		BHIS	9$
+		MOV	#37,R0			; fShipSetCougar
+		JMP	SHIP_LAUNCH
+59$:		MOV	#2,R0
+53$:		CMP	R2,#2
+		BHIS	9$
+		JMP	SHIP_LAUNCH
+55$:		CMP	R2,#36.			; the station: a Viper, now, if it
+		BHIS	9$			;   is angry; else a trader, rarely
+		CMPB	P_M3,#4			; mission 3's: a Targon (goto747)
+		BNE	54$
+		MOV	#4,R0
+		JMP	SHIP_LAUNCH
+54$:		TST	PIRATE_ON		; held by pirates: pirates, angry
+		BEQ	57$			;   or now and then
+		BIT	#UF_HOSTILE,U.FLAGS(R5)
+		BNE	58$
+		CMP	R2,#2
+		BHIS	9$
+58$:		MOV	#5,R0
+		JMP	SHIP_LAUNCH
+57$:		BIT	#UF_HOSTILE,U.FLAGS(R5)
+		BEQ	56$
+		MOV	#1,R0
+		JMP	SHIP_LAUNCH
+56$:		CMP	R2,#2
+		BHIS	9$
+		MOV	#2,R0
+		JMP	SHIP_LAUNCH
+9$:		RETURN
+
+; =========================================================================
+; SHIP_DROP - R0 = a type, R5 = a ship: let one go below it, adrift -
+; its own collision distance and a hundred under, clear of a collision
+; the port would otherwise have the two of them in at once (Legend's
+; ships do not collide, and its drops appear where the ship is).  C set
+; if the sky is full.  Preserves R5.
+; =========================================================================
+SHIP_DROP:	MOV	R5,-(SP)
+		MOV	R0,-(SP)		; the type, BEFORE U_NEAR clobbers
+		CALL	U_NEAR			;   R0 (it did, and a capsule was
+		BCS	7$			;   born as type 3000 in the station's
+		MOV	U.TYPE(R5),R0		;   slot)
+		MOV	#SS_COLLIDE,R1
+		CALL	SHIP_STAT
+		ADD	#100.,R0
+		MOV	U.Y(R5),R2
+		SUB	R0,R2
+		MOV	U.X(R5),R1
+		MOV	U.Z(R5),R3
+		CLR	R4
+		MOV	(SP)+,R0
+		CALL	UNIV_ADD
+		MOV	(SP)+,R5
+		RETURN
+7$:		TST	(SP)+
+		MOV	(SP)+,R5
+		SEC
+		RETURN
+
+; =========================================================================
+; SHIP_LAUNCH - ShipSetShip: R5 = a ship or a bay, R0 = one of Legend's
+; launch codes (dFlg_1 bits 7-3): 0 a missile at its target, 1 a Viper,
+; 2 a trader, 3 a Targlet, 4 a Targon, 5 a Sidewinder, a Krait or an
+; Adder, 8 a Gecko, a Mamba or a Moray, 9 a Transporter, a Cobra Mk III
+; or a Cobra Mk I, 10 a Python, a Cobra Mk III, an Anaconda or a Boa;
+; 6, 7 and 12 up name a type outright.  The newcomer leaves from
+; alongside, twice the collision distance out and on alternate sides,
+; in its parent's frame, with its parent's orientation and its anger.
+; C set if nothing was launched.  Preserves R5.
+; =========================================================================
+SHIP_LAUNCH:	MOV	R5,-(SP)
+		TST	R0
+		BNE	1$
+		CALL	MISS_FIRE
+		BR	8$
+1$:		CALL	LA_TYPE
+		BEQ	7$
+		CALL	TYPE_AVAIL
+		BEQ	7$
+		MOV	R0,LA_WHAT
+		CALL	U_NEAR
+		BCS	7$
+		MOV	FRAME_SET,-(SP)		; born into the parent's frame
+		MOVB	U.AIF(R5),R1
+		BIC	#^C3,R1
+		MOV	R1,FRAME_SET
+		MOV	U.TYPE(R5),R0
+		MOV	#SS_COLLIDE,R1
+		CALL	SHIP_STAT
+		ASL	R0
+		BITB	#1,U.NLA(R5)
+		BEQ	2$
+		NEG	R0
+2$:		MOV	U.X(R5),R1
+		ADD	R0,R1
+		MOV	U.Y(R5),R2
+		MOV	U.Z(R5),R3
+		MOV	#-1,R4
+		MOV	LA_WHAT,R0
+		CALL	UNIV_ADD
+		MOV	(SP)+,FRAME_SET
+		BCS	7$
+		BICB	#AI_HYPER,U.AIF(R5)	; it stays
+		MOV	(SP),R4			; the parent
+		BIT	#UF_HOSTILE,U.FLAGS(R4)
+		BEQ	3$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+3$:		MOV	R5,R1			; and its orientation
+		ADD	#U.MAT,R1
+		ADD	#U.MAT,R4
+		MOV	#9.,R2
+4$:		MOV	(R4)+,(R1)+
+		SOB	R2,4$
+		CLC
+		BR	8$
+7$:		SEC
+8$:		MOV	(SP)+,R5
+		RETURN
+
+; =========================================================================
+; MISS_FIRE - SetObjMissile from a ship: R5 = it; a missile leaves from
+; ahead of its nose for its first target, which is you when it has none
+; - the auto-ECM hears that one, and so do you.  C set if the sky is
+; full.  Clobbers everything but R5.
+; =========================================================================
+MISS_FIRE:	CALL	U_NEAR
+		BCS	8$
+		MOV	U.X(R5),R1
+		MOV	U.Y(R5),R2
+		MOV	U.Z(R5),R3		; clear of its own nose, toward
+		BLE	1$			;   you, whichever side it is on
+		SUB	#100.,R3
+		BR	2$
+1$:		ADD	#100.,R3
+2$:		CLR	R4			; MISSILE_STEP flies it
+		MOV	#SH_MISSILE,R0
+		MOV	R5,-(SP)
+		CALL	UNIV_ADD
+		MOV	(SP)+,R4
+		BCS	8$
+		BIS	#UF_MISSILE!UF_HOSTILE,U.FLAGS(R5)
+		MOV	#MISS_LIFE,U.ENERGY(R5)	; U.ENERGY doubles as its fuse
+		MOV	U.TARGET(R4),R0
+		BGT	3$
+		MOV	#-1,R0			; you, who have no slot
+		MOV	R0,U.TARGET(R5)
+		BISB	#AUTOECM_OUT,P_AUTOECM	; the auto-ECM hears it
+		MOV	R4,R5
+		MOV	#2,TX			; and say so, because there is
+		MOV	#4,TY			; something to be done about it
+		MOV	#S_M_INCOMING,R1
+		CALL	PUTS2
+		MOV	#40.,HYP_SHOW
+		BR	4$
+3$:		MOV	R0,U.TARGET(R5)
+		MOV	R4,R5
+4$:		CLC				; (Legend makes no sound of it)
+		RETURN
+8$:		SEC
+		RETURN
+
+; =========================================================================
+; AI_DECIDE - MoveAllObjAI: every fighter's counter comes down a frame,
+; and at zero is set again, 3..31, and it decides.  One that cannot
+; fight but can leave, leaves.  One that can leave may: near the station
+; one time in eight, hurt one time in sixty-four, and now and then
+; anyway.  Otherwise it takes a shot at its first target if that is in
+; range (OBJ_ATTACK), else its second, else picks a new one - and
+; attacking anything but a pirate makes it one.  Clobbers everything.
+; =========================================================================
+AI_DECIDE:	MOV	#UNIV,AI_P
+		CLR	AI_I
+10$:		MOV	AI_P,R5
+		TST	U.TYPE(R5)
+		BNE	11$
+79$:		JMP	80$
+11$:		BIT	#UF_PLANET!UF_SUN!UF_MISSILE!UF_DERELICT,U.FLAGS(R5)
+		BNE	79$
+		TST	U.EXPL(R5)
+		BNE	79$
+		BITB	#AI_HYPER!AI_ATTACK,U.AIF(R5)
+		BEQ	79$
+		DECB	U.CNT(R5)
+		BNE	79$
+		MOV	AI_I,R0
+		INC	R0
+		MOV	R0,AI_SELF
+		CALL	AI_RND
+		BIC	#^C37,R0
+		BIS	#3,R0
+		MOVB	R0,U.CNT(R5)
+		BITB	#KB_PLAYER,U.TYP(R5)
+		BEQ	111$
+		CALL	ALIEN_ATTACK		; boarding drones only chase
+		BR	79$
+111$:
+		BITB	#AI_ATTACK,U.AIF(R5)
+		BNE	12$
+		BR	70$
+12$:		BITB	#AI_HYPER,U.AIF(R5)
+		BEQ	40$
+		MOVB	U.AIF(R5),R0
+		BIC	#^C3,R0
+		CMP	R0,#3			; a Targon goes by its energy
+		BEQ	20$
+		MOV	#7,AI_MASK		; near the station: one in eight
+		TST	STN_NEAR
+		BNE	30$
+20$:		MOV	#77,AI_MASK		; hurt: one in sixty-four
+		CMP	U.ENERGY(R5),#77
+		BLO	30$
+		MOV	U.TARGET(R5),R0
+		BIS	U.TGT1(R5),R0
+		BEQ	21$
+		CALL	AI_RND
+		CMP	R0,#77
+		BLO	40$
+21$:		CALL	AI_RND
+		CMP	R0,#77
+		BEQ	40$
+30$:		CALL	AI_RND
+		BIT	AI_MASK,R0
+		BEQ	70$
+40$:		MOV	U.TARGET(R5),R0		; the attack
+		CALL	OBJ_ATTACK
+		BCS	50$
+		MOV	U.TGT1(R5),R0
+		CALL	OBJ_ATTACK
+		BCS	50$
+		CALL	OBJ_NEWTARGET
+		BCC	79$
+		CALL	SLOT_OF
+50$:		BITB	#AI_PIRATE,U.AIF(R4)	; attacking a pirate is nobody's
+		BNE	79$			;   crime; attacking anyone else
+		BISB	#AI_PIRATE,U.AIF(R5)	;   makes one
+		BR	79$
+70$:		MOVB	#AI_HYPER,U.AIF(R5)	; it is leaving
+		MOVB	#AI_HYPCNT,U.CNT(R5)
+80$:		ADD	#U.SIZE,AI_P
+		INC	AI_I
+		CMP	AI_I,#NUNIV
+		BGE	9$
+		JMP	10$
+9$:		RETURN
+
+; =========================================================================
+; OBJ_ATTACK - AttackTargetObj: R5 = a ship, R0 = a slot+1.  C set if it
+; took its shot: the target is there, is not of its frame (a target that
+; cannot fight is only worth a shot when it is a missile after this
+; ship, one time in sixteen), and is within AI_RANGE on every axis.  The
+; target then knows who shot it, and unless it is a bay it loses what
+; the shooter's energy says: ((E >> 2) & 63) ^ 15.  A kill by a ship
+; pays nobody.  R4 = the target on C.  Clobbers everything but R5.
+; =========================================================================
+OBJ_ATTACK:	TST	R0
+		BLE	9$
+		CALL	SLOT_OF
+		TST	U.TYPE(R4)
+		BEQ	9$
+		TST	U.EXPL(R4)
+		BNE	9$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R4)
+		BNE	9$
+		BITB	#KB_PLAYER,U.TYP(R5)
+		BNE	3$
+		BITB	#AI_ATTACK,U.AIF(R4)
+		BEQ	2$
+		MOVB	U.AIF(R4),R0		; its frame against mine
+		MOVB	U.AIF(R5),R1
+		XOR	R1,R0
+		BIT	#AI_FRAME,R0
+		BEQ	9$
+		BR	3$
+2$:		CMP	U.TARGET(R4),AI_SELF	; after me: a missile, a Targlet
+		BNE	9$
+		CALL	AI_RND
+		BIT	#17,R0
+		BNE	9$
+3$:		CALL	U_NEAR
+		BCS	9$
+		CALL	U_NEAR4
+		BCS	9$
+		MOV	U.X(R4),R0
+		SUB	U.X(R5),R0
+		BVS	9$
+		BGE	31$
+		NEG	R0
+31$:		CMP	R0,#AI_RANGE
+		BHIS	9$
+		MOV	U.Y(R4),R0
+		SUB	U.Y(R5),R0
+		BVS	9$
+		BGE	32$
+		NEG	R0
+32$:		CMP	R0,#AI_RANGE
+		BHIS	9$
+		MOV	U.Z(R4),R0
+		SUB	U.Z(R5),R0
+		BVS	9$
+		BGE	33$
+		NEG	R0
+33$:		CMP	R0,#AI_RANGE
+		BHIS	9$
+		CMP	U.TARGET(R4),AI_SELF	; the target knows who
+		BEQ	4$
+		MOV	U.TARGET(R4),U.TGT1(R4)
+		MOV	AI_SELF,U.TARGET(R4)
+4$:		CALL	NPC_TARGET
+		BIT	#UF_DOCK,U.FLAGS(R4)
+		BNE	8$
+		MOV	U.ENERGY(R5),R0
+		ASR	R0
+		ASR	R0
+		BIC	#^C77,R0
+		MOV	#17,R1
+		XOR	R1,R0
+		SUB	R0,U.ENERGY(R4)
+		BGT	8$
+		MOV	#EXPL_LEN,U.EXPL(R4)	; a kill, unpaid
+		CLR	U.SPEED(R4)
+		BIT	#UF_DROP,U.FLAGS(R4)
+		BNE	8$
+		MOV	R5,-(SP)
+		MOV	R4,-(SP)
+		MOV	R4,R5
+		MOV	#LAS_NONE,LAST_WEAPON
+		CALL	DROP_CARGO		; what it carried spills
+		MOV	(SP)+,R4
+		MOV	(SP)+,R5
+8$:		SEC
+		RETURN
+9$:		CLC
+		RETURN
+
+
+; =========================================================================
+; SPAWN_TICK - once a flight frame, in the loop where TRAFFIC_STEP was:
+; the barrier at the world, and every 256th frame, with under five ships
+; about and no bay near, what the system sends (MoveAllObjects' head).
+; Clobbers everything.
+; =========================================================================
+SPAWN_TICK:	TST	DOCKED
+		BNE	9$
+		TST	WITCH
+		BNE	9$
+		CALL	PLANET_BARRIER
+		MOV	FLY_TICK,R0
+		BIC	#^C377,R0
+		BNE	9$
+		CMP	NACTIVE,#5
+		BHIS	9$
+		CALL	BAY_NEAR
+		BCS	9$
+		MOV	#UNIV,R5		; and room: a roll can bring a group
+		MOV	#NUNIV,R1		;   of six, and the sky keeps two
+		CLR	R2			;   slots over for a missile or a
+1$:		TST	U.TYPE(R5)		;   drop - the drops do not count
+		BNE	2$			;   in NACTIVE, and a fight's wreckage
+		INC	R2			;   could otherwise fill it
+2$:		ADD	#U.SIZE,R5
+		SOB	R1,1$
+		CMP	R2,#SPAWN_ROOM
+		BLO	9$
+		JMP	SPAWN_RND
+9$:		RETURN
+
+SPAWN_ROOM = 8.			; free slots a roll wants
+
+; BAY_NEAR - C set if a bay is within BASE_U on every axis (Legend's
+; DockingObjNear).  Clobbers R0..R5.
+BAY_NEAR:	MOV	#UNIV,R5
+		MOV	#NUNIV,R1
+1$:		TST	U.TYPE(R5)
+		BEQ	2$
+		BIT	#UF_DOCK,U.FLAGS(R5)
+		BEQ	2$
+		MOV	R1,-(SP)
+		CALL	U_NEAR
+		MOV	(SP)+,R1
+		BCS	2$
+		MOV	#BASE_U,R2
+		MOV	#BASE_U,R3
+		CALL	NEAR_BOX
+		BCS	9$
+2$:		ADD	#U.SIZE,R5
+		SOB	R1,1$
+		CLC
+9$:		RETURN
+
+PB_RET:		RETURN
+
+; =========================================================================
+; PLANET_BARRIER - SetPlanetBarrier, the police's part: with the world
+; three to six units off (BASE_U), a Viper on the line ahead while there
+; are fewer than five about - every frame for a commander the law wants
+; badly (32768 up) outside the first galaxy, one time in 512 for anyone
+; else - and the Targons': in the war's occupied zone and at mission 6's
+; world, five at most; at a world they hold in their own galaxy
+; (Retribution), the barrier M7_BAR counts out, three at a time, a
+; cruiser among them maybe, and the League's Fer-de-Lance.  Clobbers
+; everything.
+; =========================================================================
+PLANET_BARRIER:	CALL	FIND_PLANET
+		BCS	PB_RET
+		CALL	U_NEAR
+		BCS	PB_RET
+		MOV	U.Z(R5),R0
+		BGE	1$
+		NEG	R0
+1$:		CMP	R0,#3*BASE_U
+		BLO	9$
+		CMP	R0,#6*BASE_U
+		BHIS	9$
+		CMP	P_GALAXY,#254.		; the Targons' galaxy: a held
+		BNE	13$			;   world's barrier (M7_BAR)
+		CALL	MS_HELDHERE
+		BCC	13$
+		BIT	#37,M7_BAR
+		BEQ	14$
+		CMP	OBJ_SLOTS+<4*4>+2,#3
+		BHIS	9$
+		CALL	AI_RND
+		BIC	#^C1,R0
+		ADD	#SH_TARGONH,R0
+		BIT	#20,M7_BAR		; a cruiser among them
+		BEQ	15$
+		MOV	R0,-(SP)
+		CALL	AI_RND
+		CMP	R0,#360
+		MOV	(SP)+,R0
+		BLO	15$
+		MOV	#SH_TARGONINTH,R0
+15$:		CALL	SPAWN_FWD
+		BCS	9$
+		BIC	#UF_DERELICT,U.FLAGS(R5)
+		DEC	M7_BAR
+		RETURN
+14$:		BIT	#200,M7_BAR		; the League's Fer-de-Lance, once
+		BEQ	9$
+		BIC	#200,M7_BAR
+		MOV	#SH_FERDELANCEH,R0
+		CALL	SPAWN_FWD
+		BCS	9$
+		BIC	#UF_DERELICT,U.FLAGS(R5)
+		RETURN
+13$:		CLR	R0			; the war's occupied zone, or
+		CALL	MS_HEREZONE		;   mission 6's second and third
+		BCS	12$			;   parts at the Targon-held world:
+		CMPB	P_M3,#4			;   Targons, five at most
+		BNE	11$
+		MOVB	P_M6,R0
+		SUB	#4,R0
+		CMP	R0,#3
+		BHIS	11$
+12$:		CMP	OBJ_SLOTS+<4*4>+2,#5
+		BHIS	9$
+		CALL	AI_RND
+		BIC	#^C1,R0
+		ADD	#SH_TARGONH,R0
+		CALL	SPAWN_FWD
+		BCS	9$
+		BIC	#UF_DERELICT,U.FLAGS(R5)
+		RETURN
+11$:		TST	P_GALAXY
+		BEQ	2$
+		CMP	LEGAL,#100000
+		BHIS	3$
+2$:		CALL	AI_RND
+		CMP	R0,#370
+		BLO	9$
+		CALL	AI_RND
+		CMP	R0,#20
+		BHIS	9$
+3$:		CMP	OBJ_SLOTS+<1*4>+2,#5
+		BHIS	9$
+		MOV	#SH_VIPERH,R0
+		CALL	SPAWN_FWD
+		BCS	9$
+		BIC	#UF_DERELICT,U.FLAGS(R5)
+9$:		RETURN

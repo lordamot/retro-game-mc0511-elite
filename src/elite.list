@@ -1,0 +1,66 @@
+# Module order for the game build = memory order of the final image.
+# tools/build_elite.py concatenates these into build/elite.mac and
+# assembles the result with bin/macro11.  Paths are repo-relative;
+# build/ entries are generated during the build.
+#
+# A generated table has to come BEFORE any module that sizes a buffer
+# from one of its symbols: .BLKW needs its count in pass one, so a
+# forward reference there silently derails the location counter and
+# every later label reports as an illegal symbol definition.
+#
+# RT_ENTRY begins at 001000; RT-11 owns the low page. PPU modules must
+# remain contiguous and position independent. tail.mac reuses their dead
+# CPU copy after upload, and ends the SAV with RT_ENTRY as transfer address.
+src/defs.mac
+src/rt11.mac
+build/rt11_header.mac
+src/main.mac
+src/gfx.mac
+src/math3d.mac
+src/ship.mac
+src/text.mac
+src/hud.mac
+src/navigation.mac
+src/space.mac
+src/combat.mac
+src/dock.mac
+src/bases.mac
+src/sound.mac
+src/galaxy.mac
+src/pilot.mac
+src/jump_ship.mac
+src/contract.mac
+build/market.mac
+src/market.mac
+build/legend_cockpit.mac
+src/cockpit.mac
+src/cargo.mac
+src/jdrive.mac
+src/drone.mac
+src/alien.mac
+src/asteroids.mac
+src/beams.mac
+src/indicators.mac
+src/sun.mac
+src/stars.mac
+src/harness.mac
+src/ai.mac
+src/mission.mac
+src/mission_fly.mac
+src/name.mac
+src/save.mac
+src/ovl.mac
+src/hull.mac
+src/input.mac
+src/rnd.mac
+src/sync.mac
+src/ppucomm.mac
+src/ppu.mac
+build/music.mac
+build/keytab.mac
+src/ppu_keys.mac
+src/gamevars.mac
+build/ships.mac
+build/font8.mac
+build/strings.mac
+src/tail.mac

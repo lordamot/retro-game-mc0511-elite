@@ -1,0 +1,24 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/Messages/Ships.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+msgAdder+0|ADDER
+msgAnaconda+0|ANACONDA
+msgAspMKII+0|ASP MK-2
+msgBoa+0|BOA CLASS CRUISER
+msgCobraMkI+0|COBRA MK-1
+msgCobraMkIII+0|COBRA MK-3
+msgConstrictor+0|CONSTRICTOR
+msgCobraMk4+0|COBRA MK-4
+msgFerdeLance+0|FER-DE-LANCE
+msgGecko+0|GECKO
+msgKrait+0|KRAIT
+msgMamba+0|MAMBA
+msgMoray+0|MORAY STAR BOAT
+msgFighter1+0|TAIPAN
+msgPython+0|PYTHON
+msgSidewinder+0|SIDEWINDER SCOUT SHIP
+msgFighter2+0|BOOMSLANG
+msgThargoid+0|THARGOID INVASION SHIP
+msgThargoid6+0|THARGOID-6 SHIP
+msgWorm+0|WORM

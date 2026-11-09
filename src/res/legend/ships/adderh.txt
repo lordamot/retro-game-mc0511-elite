@@ -1,0 +1,83 @@
+# d_AdderH - extracted from orig/legend by tools/legend_ships.py;
+# object 52 of AdrDataShips, hull d_Adder.
+# `make extract` overwrites it.
+# NOTE: the header counts 18v 29e 15n, the hull has 18v 29e 13n.
+name ADDERH
+index 52
+class 4
+speed 24
+energy 85
+bounty 40
+laser 100
+collide 50
+cargo 2
+launch 1
+dot 20
+rating 272
+flags 140
+flags2 2
+laservert 0
+type 10
+objflags 240
+shipnum 1
+radius 40
+vertex   -18     0    40
+vertex    18     0    40
+vertex    30     0   -24
+vertex   -30     0   -24
+vertex    30     0   -40
+vertex   -30     0   -40
+vertex    18    -7   -40
+vertex   -18    -7   -40
+vertex   -18     7   -40
+vertex    18     7   -40
+vertex   -18     7    13
+vertex    18     7    13
+vertex   -18    -7    13
+vertex    18    -7    13
+vertex   -11     3    29
+vertex    11     3    29
+vertex    11     4    24
+vertex   -11     4    24
+edge 0 1 31 1 0
+edge 1 2 7 3 2
+edge 2 4 31 5 4
+edge 4 6 31 6 5
+edge 6 7 31 12 6
+edge 7 5 31 8 6
+edge 5 3 31 8 7
+edge 3 0 7 10 9
+edge 4 9 31 6 4
+edge 9 8 31 11 6
+edge 8 5 31 7 6
+edge 0 10 31 9 0
+edge 3 10 31 9 7
+edge 1 11 31 2 0
+edge 2 11 31 4 2
+edge 0 12 31 10 1
+edge 3 12 31 10 8
+edge 1 13 31 3 1
+edge 2 13 31 5 3
+edge 10 11 31 11 0
+edge 12 13 31 12 1
+edge 8 10 31 11 7
+edge 9 11 31 11 4
+edge 7 12 31 12 8
+edge 6 13 31 12 5
+edge 14 15 5 0 0
+edge 15 16 3 0 0
+edge 16 17 4 0 0
+edge 17 14 3 0 0
+normal    0   39   10
+normal    0  -39   10
+normal   69   50   13
+normal   69  -50   13
+normal   30   52    0
+normal   30  -52    0
+normal    0    0 -160
+normal  -30   52    0
+normal  -30  -52    0
+normal  -69   50   13
+normal  -69  -50   13
+normal    0   28    0
+normal    0  -28    0

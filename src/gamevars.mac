@@ -1,0 +1,77 @@
+; =========================================================================
+; gamevars.mac - the CPU-side variables the PPU reads, and the game state.
+; COLORWORD1..4 and CPU_MODE must stay in this order and adjacent: the
+; PPU's COMMAND_4 walks them as five consecutive words.
+; =========================================================================
+
+COLORWORD1:	.WORD	PAL_VIEW1	; space view palette, entries 0..3
+COLORWORD2:	.WORD	PAL_VIEW2	; ... entries 4..7
+COLORWORD3:	.WORD	PAL_DASH1	; dashboard palette, entries 0..3
+COLORWORD4:	.WORD	PAL_DASH2	; ... entries 4..7
+CPU_MODE:	.WORD	MODE_640	; display control word: 640 mode
+
+FILL_Y:		.WORD	0		; COMMAND_6 arguments
+FILL_CNT:	.WORD	0
+FILL_COLOR:	.WORD	0
+PPB_WIN:	.WORD	0		; PP_BENCH's answers, written by the
+PPB_RAM:	.WORD	0		;   PPU: ticks for 20000 plane RMWs,
+					;   and for 20000 on its own RAM
+PPB_GO:		.WORD	0		; poked from outside to run it
+PPB_TICKS:	.WORD	0		; the PPU's own tick count, published
+PPB_BUSY:	.WORD	0		; ticks the PPU has spent draining the
+					;   ring, published by the PPU: read it
+					;   against FLY_TICK's ticks to see how
+					;   much of the PPU a scene uses
+
+; ---- input --------------------------------------------------------------
+KEYS:		.WORD	0		; the key word the PPU publishes
+KEYS_PREV:	.WORD	0		; ... last frame, for edge detection
+KEYS_EDGE:	.WORD	0		; keys pressed since the last INPUT_POLL
+KEYS_ACC:	.WORD	0		; the ISR's latch, drained by INPUT_POLL
+KEYS2:		.WORD	0		; the second key word (KB_*), the same
+KEYS2_PREV:	.WORD	0		;   four ways
+KEYS2_EDGE:	.WORD	0
+KEYS2_ACC:	.WORD	0
+OPTIONS:	.WORD	OPT_DEFAULT	; the pause menu's (OPT_* in src/defs.mac),
+					;   set at boot from the key file
+
+; ---- timing -------------------------------------------------------------
+FRAMES:		.WORD	0		; free-running 50 Hz frame counter
+VSYNC_SEEN:	.WORD	0
+
+; ---- pseudo-random ------------------------------------------------------
+RNDSEED:	.WORD	24187., 6571.	; 32-bit LCG state
+
+; ---- the commander ------------------------------------------------------
+PSPEED:		.WORD	0		; 0..40
+PROLL:		.WORD	0		; -8..8
+PPITCH:		.WORD	0		; -8..8
+PSHIELD_F:	.WORD	ENERGY_MAX	; forward shield, Legend's ShieldFront
+PSHIELD_A:	.WORD	ENERGY_MAX	; aft shield, ShieldRear: 0..ENERGY_MAX
+PBANKS:		.WORD	ENERGY_MAX, ENERGY_MAX, ENERGY_MAX, ENERGY_MAX
+		.WORD	ENERGY_MAX, ENERGY_MAX, ENERGY_MAX
+				; the energy banks, ShieldUnit1..7, of which
+				;   CKV_ENUNITS are the ship's: a blow drains
+				;   the first first, recovery fills the last
+PENERGY = PBANKS		; the first bank, under its old name
+PCABTEMP:	.WORD	30.
+PLASTEMP:	.WORD	0
+PALTITUDE:	.WORD	255.
+PMAT:		.BLKW	9.		; the commander's orientation
+VIEW_DIR:	.WORD	VIEW_FRONT	; which way he is looking
+; The purse, the fuel, the guns, the kit, the hold, the record and the
+; rating are in the commander's record (src/pilot.mac), which is what
+; goes to the disk.
+DOCKED:		.WORD	1		; 1 = sitting in the station
+SCREEN:		.WORD	0		; 0 flight, 1 chart, 2 short chart, 3
+				; data, 4 market, 5 outfitter, 6 yard, 7 the
+				; commander's record, 8 the access menu, 9
+				; the carrier market
+MKT_SEL:	.WORD	0		; the row the market cursor is on
+EQ_SEL:		.WORD	0		; the outfitter's cursor
+LAST_WEAPON:	.WORD	LAS_NONE	; what fired the shot that just killed
+					;   something: a LAS_* type, or LAS_NONE
+					;   for a missile or a collision
+DC_ON:		.WORD	0		; 1 = it has taken over
+WITCH:		.WORD	0		; 1 = adrift in witchspace
+CMDR_SLOT:	.WORD	0		; which of the disk's commanders this is

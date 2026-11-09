@@ -1,0 +1,24 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Engine/Messages/DevicesRus.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+mEquip_00+0|{nFlgPrn_2xx}{nPrnGalNum}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Энергоблок
+mEquip_01+0|{nFlgPrn_2xx}{nFlgPrn_2xx}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Гиперпривод
+mEquip_02+0|{nFlgPrn_2xx}{nFlgPrn_xx1}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Система П.Р.О.
+mEquip_03+0|{nPrnGalNum}fТопливный Инжектор
+mEquip_04+0|{nFlgPrn_2xx}{nFlgPrn_2xx}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Энергобомба
+mEquip_05+0|{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Автозапуск П.Р.О.
+mEquip_06+0|{nPrnGalNum}fАвтозапуск капсулы
+mEquip_07+0|{nPrnGalNum}fАбордажная Система
+mEquip_08+0|{nFlgPrn_2xx}{nFlgPrn_xx1}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Генератор Щитов
+mEquip_09+0|{nFlgPrn_2xx}{nFlgPrn_2xx}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Военные Щиты
+mEquip_10+0|{nPrnGalNum}fСистема Охлаждения
+mEquip_11+0|{nPrnGalNum}fСистема Маскировки
+mEquip_12+0|{nPrnGalNum}fКомпьютер Таргонов
+mEquip_13+0|{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Рудный Процессор
+mEquip_14+0|{nFlgPrn_2xx}{nFlgPrn_xx1}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Спас. Капсула
+mEquip_15+0|{nPrnGalNum}fТопливный Инжектор
+mEquip_16+0|{nFlgPrn_2xx}{nFlgPrn_xx1}{nPrnGalNum}f{nFlgPrn_2xx}{nFlgPrn_xx1}Топливосборщик
+mEquip_17+0|{nPrnGalNum}fСтыковочный Модуль
+mEquip_18+0|{nPrnGalNum}fСист. Сбора Грузов
+mEquip_19+0|{nPrnGalNum}fСист. Сброса Груза

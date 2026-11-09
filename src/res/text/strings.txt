@@ -1,0 +1,567 @@
+# Game text, one "LABEL|text" per line, UTF-8.
+#
+# tools/text_gen.py emits each as S_<LABEL>, a 0-terminated byte array in
+# KOI-7 - the same encoding the original stores its text in, so wording
+# taken from orig/ELITE.SCL needs no translation on the way in.  Only
+# uppercase Cyrillic, digits, space and punctuation exist in the font.
+#
+# Where the original has the phrase, it is used verbatim; the decoded
+# strings are in docs/reference-sources.md.
+
+# ---- dashboard ----------------------------------------------------------
+# A section headed `@overlay NAME` is assembled into that overlay's
+# build/strings_NAME.mac (src/ovl.list) rather than into the resident,
+# because only that screen prints it; a string two overlays or the
+# flight code print stays in the resident, above the first tag.
+
+# ---- the resident: the dashboard, the cockpit, the bays, the loader ---
+SYSTEM|СИСТЕМА
+DISTANCE|ДИСТАНЦИЯ
+LIGHTYEARS|СВЕТОВЫХ ЛЕТ
+M_DOCKED|ПРИСТЫКОВАН
+M_LAUNCH|СТАРТ
+M_HYPER|Н-ПЕРЕХОД
+M_NOFUEL|НЕТ ТОПЛИВА
+M_NOFUNDS|НЕТ ФОНДА
+M_TARGET|ЦЕЛЬ СБИТА
+M_STATION|СТАНЦИЯ
+M_PRESSFIRE|НАЖМИТЕ ФИКС
+M_GAMEOVER|ИГРА ОКОНЧЕНА
+V_FRONT|ПЕРЕД
+V_REAR|ЗАД
+V_LEFT|ЛЕВ
+V_RIGHT|ПРАВ
+T_CREDITS|БРАБЕН И БЕЛЛ 1984, ТОРУС 1985, ЛЕГЕНДА 2021, УКНЦ 2026
+M_LAUNCHKEY|ФИКС - СТАРТ
+M_GALJUMP|ГАЛАКТ. ПЕРЕХОД
+M_NODRIVE|НЕТ ГИПЕРПРИВОДА
+M_RING|ОПЛАЧЕНО 250 КР
+M_MILITARY|ВОЕННАЯ СТАНЦИЯ
+M_FUELST|ЗАПРАВОЧНАЯ СТАНЦИЯ
+M_HERMITST|АСТЕРОИД ОТШЕЛЬНИКА
+M_JAMMED|РАКЕТА ЗАБЛОКИРОВАНА
+M_LOCK|ЗАХВАТ ЦЕЛИ
+M_NOMISSILE|НЕТ РАКЕТ
+M_ECM|Е.С.М.
+M_BOMB|БОМБА
+M_INCOMING|РАКЕТА
+M_MILMISS|ВОЕННАЯ РАКЕТА
+M_CLOAKON|МАСКИРОВКА ВКЛ
+M_CLOAKOFF|МАСКИРОВКА ВЫКЛ
+M_ESCAPE|КАПСУЛА ОТДЕЛЕНА
+# the space bar's functions ("8"), the bombs, the tank (src/combat.mac,
+# src/cargo.mac)
+M_CASCADE|КАСКАДНАЯ БОМБА
+M_TAKE|СБОР ГРУЗА
+M_TANK|ЗАПРАВКА ИЗ БАКА
+# the boarding drone (src/drone.mac): Legend's txtBoardShip and
+# txtNotBoard
+M_DRONE|АБОРДАЖНЫЙ ДРОН
+M_ALIEN|ИНОПЛАНЕТНЫЙ ДРОН
+M_BOARDED|КОРАБЛЬ ЗАХВАЧЕН
+M_NOTBOARD|КОРАБЛЬ ЗАХВАТИТЬ НЕ УДАЛОСЬ
+M_REFUEL|ДОЗАПРАВЛЕН
+# the compass's modes (src/hud.mac) and the scanner's (src/space.mac)
+M_COMPASS|КОМПАС: 
+C_AUTO|АВТО
+C_SUN|СОЛНЦЕ
+C_PLANET|ПЛАНЕТА
+C_STATION|СТАНЦИЯ
+C_MILITARY|ВОЕННАЯ БАЗА
+C_HERMIT|АСТЕРОИД
+C_FUEL|ЗАПРАВКА
+C_RING|КОЛЬЦО
+C_CARDINAL|СТОРОНЫ СВЕТА
+M_SCANNER|СКАНЕР: 
+M_TURRET|ТУРЕЛИ ПОВЕРНУТЫ
+M_MAYDAY1|MAYDAY! СТАНЦИЯ В ОПАСНОСТИ!
+M_MAYDAY3|MAYDAY! 
+M_TAKEN|ЗАХВАЧЕНА!
+M_GOTCLOAK|СИСТЕМА МАСКИРОВКИ
+M_GOTALIEN|СИСТЕМА УПРАВЛЕНИЯ ДРОНАМИ
+M_HIJACK|УГОНЩИК УНИЧТОЖЕН
+M_WARINV|MAYDAY! АТАКОВАНА ГАЛАКТИКА 
+M_DESCENT|ДЕСАНТ
+M_ANOMALY|ОБНАРУЖЕНА АНОМАЛИЯ
+M_NOREPLY|СТАНЦИЯ НЕ ОТВЕЧАЕТ
+M_GENSHIP|КОРАБЛЬ ПОКОЛЕНИЙ
+M_NOCASH|НЕ ХВАТАЕТ ДЕНЕГ
+M_DENIED|В ДОСТУПЕ ОТКАЗАНО
+N_ALL|ВСЕ
+N_SHIPS|КОРАБЛИ
+N_CARGO|ГРУЗ
+N_BLINK|ГРУЗ МИГАЕТ
+M_DOCKCOMP|АВТОСТЫКОВКА
+# heavy damage (HEAVY_DAMAGE, src/combat.mac): what a big blow drained,
+# broke or spoiled - the twenty breakable devices by Legend's short
+# names (Engine/Messages/DevicesRus.a80), in PilotDevicesBreak order
+M_FUELLOST|ТОПЛИВО ПОТЕРЯНО
+M_BROKEN|ПОВРЕЖДЕНО: 
+M_CARGOLOST|УНИЧТОЖЕН ГРУЗ: 
+D_ENERGYUNIT|ЭНЕРГОБЛОК
+D_GALDRIVE|ГИПЕРПРИВОД
+D_ECM|СИСТЕМА П.Р.О.
+D_INJECTORS|ТОПЛИВНЫЙ ИНЖЕКТОР
+D_EBOMB|ЭНЕРГОБОМБА
+D_AUTOECM|АВТОЗАПУСК П.Р.О.
+D_AUTOPOD|АВТОЗАПУСК КАПСУЛЫ
+D_DRONE|АБОРДАЖНАЯ СИСТЕМА
+D_SHIELDGEN|ГЕНЕРАТОР ЩИТОВ
+D_MILSHIELDS|ВОЕННЫЕ ЩИТЫ
+D_LASERCOOL|СИСТЕМА ОХЛАЖДЕНИЯ
+D_CLOAK|СИСТЕМА МАСКИРОВКИ
+D_ALIENCOMP|КОМПЬЮТЕР ТАРГОНОВ
+D_OREPROC|РУДНЫЙ ПРОЦЕССОР
+D_ESCPOD|СПАС. КАПСУЛА
+D_FUELCOLL|ТОПЛИВОСБОРЩИК
+D_FUELSCOOPS|ТОПЛИВНЫЕ ЧЕРПАКИ
+D_DOCKCOMP|СТЫКОВОЧНЫЙ МОДУЛЬ
+D_AUTOTAKE|СИСТ. СБОРА ГРУЗОВ
+D_EJECT|СИСТ. СБРОСА ГРУЗА
+M_WITCH|СБОЙ ПЕРЕХОДА
+M_ALIGN|ВЫРОВНЯЙТЕ КОРАБЛЬ
+M_DISKERR|ОШИБКА: КОМАНДИР НЕ СОХРАНЕН
+M_NOOVL|НЕТ ОВЕРЛЕЯ
+
+@overlay charts
+# ---- the two charts (src/ovl_charts.mac) ----
+T_CHART|КАРТА ГАЛАКТИКИ 
+T_SHORT|КРАТКАЯ КАРТА
+M_FIND|ПОИСК:
+# the list of systems (Legend's Msg_MapListH and Msg_MapList)
+T_LIST|ГАЛАКТИКА 
+T_LIST2|: СПИСОК СИСТЕМ
+L_HEAD|СИСТЕМА     РАССТ.  ВРЕМЯ   УР. ПРАВИТЕЛЬСТВО
+
+@overlay info
+I_HELD|ВЛАДЕНИЯ ТАРГОНОВ!
+I_OCCUP| ЗАХВАЧЕНА ТАРГОНАМИ!
+I_RESIST| ПРОТИВОСТОИТ ВТОРЖЕНИЮ ТАРГОНОВ!
+# ---- the data screen and the world's description (src/ovl_info.mac) ----
+T_DATA|ДАННЫЕ О СИСТЕМЕ
+ECONOMY|ЭКОНОМИКА
+GOVERNMENT|ПРАВИТЕЛЬ.
+TECHLEVEL|УРОВЕНЬ
+POPULATION|НАСЕЛЕНИЕ
+RADIUS|РАДИУС
+E_RICHIND|БОГАТАЯ ИНДУСТРИЯ
+E_AVGIND|СРЕДН. ИНДУСТРИЯ
+E_POORIND|СЛАБ. ИНДУСТРИЯ
+E_MAININD|ТОЛЬКО ИНДУСТРИЯ
+E_MAINAGR|ТОЛЬКО АГРОКУЛЬТУРА
+E_RICHAGR|БОГАТАЯ АГРОКУЛЬТУРА
+E_AVGAGR|СРЕДН. АГРОКУЛЬТУРА
+E_POORAGR|СЛАБ. АГРОКУЛЬТУРА
+
+@overlay info charts
+# ---- the governments: the data screen's, and the list of systems' ----
+G_ANARCHY|АНАРХИЯ
+G_FEUDAL|ФЕОД.
+G_MULTIGOV|МУЛЬТИ-ПРАВ.
+G_DICTATOR|ДИКТАТ.
+G_COMMUNIST|КОММУНИСТ
+G_CONFED|КОНФЕДЕРАТ
+G_DEMOCRACY|ДЕМОКРАТИЯ
+G_CORPORATE|КОРПОРАЦИЯ
+
+@overlay info
+D_HUMANS|ЛЮДИ-КОЛОНИСТЫ
+D_KNOWN|ИЗВЕСТНА: 
+D_DANGER|ОПАСНА: 
+D_HERE|ЗДЕСЬ 
+D_VALUE|ЗДЕСЬ ЦЕНЯТ 
+ST_SPECIES|ЖИТЕЛИ
+
+@overlay trade
+# ---- the market (src/ovl_trade.mac) ----
+T_MARKET|ТОВАРНЫЙ РЫНОК
+H_GOODS|ТОВАР
+H_PRICE|ЦЕНА
+H_STOCK|ЕСТЬ
+H_HOLD|ТРЮМ
+M_CASHL|ДЕНЬГИ: 
+M_CR| КР
+M_INHOLD|В ТРЮМЕ: 
+M_OF| ИЗ 
+M_NOMARKET|ЗДЕСЬ НЕ ТОРГУЮТ
+
+@overlay trade carrier
+# ---- the units, on the market and the carrier market ----
+U_T| Т
+U_KG| КГ
+U_G| Г
+
+@overlay pilot
+# ---- the commander's record (src/ovl_pilot.mac): Legend's pilot info
+# page, its labels and names from INCLUDE/Menu/PilotInfoMsg.a80 - the
+# ratings are the Russian list its author left in a comment there ----
+T_PILOT|ПИЛОТ
+P_DATE|ДАТА/ВРЕМЯ
+P_SHIP|КОРАБЛЬ
+P_PRESENT|ТЕКУЩАЯ СИСТЕМА
+P_DEST|ЦЕЛЕВАЯ СИСТЕМА
+P_LOC|МЕСТОПОЛОЖЕНИЕ
+P_FUEL|ТОПЛИВО
+P_LY| СВ.ЛЕТ
+P_CASH|НАЛИЧНОСТЬ
+P_LEGAL|ПРАВОВОЙ СТАТУС
+P_RATING|РЕЙТИНГ
+P_RANK|РАНГ
+P_KILLS|СБИТО
+P_GALAXY|ГАЛАКТИКА
+P_EQUIP|ОБОРУДОВАНИЕ:
+P_HOLD|ТРЮМ
+LOC_SPACE|КОСМОС
+LOC_STATION|СТАНЦИЯ
+LOC_MILITARY|ВОЕННАЯ СТАНЦИЯ
+LOC_SERVICE|СТАНЦИЯ ТЕХОБСЛУЖИВАНИЯ
+LOC_HERMIT|АСТЕРОИД ВОЛЬНЫХ ТОРГОВЦЕВ
+LOC_GENSHIP|КОРАБЛЬ ПОКОЛЕНИЙ
+LOC_DEEP|ГЛУБОКИЙ КОСМОС
+LS_CLEAN|ЗАКОНОПОСЛУШНЫЙ
+LS_OFFENDER|ПРАВОНАРУШИТЕЛЬ
+LS_FUGITIVE|БЕГЛЕЦ
+LS_OUTLAW|ВНЕ ЗАКОНА
+LS_ROGUE|ИЗГОЙ
+RT_0|БЕЗВРЕДНЫЙ
+RT_1|СЛАБЫЙ
+RT_2|НОВИЧОК
+RT_3|СПЕЦИАЛИСТ
+RT_4|ЭКСПЕРТ
+RT_5|МАСТЕР
+RT_6|ОПАСНЫЙ
+RT_7|СМЕРТОНОСНЫЙ
+RT_8|ЭЛИТА
+RT_9|ЛЕГЕНДА
+RK_RETIRED| В ОТСТАВКЕ
+RK_0|СЕРЖАНТ
+RK_1|ЛЕЙТЕНАНТ
+RK_2|КАПИТАН
+RK_3|МАЙОР
+RK_4|ПОДПОЛКОВНИК
+RK_5|ПОЛКОВНИК
+RK_6|ГЕНЕРАЛ
+RK_7|МАРШАЛ
+MT_FRONT|СПЕРЕДИ 
+MT_REAR|СЗАДИ 
+MT_LEFT|СЛЕВА 
+MT_RIGHT|СПРАВА 
+
+@overlay pilot yard
+# ---- the ship names, the port's spellings of Legend's English ones:
+# the pilot page and the yard print them, and nothing else of each
+# other's ----
+SN_01|АДДЕР
+SN_02|АНАКОНДА
+SN_03|АСП МК-2
+SN_04|КРЕЙСЕР БОА
+SN_05|КОБРА МК-1
+SN_06|КОБРА МК-3
+SN_07|КОНСТРИКТОР
+SN_08|КОБРА МК-4
+SN_09|ФЕР-ДЕ-ЛАНС
+SN_10|ГЕККО
+SN_11|КРАЙТ
+SN_12|МАМБА
+SN_13|МОРЕЙ
+SN_14|ТАЙПАН
+SN_15|ПИТОН
+SN_16|САЙДВИНДЕР
+SN_17|БУМСЛАНГ
+SN_18|КОРАБЛЬ ТАРГОИДОВ
+SN_19|ТАРГОИД-6
+SN_20|ВОРМ
+
+@overlay cmdr save
+# ---- the commander chooser (src/ovl_cmdr.mac) and the name prompt and
+# slot reader it shares with the access menu (src/nameask.mac) ----
+M_NAME|ИМЯ? 
+M_WHICH|КАКОЙ КОМАНДИР?
+M_EMPTY|- ПУСТО -
+M_JAMESON|ЯМЕСОН
+
+@overlay save
+# ---- the access menu (src/ovl_save.mac): Legend's Save/Load menu,
+# INCLUDE/Menu/SaveLoadMsg.a80 ----
+T_ACCESS|МЕНЮ ДОСТУПА
+T_LOAD|ЗАГРУЗКА
+T_SAVE|СОХРАНЕНИЕ
+V_LOADNEW|ЗАГРУЗИТЬ НОВОГО ПИЛОТА
+V_SAVE|СОХРАНИТЬ ПИЛОТА 
+V_EXIT|ВЫХОД
+V_SAVED|ИГРА СОХРАНЕНА
+V_DISKERR|ОШИБКА ЧТЕНИЯ/ЗАПИСИ
+V_FILEERR|ОШИБКА ФАЙЛА
+V_STATION|МЕНЮ ДОСТУПНО НА СТАНЦИИ
+V_HINT|ВВОД - НАЗАД
+
+@overlay equip
+# ---- the outfitter (src/ovl_equip.mac): Legend's equipment shop, its
+# messages from INCLUDE/Menu/EquipShipMsg.a80 and the two service rows
+# from the end of its device list (DevicesRus.a80); the states in the
+# right-hand column stand in for Legend's row colours ----
+T_EQUIP|ОСНАЩЕНИЕ КОРАБЛЯ
+T_SERVICE|ОБСЛУЖИВАНИЕ КОРАБЛЯ
+E_CASHL|ДЕНЬГИ: 
+E_CR| КР
+E_NOSHOP|ОБОРУДОВАНИЕМ ЗДЕСЬ НЕ ТОРГУЮТ
+E_NOCASH|НЕХВАТАЕТ ДЕНЕГ
+E_REFUELED|КОРАБЛЬ ЗАПРАВЛЕН
+E_MAXMISS|УСТАНОВЛЕНО МАКСИМАЛЬНОЕ КОЛИЧЕСТВО РАКЕТ
+E_INSTALLED|УСТАНОВЛЕНО: 
+E_UNAVAIL|НЕДОСТУПНО ДЛЯ ЭТОГО КОРАБЛЯ
+E_ABOARD|УЖЕ УСТАНОВЛЕНО НА КОРАБЛЕ
+E_NOROOM|В ГРУЗОВОМ ОТСЕКЕ НЕТ СВОБОДНОГО МЕСТА
+E_FITTING|УСТАНОВКА: 
+E_FRONT|ПЕРЕДНИЙ: 
+E_REAR|ЗАДНИЙ:   
+E_LEFT|ЛЕВЫЙ:    
+E_RIGHT|ПРАВЫЙ:   
+E_NOLASER|НЕ УСТАНОВЛЕН
+E_REMCABIN|ПАССАЖИРСКАЯ КАБИНА ДЕМОНТИРОВАНА
+E_NOREPAIR|РЕМОНТ НЕ ТРЕБУЕТСЯ
+E_REPAIRED|ОТРЕМОНТИРОВАНО: 
+E_SHIPREP|КОРАБЛЬ ОТРЕМОНТИРОВАН
+E_N_REMCABIN|ДЕМОНТАЖ ПАССАЖИРСКОЙ КАБИНЫ
+E_N_REPAIR|РЕМОНТ КОРПУСА КОРАБЛЯ
+E_ONBOARD|НА БОРТУ
+E_NOTFIT|НЕ ПОДХОДИТ
+E_BROKEN|НЕИСПРАВЕН
+
+@overlay yard
+# ---- the yard (src/ovl_yard.mac): Legend's Buy Ships / Select Ships
+# menus, INCLUDE/Menu/BuyShipsMsg.a80 ----
+T_BUYSHIPS|ПОКУПКА КОРАБЛЯ
+T_SELSHIPS|ВЫБОР КОРАБЛЯ
+Y_CASHL|ДЕНЬГИ: 
+Y_CR| КР
+Y_DATE|ДАТА СОЗДАНИЯ: 
+Y_AD| AD
+Y_NONE|----
+Y_TONS|ГРУЗОПОДЪЕМНОСТЬ: 
+Y_T| Т
+Y_SPEED|МАКС. СКОРОСТЬ: 
+Y_LM| LM
+Y_PRICE|ЦЕНА: 
+Y_WHERE|МЕСТОНАХОЖДЕНИЕ
+Y_GALAXY|ГАЛАКТИКА: 
+Y_PLANET|ПЛАНЕТА: 
+Y_SELL|ПРОДАТЬ (
+Y_DELIVER|ДОСТАВИТЬ (
+Y_CR2| КР)
+Y_SELECT|ВЫБРАТЬ КОРАБЛЬ
+Y_NOYARD|КОРАБЛЯМИ ЗДЕСЬ НЕ ТОРГУЮТ
+Y_NOSHIPS|КОРАБЛЕЙ НЕТ
+Y_NOCASH|НЕХВАТАЕТ ДЕНЕГ
+Y_HINT|ВВОД - ДРУГОЙ СПИСОК
+Y_DELIVERED|КОРАБЛЬ ДОСТАВЛЕН
+Y_SOLD|КОРАБЛЬ ПРОДАН
+
+@overlay carrier
+# ---- the carrier market (src/ovl_carrier.mac): Legend's Delivery menu,
+# its text from INCLUDE/Menu/DeliveryMsg.a80 and the carrier words of
+# Messages/MsgDescPlanetRus.a80 ----
+C_TITLE|РЫНОК ПЕРЕВОЗЧИКОВ
+C_LOG|ТЕКУЩИЕ КОНТРАКТЫ
+C_DETAIL|КОНТРАКТ
+C_CABINS|СВОБОДНЫХ КАБИН: 
+C_HOLD|  МЕСТА В ТРЮМЕ: 
+C_REP|  РЕПУТАЦИЯ: 
+C_CASH|  ДЕНЬГИ: 
+C_CR| КР
+C_H_GOODS|ТОВАРЫ
+C_H_PASS|ПАССАЖИРЫ
+C_H_PARCEL|ПОСЫЛКИ
+C_H_DEST|АДРЕСАТ
+C_H_TIME|ВРЕМЯ
+C_H_DEPOSIT|ЗАЛОГ
+C_H_ADV|АВАНС
+C_H_FEE|ОПЛАТА
+C_NONE|ПРЕДЛОЖЕНИЙ НЕТ
+C_NOLOG|КОНТРАКТОВ НЕТ
+C_HINT|ВВОД - ЖУРНАЛ ИЛИ РЫНОК, ФИКС - ПОДРОБНОСТИ
+C_HINT2|СТРЕЛКИ - ВЫБОР, ФИКС - ПОДТВЕРДИТЬ
+C_CLOSED|КОНТРАКТЫ ПРЕДЛАГАЮТ ТОЛЬКО НА СТАНЦИИ
+C_MARKS|Р - МАЛО РЕПУТАЦИИ, ! - НЕ ХВАТАЕТ КАБИН, МЕСТА ИЛИ ДЕНЕГ
+C_MARKS2|! - СРОК ИСТЕК
+C_NORATE|МАЛО РЕПУТАЦИИ ДЛЯ ЭТОГО КОНТРАКТА
+C_NOSLOT|У ВАС УЖЕ ШЕСТЬ КОНТРАКТОВ
+C_NOCABIN|НЕТ СВОБОДНОЙ КАБИНЫ
+C_NOROOM|НЕТ МЕСТА В ТРЮМЕ
+C_NOCASH|НЕТ ДЕНЕГ НА ЗАЛОГ
+C_TAKEN|КОНТРАКТ ЗАКЛЮЧЕН
+C_REFUSED|КОНТРАКТ РАЗОРВАН
+C_D_CARGO|ДОСТАВИТЬ 
+C_D_PASS|НУЖНО ДОСТАВИТЬ ПАССАЖИРА 
+C_D_PARCEL|НЕОБХОДИМО ДОСТАВИТЬ 
+C_D_TO|НА ПЛАНЕТУ 
+C_D_WITHIN| В ТЕЧЕНИЕ 
+C_D_H|Ч.
+C_D_TRAVEL|ПЕРЕЛЕТ ЗАЙМЕТ ПРИМЕРНО 
+C_D_DIST|, РАССТОЯНИЕ 
+C_D_LY| СВ. ЛЕТ
+C_D_FEE|ОПЛАТА: 
+C_D_AFTER| КР ПОСЛЕ УСПЕШНОЙ ДОСТАВКИ
+C_D_DEPOSIT|, ЗАЛОГ: 
+C_D_ADVANCE|, АВАНС: 
+C_D_RETDEP|И ВОЗВРАТ ПОЛНОЙ СУММЫ ЗАЛОГА
+C_ACCEPT|ЗАКЛЮЧИТЬ КОНТРАКТ
+C_REFUSE|РАЗОРВАТЬ КОНТРАКТ
+C_BACK|ВОЗВРАТ К ВЫБОРУ
+# the parcels' names (GenPackageName): sixteen whole ones, then a
+# prefix and a second word - a sport, a dish, a beast's hide, a rare
+# thing - or a made-up name from the syllable pairs
+C_PK1_00|НАЛОГОВЫЙ ОТЧЕТ
+C_PK1_01|БЛАНКИ ЛИЦЕНЗИЙ
+C_PK1_02|ИСКОВЫЕ ДЕЛА
+C_PK1_03|ОБРАЗЦЫ ВИРУСОВ
+C_PK1_04|СЕКРЕТНОЕ ДОСЬЕ
+C_PK1_05|ГЕОДАННЫЕ
+C_PK1_06|ЗВУКОЗАПИСИ
+C_PK1_07|РЕДКИЕ ЭКСПОНАТЫ
+C_PK1_08|ОПЫТНЫЕ ОБРАЗЦЫ
+C_PK1_09|ПРОТОТИП ЛАЗЕРА
+C_PK1_10|КОНСТРУКЦИИ БОМБ
+C_PK1_11|БИОДАННЫЕ
+C_PK1_12|АРХИВ ДОКУМЕНТОВ
+C_PK1_13|МОДНЫЙ КОСТЮМ
+C_PK1_14|ПЛАНЫ ВТОРЖЕНИЯ
+C_PK1_15|КОЛЬЦО ВЛАСТИ
+C_PKP_0|ВИДЕО 
+C_PKP_1|РЕЦЕПТ 
+C_PKP_2|ШКУРА 
+C_PKP_3|ПРАВИЛА 
+C_PKP_4|РЕДКАЯ 
+C_PKP_5|ДОСЬЕ НА 
+C_SPORT_0|ХОККЕЯ
+C_SPORT_1|КРИКЕТА
+C_SPORT_2|КАРАТЕ
+C_SPORT_3|ПОЛО
+C_SPORT_4|ТЕННИСА
+C_SPORT_5|ФУТБОЛА
+C_SPORT_6|ГОЛЬФА
+C_SPORT_7|БОКСА
+C_FOOD_0|ПЕЛЬМЕНЕЙ
+C_FOOD_1|КОТЛЕТ
+C_FOOD_2|СТЕЙКОВ
+C_FOOD_3|ПИРОЖКОВ
+C_FOOD_4|СУПОВ
+C_FOOD_5|САЛАТОВ
+C_FOOD_6|БЛИНОВ
+C_FOOD_7|ТОРТОВ
+C_PK2_0|ЛЬВА
+C_PK2_1|ТИГРА
+C_PK2_2|ВОЛКА
+C_PK2_3|ДРАКОНА
+C_PK2_4|ЕХИДНЫ
+C_PK2_5|ИРБИСА
+C_PK2_6|МЕДВЕДЯ
+C_PK2_7|ПИНГВИНА
+C_PK3_0|КНИГА
+C_PK3_1|СТАТУЯ
+C_PK3_2|АМФОРА
+C_PK3_3|ВАЗА
+C_PK3_4|КУКЛА
+C_PK3_5|КАРТИНА
+C_PK3_6|БРОШЬ
+C_PK3_7|ФЛЕЙТА
+# the syllable pairs a passenger's name is made of (TxtPairOfChrR),
+# thirty-three of them, "?" a pair of one letter
+C_PAIRS|АЛЛЕНЕОСЗАЯНБИСООВЕСАРМАИНДИУ?АНЕРАТЕНБЕАСЛАВЕТИЕДОРКУАНТЕИСРИОНИВ
+
+@overlay ctgen
+# ---- the offers' settling at a docking (src/ovl_ctgen.mac): the
+# client's three speeches from MissionsMsg.a80, each cut to a line ----
+C_FAIL|ВЫ НЕ ИСПОЛНИЛИ СВОИ ОБЯЗАТЕЛЬСТВА. Я АННУЛИРУЮ КОНТРАКТ.
+C_NOTIME|СРОК КОНТРАКТА ИСТЕК, НО Я ЗАПЛАЧУ ВАМ. РЕКОМЕНДАЦИЙ НЕ ЖДИТЕ.
+C_GOOD|БЛАГОДАРЮ ЗА СВОЕВРЕМЕННУЮ ДОСТАВКУ. ПРИМИТЕ ОБЕЩАННУЮ ПЛАТУ.
+
+# ---- the dashboard's labels, which only its overlay draws (src/ovl_dash.mac)
+@overlay dash
+H_ECM|РЭБ
+H_CLOAK|МАС
+H_DANGER|БОЙ
+SPEED|СКОР
+ROLL|КРЕН
+PITCH|ТАНГ
+FUEL|ТОПЛ
+SHIELD_F|ПЕР
+SHIELD_A|ЗАД
+ENERGY|ЭНРГ
+ALTITUDE|ВЫС
+CABIN_T|ТЕМП
+LASER_T|ЛАЗЕР
+RACK|РАКЕТ
+
+# ---- the pause menu and the launch prompt (src/ovl_pause.mac): Legend's
+# Msg_Pause (Menu/PauseInGameMsg.a80) and Msg_Launch (Menu/Messages/
+# MenuMsg.a80), Russian, with the УКНЦ letters on Legend's keys ----
+@overlay pause
+PZ_TITLE|П А У З А
+PZ_NEW|НОВАЯ ИГРА
+PZ_SOUND|ЗВУКОВЫЕ ЭФФЕКТЫ
+PZ_INV|ИНВЕРСИЯ УПРАВЛЕНИЯ
+PZ_INVUD|ИНВЕРСИЯ КЛАВИШ ВВЕРХ/ВНИЗ
+PZ_INERT|ИНЕРЦИОННОЕ УПРАВЛЕНИЕ
+PZ_STEADY|ПОСТОЯННАЯ СКОРОСТЬ ПОВОРОТА
+PZ_AUTOECM|АВТОВКЛЮЧЕНИЕ П.Р.О.
+PZ_AUTOPOD|АВТОКАТАПУЛЬТИРОВАНИЕ
+PZ_WITCH|ПЕРЕХВАТ ТАРГОНОВ
+PZ_EASY|УПРОЩЕННАЯ СТЫКОВКА
+PZ_LAUNCH|ПОДТВЕРЖДЕНИЕ НА ВЗЛЕТ
+PZ_TURRET|ПОВОРОТ ЛАЗЕРНЫХ ТУРЕЛЕЙ
+PZ_GO|"ПРОБЕЛ" - ПРОДОЛЖИТЬ ИГРУ
+PZ_ON|ВКЛ.
+PZ_OFF|ВЫКЛ.
+PZ_ASK|Н А Ч А Т Ь   Р А С С Т Ы К О В К У ?
+PZ_YNA|Н (ДА) / Т (НЕТ) / Ф (ВСЕГДА)
+
+# Startup welcome and default UKNC controls, in the commander overlay.
+# Legend attribution: https://wiki.alioth.net/index.php/Elite_Legend
+@overlay cmdr
+SP_HELLO|ПРИВЕТСТВУЮ ВСЕХ!
+SP_INTRO1|РАД ПРЕДСТАВИТЬ ВАМ ПОРТ ИГРЫ <ELITE LEGEND>
+SP_INTRO2|ДЛЯ ЭЛЕКТРОНИКА МС-0511.
+SP_PORT|АВТОРЫ ПОРТА:
+SP_AUTHORS|СЕРГЕЙ ЛЕМЕШЕВ И <CHATGPT CODEX>.
+SP_ORIGINAL|АВТОРЫ ОРИГИНАЛА И ВЕРСИИ <LEGEND>:
+SP_ELITE|<ELITE>: ДЭВИД БРЭБЕН И ИЭН БЕЛЛ (1984)
+SP_TORUS|ВЕРСИЯ ДЛЯ <ZX SPECTRUM>: <TORUS> (1985)
+SP_LEGEND|<ELITE LEGEND>: <PLM>
+SP_DATE|ПЕНЗА, 9 НОЯБРЯ 2026
+SP_NEXT|ВВОД: К СПРАВОЧНОМУ ЭКРАНУ
+SP_VERSION|0.8.0
+SP_KEYS|УПРАВЛЕНИЕ ИГРОЙ - УКНЦ
+SP_FLIGHT|ПОЛЕТ: КЛАВИША - ДЕЙСТВИЕ
+SP_MENUS|МЕНЮ, СТАНЦИЯ И КАРТЫ
+SP_F01|ВЛЕВО/ВПРАВО - КРЕН
+SP_F02|ВВЕРХ/ВНИЗ   - ТАНГАЖ
+SP_F03|ФИКС         - ОГОНЬ ЛАЗЕРОМ
+SP_F04|ДОП. ВВОД    - СКОРОСТЬ ПО КРУГУ
+SP_F05|ПРОБЕЛ       - ЗАХВАТ / ПУСК
+SP_F06|1            - СМЕНА ВИДА
+SP_F07|2            - ПРОТИВОРАКЕТНАЯ ЗАЩИТА
+SP_F08|3            - ЭНЕРГЕТИЧЕСКАЯ БОМБА
+SP_F09|6            - КАТАПУЛЬТИРОВАНИЕ
+SP_F10|8            - ФУНКЦИЯ ПРОБЕЛА
+SP_F11|9            - МАСКИРОВКА
+SP_F12|О (ДЕРЖАТЬ)  - <J>-ПРИВОД / ФОРСАЖ
+SP_F13|М            - РЕЖИМ КОМПАСА
+SP_F14|Ы            - РЕЖИМ СКАНЕРА
+SP_F15|А            - ПОВОРОТ ТУРЕЛЕЙ
+SP_M01|СТОП    - СЛЕДУЮЩИЙ ЭКРАН
+SP_M02|АР2     - ПАУЗА И НАСТРОЙКИ
+SP_M03|АР2, Ч  - ВЫХОД В <RT>-11
+SP_M04|ФИКС    - ВЗЛЕТ / ВЫБОР / ПОКУПКА
+SP_M05|СТРЕЛКИ - ВЫБОР СТРОКИ ИЛИ СТРАНИЦЫ
+SP_M06|ВВОД    - СМЕНА СПИСКА
+SP_M07|РЫНОК: ВЛЕВО - ПРОДАТЬ, ВПРАВО - КУПИТЬ
+SP_M08|РЫНОК: ФИКС  - ПРОДАТЬ/КУПИТЬ ВСЕ
+SP_M09|КАРТЫ: СТРЕЛКИ - ВЫБОР СИСТЕМЫ
+SP_M10|КАРТЫ: ВВОД    - ПОИСК ПО ИМЕНИ
+SP_M11|КАРТЫ: ФИКС    - ГИПЕРПРЫЖОК
+SP_M12|КАРТА: 1 / 2   - СМЕНА ГАЛАКТИКИ
+SP_M13|КАРТА: 3       - СПИСОК СИСТЕМ
+SP_M14|КАРТЫ: 9       - ПРЫЖОК К РАККСЛЕ
+SP_M15|ДОП. ВВОД - НА ЦИФРОВОЙ КЛАВИАТУРЕ
+SP_PLAY|ВВОД: К ИГРЕ

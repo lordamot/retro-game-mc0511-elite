@@ -1,0 +1,28 @@
+; =========================================================================
+; ppu_keys.mac - the tail of the PPU block (PP_START..PP_END, which starts
+; in src/ppu.mac): the words it publishes into CPU RAM and the saved
+; vectors.  A separate file only so that the tune (build/music.mac)
+; and the key tables (build/keytab.mac) can sit inside the block BEFORE
+; these words, in the part src/tail.mac lays the
+; CPU's buffers over once the block is pushed: see src/elite.list.
+; =========================================================================
+
+PP_KEYS_DATA:	.WORD	0	; these four are published into the CPU's
+PP_VSYNC_READY:	.WORD	0	;   copy of this block as four CONSECUTIVE
+PP_LASTKEY:	.WORD	0	;   words, so nothing may sit between them.
+PP_KEYS2_DATA:	.WORD	0	; The third is the raw byte the keyboard
+				; delivered, for tools/keymap.py's sweep;
+				; the fourth the second key word
+PP_TICKS:	.WORD	0	; the PPU's own 50 Hz count, for PP_BENCH
+
+; The key tables (KEYON_CODES, KEYOFF_CODES, KEYON2_CODES, KEYOFF2_CODES)
+; are build/keytab.mac, before these words: tools/keyfile.py writes them
+; from src/res/setup.txt, and KEY_INIT (src/input.mac) copies the disk's
+; key file over the PPU's copy at boot.
+
+K1_SAVE:	.BLKW	1		; saved channel K1 receiver vector
+V100_SAVE:	.BLKW	1		; saved line clock vector
+KEYB_SAVE:	.BLKW	1		; saved keyboard vector
+
+		.EVEN
+PP_END:					; end of the block sent to the PPU

@@ -1,0 +1,368 @@
+; =========================================================================
+; text.mac - glyphs on the 640x288 screen.
+;
+; A glyph is 8x11 and one byte wide, so at 640 pixels the screen is 80
+; columns with 26 complete text rows and a character lands on a byte boundary - one
+; MOVB per row, no shifting.  Text is written straight into plane 1
+; rather than XORed: the space view is black behind it, and a plain
+; store is the cheapest thing the video window will do.
+;
+; Because the УКНЦ's pixels are about 0.6 as wide as they are tall, an
+; 8x11 glyph comes out narrow.  PUTS2 draws the same font at double
+; width through EXPTAB, which is the right shape for headings and for
+; the dashboard - 40 columns across the screen.
+; =========================================================================
+
+TX:		.WORD	0		; cursor: byte column, 0..79
+TY:		.WORD	0		; cursor: pixel row, 0..287
+; EXPTAB, byte -> the same bits doubled, 256 words TEXT_INIT fills, is
+; laid over the dead copy of the PPU program in src/tail.mac
+
+; =========================================================================
+; TEXT_INIT - build the bit-doubling table.  Call once at startup.
+; =========================================================================
+TEXT_INIT:	MOV	#EXPTAB,R0
+		CLR	R1			; the byte being expanded
+10$:		CLR	R2			; its doubled form
+		MOV	#1,R3			; source bit
+		MOV	#1,R4			; destination bit pair
+20$:		BIT	R3,R1
+		BEQ	30$
+		BIS	R4,R2
+		ASL	R4
+		BIS	R4,R2
+		ASR	R4
+30$:		ASL	R3
+		ASL	R4
+		ASL	R4
+		CMP	R3,#400
+		BLO	20$
+		MOV	R2,(R0)+
+		INC	R1
+		CMP	R1,#400
+		BLO	10$
+		RETURN
+
+; =========================================================================
+; TEXT_AT - put the cursor at column R0, pixel row R1.
+; =========================================================================
+TEXT_AT:	MOV	R0,TX
+		MOV	R1,TY
+		RETURN
+
+; GLYPH_ADDR - R0 = character -> R0 = glyph pointer, C set if there is
+; no such glyph.  Clobbers nothing else.
+GLYPH_ADDR:	CMP	R0,#FONT_FIRST
+		BLO	9$
+		CMP	R0,#FONT_LAST
+		BHI	9$
+		SUB	#FONT_FIRST,R0
+		MOV	R1,-(SP)
+		MUL	#FONT_H,R0		; eleven bytes, including accents and tails
+		MOV	R1,R0
+		MOV	(SP)+,R1
+		ADD	#FONT8,R0
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; PUTC - draw the character in R0 at the cursor and step it on.
+; Clobbers R0,R1,R2,R3.
+; =========================================================================
+PUTC:		CALL	GLYPH_ADDR
+		BCS	8$
+		MOV	TY,R1
+		MUL	#SCRWB,R1		; R1 odd - low 16 bits
+		ADD	TX,R1
+		ADD	#VRAM,R1
+		MOV	#FONT_H,R2
+1$:		MOV	R1,@#VADDR
+		MOVB	(R0)+,@#VDATA		; low byte of the window = plane 1
+		ADD	#SCRWB,R1
+		SOB	R2,1$
+8$:		INC	TX
+		RETURN
+
+; =========================================================================
+; PUTC2 - the same glyph at double width, two byte columns wide.
+; Clobbers R0..R5.
+; =========================================================================
+PUTC2:		CALL	GLYPH_ADDR
+		BCS	8$
+		MOV	TY,R1
+		MUL	#SCRWB,R1
+		ADD	TX,R1
+		ADD	#VRAM,R1
+		MOV	#FONT_H,R2
+1$:		MOVB	(R0)+,R3
+		BIC	#177400,R3
+		ASL	R3
+		MOV	EXPTAB(R3),R4		; the row, bits doubled
+		MOV	R1,@#VADDR
+		MOVB	R4,@#VDATA
+		MOV	R1,R5
+		INC	R5
+		MOV	R5,@#VADDR
+		SWAB	R4
+		MOVB	R4,@#VDATA
+		ADD	#SCRWB,R1
+		SOB	R2,1$
+8$:		ADD	#2,TX
+		RETURN
+
+; =========================================================================
+; PUTS / PUTS2 - draw the 0-terminated KOI-7 string at R1.
+; Clobbers R0..R5.
+; =========================================================================
+PUTS:		CALL	RING_WAIT	; the PPU may be drawing across the text
+		MOVB	(R1)+,R0
+		BEQ	9$
+		BIC	#177400,R0
+		MOV	R1,-(SP)
+		CALL	PUTC
+		MOV	(SP)+,R1
+		BR	PUTS
+9$:		RETURN
+
+PUTS2:		CALL	RING_WAIT
+		MOVB	(R1)+,R0
+		BEQ	9$
+		BIC	#177400,R0
+		MOV	R1,-(SP)
+		CALL	PUTC2
+		MOV	(SP)+,R1
+		BR	PUTS2
+9$:		RETURN
+
+; =========================================================================
+; PUTDEC - print the unsigned value in R0 right-aligned in R1 columns,
+; padded with spaces.  Clobbers R0..R5.
+; =========================================================================
+DECBUF:		.BLKB	8.
+		.EVEN
+DECW:		.WORD	0
+
+PUTDEC:		MOV	R1,DECW
+		MOV	#DECBUF+7,R2
+		CLRB	@R2
+		MOV	R0,R1			; the value
+10$:		CLR	R0			; divide the 32-bit R0:R1 by ten
+		DIV	#10.,R0
+		ADD	#60,R1			; remainder -> a digit
+		MOVB	R1,-(R2)
+		MOV	R0,R1			; quotient
+		DEC	DECW
+		TST	R1
+		BNE	10$
+20$:		TST	DECW			; pad out to the asked-for width
+		BLE	30$
+		MOVB	#40,-(R2)
+		DEC	DECW
+		BR	20$
+30$:		MOV	R2,R1
+		JMP	PUTS
+
+; =========================================================================
+; PUTCASH - the purse as credits and tenths, in a field of nine.
+;
+; The purse is 32 bits of tenths.  A signed DIV by ten overflows once
+; the quotient passes 32767 - that is 32768 Cr, not the 65535 the old
+; comment claimed - and the field then said "no funds" for the rest of
+; the game.  So the digits are peeled off by subtracting powers of ten
+; from the whole pair instead, which has no ceiling short of the purse
+; itself.  Clobbers R0..R5.
+PC_BUF:		.BLKB	13.		; ten digits, a point, a tenth, a nul
+		.EVEN
+PC_LEAD:	.WORD	0		; a digit has been written
+PC_N:		.WORD	0
+
+PC_POW10:	.WORD	15258., 51712.	; 10^9 = 1000000000
+		.WORD	1525., 57600.	; 10^8 = 100000000
+		.WORD	152., 38528.	; 10^7 = 10000000
+		.WORD	15., 16960.	; 10^6 = 1000000
+		.WORD	1., 34464.	; 10^5 = 100000
+		.WORD	0., 10000.	; 10^4 = 10000
+		.WORD	0., 1000.	; 10^3 = 1000
+		.WORD	0., 100.	; 10^2 = 100
+
+PUTCASH:	MOV	CASH_H,R0
+		MOV	CASH_L,R1
+
+; PUT_CR32 - any 32-bit count of tenths in R0:R1 (high:low), the same
+; way: a price.
+PUT_CR32:	MOV	#PC_BUF,R2
+		MOV	#PC_POW10,R3
+		CLR	PC_LEAD
+		MOV	#8.,R5			; 10^9 .. 10^2: the credits above
+10$:		CLR	R4			;   the units, leading zeros left out
+11$:		CMP	R0,(R3)			; unsigned 32-bit: value >= power?
+		BLO	12$
+		BHI	111$
+		CMP	R1,2(R3)
+		BLO	12$
+111$:		SUB	2(R3),R1
+		SBC	R0
+		SUB	(R3),R0
+		INC	R4
+		BR	11$
+12$:		TST	R4
+		BNE	13$
+		TST	PC_LEAD
+		BEQ	14$
+13$:		ADD	#60,R4
+		MOVB	R4,(R2)+
+		MOV	#1,PC_LEAD
+14$:		ADD	#4,R3
+		SOB	R5,10$
+		CLR	R0			; what is left is under 100 tenths:
+		DIV	#10.,R0			;   the units of credits, always
+		ADD	#60,R0			;   printed, and the tenth
+		MOVB	R0,(R2)+
+		MOVB	#56,(R2)+		; "."
+		ADD	#60,R1
+		MOVB	R1,(R2)+
+		CLRB	(R2)
+		SUB	#PC_BUF,R2		; pad on the left to nine
+		MOV	#9.,PC_N
+		SUB	R2,PC_N
+20$:		TST	PC_N
+		BLE	30$
+		MOV	#40,R0
+		CALL	PUTC
+		DEC	PC_N
+		BR	20$
+30$:		MOV	#PC_BUF,R1
+		JMP	PUTS
+
+; PUT_TENTHSW - R0 tenths as "d.d", the whole part right-aligned in R1
+; columns: fuel, and a price.  Clobbers R0..R5.
+PUT_TENTHSW:	MOV	R1,-(SP)
+		MOV	R0,R1
+		CLR	R0
+		DIV	#10.,R0
+		MOV	R1,-(SP)
+		MOV	2(SP),R1
+		CALL	PUTDEC
+		MOV	#56,R0			; "."
+		CALL	PUTC
+		MOV	(SP)+,R0
+		ADD	#60,R0
+		CALL	PUTC
+		TST	(SP)+
+		RETURN
+
+; =========================================================================
+; TEXT_CLEAR - blank R2 columns of one FONT_H-line text row at column R0,
+; pixel row R1, in plane 1.  Clobbers R0..R4.
+; =========================================================================
+TEXT_CLEAR:	CALL	RING_WAIT
+		MUL	#SCRWB,R1
+		ADD	R0,R1
+		ADD	#VRAM,R1
+		MOV	#FONT_H,R3
+1$:		MOV	R1,R4
+		MOV	R2,R0
+2$:		MOV	R4,@#VADDR
+		CLRB	@#VDATA
+		INC	R4
+		SOB	R0,2$
+		ADD	#SCRWB,R1
+		SOB	R3,1$
+		RETURN
+
+PB_G:		.WORD	0		; PUTBIG: the glyph being expanded
+PB_A:		.WORD	0		;   where its next row lands
+PB_ROW:		.WORD	0
+PB_COL:		.WORD	0
+PB_BUF:		.BLKB	4		;   one glyph row, four times as wide
+		.EVEN
+
+; Two glyph bits -> one screen byte, four pixels each.  Bit 0 of a byte
+; is the leftmost pixel, so the first bit fills the low nibble.
+BIGTAB:		.BYTE	0, 17, 360, 377
+		.EVEN
+
+
+; =========================================================================
+; PUTBIG - draw the character in R0 four times normal size at the cursor,
+; and step TX on by the four bytes it took.  Clobbers R0..R4.
+; =========================================================================
+PUTBIG:		CALL	GLYPH_ADDR
+		BCS	8$
+		MOV	R0,PB_G
+		MOV	TY,R1
+		MUL	#SCRWB,R1		; R1 odd - the low word is the whole
+		ADD	TX,R1			; product for a screen this size
+		ADD	#VRAM,R1
+		MOV	R1,PB_A
+		MOV	#FONT_H,PB_ROW
+10$:		MOV	PB_G,R2			; one row of the glyph
+		MOVB	(R2)+,R0
+		MOV	R2,PB_G
+		BIC	#177400,R0
+		MOV	#PB_BUF,R2		; ... widened into four bytes
+		MOV	#4,PB_COL
+11$:		MOV	R0,R3
+		BIC	#177774,R3
+		MOVB	BIGTAB(R3),(R2)+
+		ASR	R0			; R0 is a positive byte, so the
+		ASR	R0			; arithmetic shift is safe here
+		DEC	PB_COL
+		BGT	11$
+
+		MOV	PB_A,R1			; and put down four times over
+		MOV	#4,PB_COL
+12$:		MOV	#PB_BUF,R2
+		MOV	R1,R3
+		MOV	#4,R4
+13$:		MOV	R3,@#VADDR
+		MOVB	(R2)+,@#VDATA
+		INC	R3
+		SOB	R4,13$
+		ADD	#SCRWB,R1
+		DEC	PB_COL
+		BGT	12$
+		MOV	R1,PB_A
+		DEC	PB_ROW
+		BGT	10$
+8$:		ADD	#4,TX
+		RETURN
+
+; PUTBIGS - the same for a whole string in R1.
+PUTBIGS:	MOVB	(R1)+,R0
+		BEQ	9$
+		BIC	#177400,R0
+		MOV	R1,-(SP)
+		CALL	PUTBIG
+		MOV	(SP)+,R1
+		BR	PUTBIGS
+9$:		RETURN
+
+; =========================================================================
+; PLAYER_DEAD - the commander does not come back.
+;
+; Everything that can kill him - a shot that gets through the banks, a
+; world, a star - comes here instead of restarting outright, so that
+; there is a moment to see what happened before the title comes up
+; again.  Nothing is written to the disk: Elite saves in the station and
+; nowhere else, which is exactly what makes a long run out worth
+; something.
+; =========================================================================
+GO_HOLD	= 150.			; frames the words stay up: three seconds
+
+PLAYER_DEAD:	MOV	#FX_OVER,R0		; GameOver
+		CALL	SFX_BIG
+		MOV	#14.,TX			; thirteen characters at four bytes
+		MOV	#84.,TY			; each, centred on the view
+		MOV	#S_M_GAMEOVER,R1
+		CALL	PUTBIGS
+		MOV	#GO_HOLD,R0
+1$:		MOV	R0,-(SP)
+		CALL	VSYNC
+		MOV	(SP)+,R0
+		DEC	R0
+		BGT	1$
+		JMP	MAIN_RESTART		; never MAIN_START: the PPU is up
+

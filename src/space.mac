@@ -1,0 +1,1091 @@
+; =========================================================================
+; space.mac - the universe, and flying through it.
+;
+; Everything is kept in the commander's own frame of reference, the way
+; Elite has always done it: the ships hold positions relative to the
+; player, and flying is done by moving the universe rather than the
+; camera.  Each frame every ship is
+;
+;   * turned by the commander's roll and pitch, in the opposite sense;
+;   * pushed back along z by the commander's speed;
+;   * moved along its own nose by its own speed,
+;
+; after which its position is the vector the projection wants, with no
+; camera matrix to apply at all.
+; =========================================================================
+
+; ADD32 - add the signed 16-bit register REG to the 32-bit LO:HI.
+.MACRO	ADD32	REG, LO, HI
+		ADD	REG,LO
+		ADC	HI
+		TST	REG
+		BPL	.+6
+		DEC	HI
+.ENDM
+
+; UNIV, the slots, is laid over the dead copy of the PPU program in
+; src/tail.mac (NUNIV of U.SIZE bytes)
+UN_P:		.WORD	0		; the slot being worked on
+UN_I:		.WORD	0
+UN_TMP:		.WORD	0,0,0
+UN_TYPE:	.WORD	0		; the type UNIV_ADD is filling in
+UN_N:		.WORD	0		; how many ships a class holds
+UN_L:		.WORD	0		; and where its list of types is
+
+; =========================================================================
+; SHIP_STAT - one of the original's own numbers for a ship: R0 = the
+; type (1-based), R1 = one of the SS_* offsets.  The value comes back in
+; R0; R1 is clobbered.
+;
+; SHIP_STATS is built by tools/ships_gen.py straight out of the 23-byte
+; header every object in elitr1 carries, so an energy or a bounty here is
+; the number the original used and not one this port made up.
+; =========================================================================
+SHIP_STAT:	MOV	R1,-(SP)		; the field offset
+		MOV	R0,R1
+		DEC	R1			; the table is 0-based
+		MUL	#SS_SIZE,R1		; R1 is ODD, so the low word is
+		ADD	(SP),R1			; the whole product - which is
+		CMP	(SP)+,#SS_WORDS		; all a table this small needs.
+		BHIS	1$			; The bytes come first in a record
+		MOVB	SHIP_STATS(R1),R0	; and the words after SS_WORDS
+		BIC	#177400,R0		; (MOVB extends the sign, and an
+		RETURN				; energy of 250 is not -6)
+1$:		MOV	SHIP_STATS(R1),R0
+		RETURN
+
+; =========================================================================
+; SHIP_OFCLASS - R0 = one of the original's five spawn classes; returns a
+; ship type drawn at random from it, or 0 if the class has nothing to
+; give.  Clobbers R1..R3.
+;
+; The classes are the class byte in AdrDataShips: 0 the station and the
+; missile, 1 the small drops, 2 common traffic, 3 the heavy hulls, 4 the
+; fighters.  Asking for "any class 4" is how the spawner gets a pirate
+; without naming one.  Since 2026-09-10 the roster is Legend's, and only
+; the types whose hulls HULL_SYSTEM brought in for this system can be
+; drawn: the pick starts at random and walks the list to the first of
+; them that is loaded, so a system whose set has three fighters in it
+; sends those three.
+; =========================================================================
+SHIP_OFCLASS:	ASL	R0
+		MOV	SHIP_CLSN(R0),UN_N	; how many are in it
+		BEQ	9$
+		MOV	SHIP_CLSP(R0),UN_L	; and where their list is
+		CALL	RND_BYTE
+		CLR	R2			; DIV wants an even register and
+		MOV	R0,R3			; takes R2:R3 as the dividend
+		DIV	UN_N,R2			; R3 = where to start
+		MOV	UN_N,R2			; and how many to try
+1$:		MOV	UN_L,R0
+		ADD	R3,R0
+		MOVB	(R0),R0			; types are small and positive,
+		MOV	R0,R1			; so the sign extension is free
+		ASL	R1
+		TST	SHIP_TABLE-2(R1)	; is its hull here?
+		BNE	8$
+		INC	R3			; no: the next, round the end
+		CMP	R3,UN_N
+		BLT	2$
+		CLR	R3
+2$:		SOB	R2,1$
+9$:		CLR	R0
+8$:		RETURN
+
+; =========================================================================
+; UNIV_CLEAR - empty every slot.
+; =========================================================================
+UNIV_CLEAR:	MOV	R5,-(SP)
+		MOV	#PMAT,R5
+		CALL	MAT_IDENT
+		MOV	(SP)+,R5
+		MOV	#UNIV,R0
+		MOV	#NUNIV,R1
+1$:		CLR	U.TYPE(R0)
+		ADD	#U.SIZE,R0
+		SOB	R1,1$
+		RETURN
+
+; =========================================================================
+; UNIV_ADD - put ship type R0 (1-based) at R1,R2,R3 = x,y,z with speed
+; R4.  A negative R4 means "whatever this type cruises at".  Returns C
+; set when every slot is taken - or when the type's hull is not in this
+; system's set (src/hull.mac): a ship that cannot be drawn is not put in
+; the sky - and R5 pointing at the slot.  Clobbers R1 and R5.
+; =========================================================================
+UNIV_ADD:	MOV	R0,R5
+		ASL	R5
+		TST	SHIP_TABLE-2(R5)	; a hull the bank did not lend
+		BEQ	8$			;   this system: refused
+		MOV	#UNIV,R5
+		MOV	#NUNIV,-(SP)
+1$:		TST	U.TYPE(R5)
+		BEQ	2$
+		ADD	#U.SIZE,R5
+		DEC	@SP
+		BGT	1$
+		TST	(SP)+
+8$:		SEC
+		RETURN
+2$:		TST	(SP)+
+		MOV	R0,U.TYPE(R5)
+		MOV	R0,UN_TYPE
+		MOV	R1,U.X(R5)		; a 16-bit position, sign-extended
+		MOV	R1,R0			;   into the high words: everything
+		SXT	R0			;   is put in the sky within reach
+		MOV	R0,U.XH(R5)
+		MOV	R2,U.Y(R5)
+		MOV	R2,R0
+		SXT	R0
+		MOV	R0,U.YH(R5)
+		MOV	R3,U.Z(R5)
+		MOV	R3,R0
+		SXT	R0
+		MOV	R0,U.ZH(R5)
+		MOV	R4,U.SPEED(R5)
+
+		MOV	UN_TYPE,R0		; what it takes to break up is
+		MOV	#SS_ENERGY,R1		; the type's own number - a
+		CALL	SHIP_STAT		; Python is not a canister.  R0
+		MOV	R0,U.ENERGY(R5)		; is the last SXT's sign here, not
+					; the type: from the day the
+					; positions went 32-bit to
+					; 2026-09-10 (late) every ship was
+					; born with the byte before the
+					; table for energy - nothing, mostly
+
+		TST	U.SPEED(R5)		; a negative speed asks for the
+		BGE	3$			; type's own, halved, which is
+		MOV	UN_TYPE,R0		; traffic cruising rather than
+		MOV	#SS_SPEED,R1		; running flat out
+		CALL	SHIP_STAT
+		ASR	R0
+		MOV	R0,U.SPEED(R5)
+3$:		MOV	UN_TYPE,R0		; leave the type in R0 the way
+		CLR	U.FLAGS(R5)		; the caller passed it
+		CLR	U.EXPL(R5)
+		CLR	U.MOTHER(R5)
+		CLR	U.TARGET(R5)		; whatever the last occupant of
+					; this slot was chasing is no
+					; business of the new one
+		CLR	U.SX(R5)
+		CLR	U.SY(R5)
+		MOV	R5,-(SP)
+		ADD	#U.MAT,R5
+		CALL	MAT_IDENT
+		MOV	(SP)+,R5
+		CALL	SLOT_MIND		; and Legend's record: its kind,
+		CLC				;   its flags, its mind (src/ai.mac)
+		RETURN
+
+; =========================================================================
+; VIEW_APPLY - set SD_X/SD_Y/SD_Z and SD_MAT for the slot in R5, as seen
+; from whichever way the commander is looking.  Clobbers R0..R4.
+;
+; A view is a quarter turn about the ship's own y axis, so it is a
+; signed permutation and not a matrix multiply: the position swaps and
+; negates two of its three components, and the ship's orientation - which
+; SHIP_DRAW reads as three rows, one per camera axis - takes the same
+; treatment on its rows.  The front view is the universe exactly as it is
+; stored and costs nothing at all, which is what keeps the common case
+; free.
+; =========================================================================
+; VIEW_MAT, the slot's orientation turned, nine words, is over the dead
+; PPU copy (src/tail.mac)
+VW_P:		.WORD	0
+
+; VIEW_ROW - copy the three words at R1 to R2, negated if R0 is not zero.
+VIEW_ROW:	MOV	#3,R3
+1$:		MOV	(R1)+,R4
+		TST	R0
+		BEQ	2$
+		NEG	R4
+2$:		MOV	R4,(R2)+
+		SOB	R3,1$
+		RETURN
+
+VIEW_APPLY:	MOV	R5,VW_P
+		CALL	POS_NARROW		; the position in sixteen bits,
+		MOV	PN_SH,SD_SH		;   shifted by SD_SH if it was not
+		MOV	PN_Y,SD_Y		; y is up whichever way you look
+		MOV	VIEW_DIR,R0
+		BNE	10$
+		MOV	PN_X,SD_X		; front: nothing to do
+		MOV	PN_Z,SD_Z
+		ADD	#U.MAT,R5		; R5 comes back as the slot, the
+		MOV	R5,SD_MAT		; way every other path leaves it
+		MOV	VW_P,R5
+		RETURN
+
+10$:		CMP	R0,#VIEW_REAR
+		BNE	20$
+		MOV	PN_X,R1			; rear: x and z both turn round
+		NEG	R1
+		MOV	R1,SD_X
+		MOV	PN_Z,R1
+		NEG	R1
+		MOV	R1,SD_Z
+		MOV	VW_P,R1
+		ADD	#U.MAT,R1
+		MOV	#VIEW_MAT,R2
+		MOV	#1,R0			; row 0 = -row 0
+		CALL	VIEW_ROW
+		CLR	R0			; row 1 = row 1
+		CALL	VIEW_ROW
+		MOV	#1,R0			; row 2 = -row 2
+		CALL	VIEW_ROW
+		BR	80$
+
+20$:		CMP	R0,#VIEW_LEFT
+		BNE	30$
+		MOV	PN_Z,SD_X		; left: what was ahead is now on
+		MOV	PN_X,R1			; the right
+		NEG	R1
+		MOV	R1,SD_Z
+		MOV	VW_P,R1
+		ADD	#U.MAT,R1
+		MOV	R1,-(SP)
+		ADD	#14,R1			; row 2 of the ship's own matrix
+		MOV	#VIEW_MAT,R2
+		CLR	R0			; row 0 = row 2
+		CALL	VIEW_ROW
+		MOV	@SP,R1
+		ADD	#6,R1
+		CLR	R0			; row 1 = row 1
+		CALL	VIEW_ROW
+		MOV	(SP)+,R1
+		MOV	#1,R0			; row 2 = -row 0
+		CALL	VIEW_ROW
+		BR	80$
+
+30$:		MOV	PN_Z,R1			; right: and now on the left
+		NEG	R1
+		MOV	R1,SD_X
+		MOV	PN_X,SD_Z
+		MOV	VW_P,R1
+		ADD	#U.MAT,R1
+		MOV	R1,-(SP)
+		ADD	#14,R1
+		MOV	#VIEW_MAT,R2
+		MOV	#1,R0			; row 0 = -row 2
+		CALL	VIEW_ROW
+		MOV	@SP,R1
+		ADD	#6,R1
+		CLR	R0			; row 1 = row 1
+		CALL	VIEW_ROW
+		MOV	(SP)+,R1
+		CLR	R0			; row 2 = row 0
+		CALL	VIEW_ROW
+
+80$:		MOV	#VIEW_MAT,SD_MAT
+		MOV	VW_P,R5
+		RETURN
+
+; =========================================================================
+; VIEW_NAME - the string for the view in VIEW_DIR, in R1.
+; =========================================================================
+VIEWNAMES:	.WORD	S_V_FRONT, S_V_REAR, S_V_LEFT, S_V_RIGHT
+
+VIEW_NAME:	MOV	VIEW_DIR,R0
+		ASL	R0
+		MOV	VIEWNAMES(R0),R1
+		RETURN
+
+; =========================================================================
+; UNIV_STEP - advance the whole universe one frame.
+; =========================================================================
+US_RS:		.WORD	0		; sin and tan/2 of the commander's
+US_RT:		.WORD	0		;   roll this frame, and of his
+US_PS:		.WORD	0		;   pitch: worked out once, used for
+US_PT:		.WORD	0		;   every slot
+
+UNIV_STEP:	MOV	PROLL,R1		; R1 is odd, so MUL keeps the LOW
+		BEQ	1$			; word - into an even register it
+		MUL	#TURN_K,R1		; would leave the high one, which
+		MOV	R1,R0			; for an angle this small is zero
+		NEG	R0			; the sky turns the other way
+		CALL	TURN_SET
+		MOV	RT_S,US_RS
+		MOV	RT_T,US_RT
+1$:		MOV	PPITCH,R1
+		BEQ	2$
+		MUL	#TURN_K,R1
+		MOV	R1,R0
+		NEG	R0
+		CALL	TURN_SET
+		MOV	RT_S,US_PS
+		MOV	RT_T,US_PT
+2$:		CALL	NAV_TURN
+		MOV	#UNIV,UN_P
+		MOV	#NUNIV,UN_I
+10$:		MOV	UN_P,R5
+		TST	U.TYPE(R5)
+		BNE	11$
+		JMP	80$			; the body outgrew a branch when
+					;   the positions went to 32 bits
+11$:
+		; ---- the commander's own turn, applied in reverse -------
+		TST	PROLL
+		BEQ	20$
+		MOV	US_RS,RT_S
+		MOV	US_RT,RT_T
+		MOV	#0,R1			; roll mixes x and y
+		MOV	UN_P,R5
+		CALL	VEC_TURN32_P		; all 32 bits of the position
+		MOV	UN_P,R5			; and turns the ship with it -
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)	; unless it is a body
+		BNE	20$			; drawn as a disc, whose
+		MOV	#0,R1			; orientation is never read and
+		MOV	UN_P,R5			; whose matrix is pure cost
+		ADD	#U.MAT,R5
+		CALL	MAT_TURN_RP		; rows, not columns: the same R the
+					;   position just got, see MAT_TURN
+
+20$:		TST	PPITCH
+		BEQ	25$			; no pitch to apply - but the station
+					; still has to turn, so this drops
+					; through to its spin rather than past
+					; it.  It used to branch to 30$, which
+					; meant a Coriolis only rolled while
+					; the commander was pitching, and that
+					; went unnoticed until the docking slot
+					; had to be lined up with.
+		MOV	US_PS,RT_S
+		MOV	US_PT,RT_T
+		MOV	#2,R1			; pitch mixes y and z
+		MOV	UN_P,R5
+		CALL	VEC_TURN32_P
+		MOV	UN_P,R5
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)
+		BNE	25$
+		MOV	#2,R1
+		MOV	UN_P,R5
+		ADD	#U.MAT,R5
+		CALL	MAT_TURN_RP
+
+		; ---- a station, or a base, turns on its own axis ---------
+25$:		MOV	UN_P,R5
+		BIT	#UF_DOCK,U.FLAGS(R5)
+		BEQ	30$
+		MOV	#STATION_SPIN,R0
+		CLR	R1			; roll
+		MOV	UN_P,R5
+		ADD	#U.MAT,R5
+		CALL	MAT_TURN
+
+		; ---- the commander's forward motion ----------------------
+30$:		MOV	UN_P,R5
+		MOV	PSPEED,R0
+		TST	JD_SPEED		; the injectors override the throttle
+		BEQ	31$			;   (src/jdrive.mac)
+		MOV	JD_SPEED,R0
+31$:		SUB	R0,U.Z(R5)		; 32 bits: the borrow goes up
+		SBC	U.ZH(R5)
+
+		; ---- the ship's own motion, along its nose ---------------
+		MOV	U.SPEED(R5),R0
+		BEQ	80$
+		MOV	R5,R4
+		ADD	#U.MAT,R4
+		ADD	#4,R4			; the matrix's third COLUMN = nose:
+		MOV	@R4,R1			;   nx, Q14.  The drawing is M.v, so
+		MOV	6.(R4),R2		;   the model's z axis lands on
+		MOV	12.(R4),R3		;   (m2,m5,m8).  This read the third
+					;   ROW, which is the transpose, and
+					;   a ship flew somewhere other than
+					;   where its nose was drawn
+		MOV	R0,-(SP)
+		MUL	R1,R0
+		ASL	R1			; Q28 -> Q14, four shifts
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		ADD32	R0, U.X(R5), U.XH(R5)
+		MOV	@SP,R0
+		MUL	R2,R0
+		ASL	R1			; Q28 -> Q14, four shifts
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		ADD32	R0, U.Y(R5), U.YH(R5)
+		MOV	(SP)+,R0
+		MUL	R3,R0
+		ASL	R1			; Q28 -> Q14, four shifts
+		ROL	R0
+		ASL	R1
+		ROL	R0
+		ADD32	R0, U.Z(R5), U.ZH(R5)
+
+80$:		ADD	#U.SIZE,UN_P
+		DEC	UN_I
+		BLE	9$			; the loop outgrew a branch when the
+		JMP	10$			; station's cache came out
+9$:		RETURN
+
+; =========================================================================
+; UNIV_DRAW - draw every occupied slot into the space view.
+; =========================================================================
+UNIV_DRAW:	CALL	CLIP_VIEW
+		CLR	BODY_DIRTY
+		CLR	BODY_DIRTY+2
+		CLR	BODY_IDX
+		MOV	#UNIV,UN_P
+		MOV	#NUNIV,UN_I
+10$:		MOV	UN_P,R5
+		CLR	U.SX(R5)		; nothing projected yet this frame
+		MOV	U.TYPE(R5),R0
+		BEQ	80$
+		DEC	R0			; blueprints are 0-based
+		ASL	R0
+		MOV	SHIP_TABLE(R0),SD_MODEL
+		BEQ	80$			; a hull that is not loaded draws
+					;   nothing: UNIV_ADD refuses such a
+					;   type, so only a poke gets here
+		MOV	UN_P,R5
+		CALL	VIEW_APPLY		; whichever way he is looking
+		TST	SD_Z			; behind the commander?
+		BGT	15$
+		MOV	UN_P,R5			; nothing of it is drawn - but a
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)	; body behind him is still
+		BEQ	80$			; MEASURED, so that what it left on
+		BR	22$			; the screen comes off, and still
+					; COUNTED, so that the other body
+					; keeps its index.  Skipped outright,
+					; the world behind the commander
+					; handed its index to the sun in
+					; front of him: the sun's "moved"
+					; flag landed on the world's list,
+					; and the sun hung on the screen
+					; wherever it had last been drawn
+					; for as long as the world stayed
+					; behind - which is the whole of a
+					; run in to scoop fuel
+
+15$:		MOV	SD_X,R0			; where its centre lands, kept for
+		MOV	SD_Y,R1			; the gunsight and for the wreck
+		MOV	SD_Z,R2
+		CALL	PROJECT
+		BCS	20$
+		MOV	UN_P,R5
+		MOV	PX,U.SX(R5)
+		MOV	PY,U.SY(R5)
+
+20$:		MOV	UN_P,R5
+		TST	U.EXPL(R5)		; a wreck is drawn by EXPL_DRAW
+		BNE	80$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)	; a world is a disc, not
+		BEQ	25$				; a hull, and is only
+22$:		CALL	BODY_MEASURE			; redrawn when it moves
+		INC	BODY_IDX
+		BR	80$
+25$:		MOV	UN_P,R5			; the cloaked Asp (mission 2):
+		BIT	#UF_MISSION,U.FLAGS(R5)	;   nothing of it but its laser
+		BEQ	251$			;   (eObjPrnCalc's goto595)
+		CMP	U.TYPE(R5),#SH_ASPH
+		BNE	251$
+		CMPB	P_M2,#1
+		BEQ	80$
+251$:
+		; How big will it be?  A ship far enough away to come out a
+		; few pixels across costs as much to draw as one filling the
+		; screen, and looks the same either way - so past that point
+		; it becomes a dot, exactly as the original does.  This is
+		; what keeps a busy system affordable.
+		TST	SD_SH			; beyond sixteen bits it is a dot
+		BNE	26$			;   whatever its radius
+		MOV	SD_MODEL,R0
+		CALL	HULL_RADIUS		; the bounding radius
+		MOV	#PROJ_D,R2
+		MUL	R3,R2			; R2:R3 = radius * focal length
+		DIV	SD_Z,R2
+		BVS	30$			; enormous: draw it properly
+		CMP	R2,#SHIP_DOT
+		BGE	30$
+26$:
+		MOV	UN_P,R5			; a dot, through the segment
+		MOV	U.SX(R5),R0		; buffer so it is erased with
+		BEQ	80$			; everything else
+		MOV	R0,LX0
+		INC	R0
+		MOV	R0,LX1
+		MOV	U.SY(R5),LY0
+		MOV	U.SY(R5),LY1
+		CALL	SEG_LINE
+		BR	80$
+30$:		CALL	SHIP_CONE		; wholly outside the view: none of
+		BCS	80$			;   the pipeline is worth running
+		CALL	SHIP_DRAW
+		MOV	UN_P,R5			; the station carries an opening,
+		BIT	#UF_STATION,U.FLAGS(R5)	; and it is what you have to line
+		BEQ	80$			; up with
+		CALL	STATION_SLOT
+80$:		ADD	#U.SIZE,UN_P
+		DEC	UN_I
+		BGT	10$
+
+		; A body still where it was last frame is still on the screen
+		; and costs nothing.  The two are counted separately: the
+		; world sits on the axis and hardly stirs, while the sun is
+		; off to one side and sweeps across the view several times
+		; faster, and redrawing the world every time the sun moved a
+		; pixel was a third of a moving frame.
+		TST	BODY_DIRTY
+		BNE	89$
+		TST	BODY_DIRTY+2
+		BEQ	99$
+89$:		CLR	BODY_IDX
+		MOV	#UNIV,UN_P
+		MOV	#NUNIV,UN_I
+90$:		MOV	UN_P,R5
+		TST	U.TYPE(R5)
+		BEQ	95$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)
+		BEQ	95$
+		MOV	BODY_IDX,R0		; is this one of the ones that
+		CMP	R0,#NBODIES		; moved?
+		BGE	94$
+		MOV	R0,BODY_CUR
+		ASL	R0
+		TST	BODY_DIRTY(R0)
+		BEQ	94$
+		CALL	BODY_BEGIN		; its two lists' cursors
+		MOV	UN_P,R5			; SD_Z is what the body is drawn
+		CALL	VIEW_APPLY		; from, and the view moves it
+		MOV	UN_P,R5
+		CALL	DRAW_PLANET
+		CLR	NOCLIP			; only ever set across the drawing
+		CALL	BODY_FLUSH		; its own segments, and nobody
+					; else's: whatever the last
+					; outline had and this one did
+					; not replace comes off here
+94$:		INC	BODY_IDX
+95$:		ADD	#U.SIZE,UN_P
+		DEC	UN_I
+		BGT	90$
+99$:		RETURN
+
+; =========================================================================
+; PLANET_DETAIL - a meridian and a line of latitude.
+;
+; Elite draws its worlds as outlines and then puts something inside them,
+; and this port had been drawing the outline and stopping - which made
+; every planet in the galaxy the same circle.  Two ellipses fix that for
+; sixteen segments: one through the poles, one round the middle, each
+; squashed by a fraction taken from the system's own index, so the world
+; at ЗЕМАТО is not the world at the next star along and both are the
+; same every time you come back.
+;
+; They cost nothing while the body is still: the whole set lives in the
+; body buffer and is only redrawn when the projection moves.
+; =========================================================================
+PL_ERX:		.WORD	0		; the ellipse being drawn
+PL_ERY:		.WORD	0
+PL_DETAIL_R = 16.		; smaller than this and it is a dot with
+				; lines through it
+
+PLANET_DETAIL:	CMP	PL_R,#PL_DETAIL_R
+		BLT	9$
+		MOV	SYS_INDEX,R1		; the meridian: two to five eighths
+		BIC	#177774,R1		; of the way across the disc
+		ADD	#2,R1
+		MUL	PL_RX,R1		; R1 is ODD, so the low word is the
+		ASH	#-3,R1			; whole product at this size
+		MOV	R1,PL_ERX
+		MOV	PL_R,PL_ERY
+		MOV	#8.,PL_EN		; eight chords is plenty for a line
+		MOV	#12.,PL_ESKIP		; drawn across a disc
+		CALL	PL_ELLIPSE
+
+		MOV	SYS_INDEX,R1		; and the latitude, from the next
+		ASH	#-2,R1			; two bits of the same number
+		BIC	#177774,R1
+		ADD	#2,R1
+		MUL	PL_R,R1
+		ASH	#-3,R1
+		MOV	R1,PL_ERY
+		MOV	PL_RX,PL_ERX
+		MOV	#8.,PL_EN
+		MOV	#12.,PL_ESKIP
+		CALL	PL_ELLIPSE
+9$:		RETURN
+
+; =========================================================================
+; PL_ELLIPSE - PL_EN chords round PL_CX/PL_CY with half-widths PL_ERX and
+; PL_ERY, stepping PL_ESKIP bytes between table entries.  Everything a
+; body is made of goes through here.
+;
+; The scaling is done on the FULL 32-bit product, and it has to be: a
+; table entry runs to 256 and a half-width to a thousand pixels when a
+; world fills the view, and the low-word-only multiply this used to do
+; wrapped at 32767 and drew the far side of the planet through the near
+; side.  It only ever showed on a body closer than the game normally
+; puts one, which is why it sat here unnoticed until the meridians
+; arrived to make it obvious.
+; =========================================================================
+PL_EN:		.WORD	0		; chords
+PL_ESKIP:	.WORD	0		; bytes skipped between table entries
+PL_EI:		.WORD	0
+PL_ETMP:	.WORD	0		; the half-width PL_SCALE is using
+PL_EX:		.WORD	0		; the chord's far end as worked out,
+PL_EY:		.WORD	0		;   before the clipper moved it
+
+; PL_SCALE - R3 = a table entry in units of 256, PL_ETMP = a half-width;
+; returns R3 = the product shifted back down.  Clobbers R2.
+PL_SCALE:	MOV	PL_ETMP,R2
+		MUL	R3,R2			; R2 is EVEN, so R2:R3 is the whole
+		ASHC	#-8.,R2			; product; shift the pair, not the
+		RETURN				; low word
+
+PL_ELLIPSE:	MOV	#CIRCTAB,R4
+		ADD	PL_ESKIP,R4		; the walk starts at 0 degrees and
+					;   entry 0 is 11.25, so a 16- or
+					;   8-chord body has to begin a step
+					;   in for its last chord to land
+					;   back on the start: without this
+					;   the rim had a notch on the right
+		MOV	PL_EN,PL_EI
+		MOV	PL_CX,R0
+		ADD	PL_ERX,R0
+		MOV	R0,LX0
+		MOV	PL_CY,LY0
+10$:		MOV	(R4)+,R3		; cos
+		MOV	PL_ERX,PL_ETMP
+		CALL	PL_SCALE
+		ADD	PL_CX,R3
+		MOV	R3,LX1
+		MOV	R3,PL_EX
+		MOV	(R4)+,R3		; sin
+		MOV	PL_ERY,PL_ETMP
+		CALL	PL_SCALE
+		ADD	PL_CY,R3
+		MOV	R3,LY1
+		MOV	R3,PL_EY
+		MOV	R4,-(SP)
+		CALL	BODY_LINE
+		MOV	(SP)+,R4
+		ADD	PL_ESKIP,R4
+		MOV	PL_EX,LX0		; the next chord starts where this
+		MOV	PL_EY,LY0		;   one was MEANT to end, not where
+					;   the clipper left LX1/LY1: a body
+					;   over the edge of the view had
+					;   its chord ends pulled onto the
+					;   edge, the chord after each one
+					;   started from there, and the rim
+					;   closed with a straight cut from
+					;   the last clipped end to the first
+					;   vertex back in view
+		DEC	PL_EI
+		BGT	10$
+		RETURN
+
+; =========================================================================
+; SCANNER - the blips on the dashboard's ellipse.  A ship's x and z put
+; it on the dish and its y lifts the blip off it, the way the original's
+; scanner reads: everything inside a cube about the commander, the world
+; and the sun excepted, with x at full scale across the dish, z at a
+; quarter of that down it and y at half of it up the stalk - the
+; original's own proportions (x_hi, z_hi/4 and y_hi/2 on the 8-bit
+; machines, inside a cube of 64 hi-bytes).
+;
+; It used to read all three at ONE scale against the dish's own two
+; half-widths, so a ship dead ahead dropped off the dish at 3840 units
+; while one abeam stayed on it out to 13824 - traffic arrives at 7000
+; and was invisible until it had closed to half that - and a ship level
+; with the commander was one pixel, because only the stalk was drawn.
+;
+; The blip is three pixels by two rows at the ship's height, with a
+; stalk down (or up) to the dish's plane.  Everything is XOR, and a
+; segment lights BOTH its ends, so the stalk stops a row short of the
+; blip and the blip's second row is on the far side from the plane:
+; nothing is drawn twice.  Three segments a ship, thirty at most.
+; =========================================================================
+SCAN_SHIFT = -7.		; world units -> pixels across the dish:
+				;   128 a pixel
+SCAN_RANGE = SCAN_RX		; the cube's half-side, in those pixels:
+				;   13824 units, and it fills the dish's
+				;   width exactly
+
+SN_X:		.WORD	0		; the blip's column
+SN_P:		.WORD	0		; the dish's plane at the ship's z
+SN_B:		.WORD	0		; the blip's row
+
+SCANNER:	CALL	CLIP_DASH
+		MOV	#UNIV,UN_P
+		MOV	#NUNIV,UN_I
+10$:		MOV	UN_P,R5
+		TST	U.TYPE(R5)
+		BEQ	80$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)	; the bodies are not
+		BNE	80$			;   traffic
+		CALL	SCAN_SHOWN		; and the mode may leave it out
+		BCS	80$
+		CALL	U_NEAR			; beyond sixteen bits is beyond
+		BCS	80$			;   the cube
+		MOV	U.X(R5),R0		; inside the cube, or not shown
+		ASH	#SCAN_SHIFT,R0
+		CMP	R0,#SCAN_RANGE
+		BGT	80$
+		CMP	R0,#-SCAN_RANGE
+		BLT	80$
+		MOV	U.Z(R5),R1
+		ASH	#SCAN_SHIFT,R1
+		CMP	R1,#SCAN_RANGE
+		BGT	80$
+		CMP	R1,#-SCAN_RANGE
+		BLT	80$
+		MOV	U.Y(R5),R2
+		ASH	#SCAN_SHIFT,R2
+		CMP	R2,#SCAN_RANGE
+		BGT	80$
+		CMP	R2,#-SCAN_RANGE
+		BLT	80$
+
+		ADD	#SCAN_CX,R0
+		MOV	R0,SN_X
+		ASH	#-2,R1			; z at a quarter: 27 rows for the
+		NEG	R1			;   cube, inside the dish's 30, and
+		ADD	#SCAN_CY,R1		;   ahead is up the dish
+		MOV	R1,SN_P
+		ASH	#-1,R2			; y at a half: up to 54 rows, which
+		SUB	R2,R1			;   the band cannot always hold, so
+		CMP	R1,CLIPY0		;   the blip is kept two rows inside
+		BGT	11$			;   the band - one for its second
+		MOV	CLIPY0,R1		;   row and one for the rule along
+		ADD	#2,R1			;   the band's top
+11$:		CMP	R1,CLIPY1
+		BLT	12$
+		MOV	CLIPY1,R1
+		DEC	R1
+12$:		MOV	R1,SN_B
+		CALL	SCAN_BLIP
+80$:		ADD	#U.SIZE,UN_P
+		DEC	UN_I
+		BGT	10$
+		JMP	CLIP_VIEW
+
+; SCAN_SHOWN - R5 = a slot; C set if the scanner's mode leaves it off
+; the dish.  Legend's cocpScanerNum bits 7-6: 0 everything, 1 the ships
+; only, 2 the drops only, 3 everything with the drops blinking.  A drop
+; is what the scoop would take, UF_DROP.  Clobbers R0.
+SCAN_MODE:	.WORD	0		; reset with the cockpit (COCKPIT_SET)
+SCAN_SHOWN:	TST	SCAN_MODE
+		BEQ	8$
+		BIT	#UF_DROP,U.FLAGS(R5)
+		BNE	2$
+		CMP	SCAN_MODE,#2		; a ship: not on a dish of drops
+		BEQ	9$
+		BR	8$
+2$:		CMP	SCAN_MODE,#1		; a drop: not on a dish of ships,
+		BEQ	9$			;   and blinking in the third mode
+		CMP	SCAN_MODE,#3
+		BNE	8$
+		BIT	#4,FLY_TICK
+		BNE	9$
+8$:		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; SCANNER_KEY - Ы: the next mode, and its name on the message line.
+SCANNER_KEY:	INC	SCAN_MODE
+		BIC	#177774,SCAN_MODE
+		MOV	SCAN_MODE,R0
+		ASL	R0
+		MOV	SN_NAMES(R0),HD_NAME
+		MOV	#S_M_SCANNER,R1
+		JMP	SAY_LINE2
+SN_NAMES:	.WORD	S_N_ALL, S_N_SHIPS, S_N_CARGO, S_N_BLINK
+
+; SCAN_BLIP - draw the blip at SN_X/SN_B with its stalk to SN_P.  Its
+; own routine so that the loop above stays within a branch's reach.
+SCAN_BLIP:	MOV	UN_P,-(SP)
+		MOV	UN_I,-(SP)
+		MOV	#1,NOCLIP		; every pixel of it is inside the
+					;   band by construction
+		MOV	SN_X,R0			; the blip's first row
+		DEC	R0
+		MOV	R0,LX0
+		ADD	#2,R0
+		MOV	R0,LX1
+		MOV	SN_B,LY0
+		MOV	SN_B,LY1
+		CALL	SEG_LINE
+		MOV	SN_X,R0			; and its second, away from the
+		DEC	R0			;   plane
+		MOV	R0,LX0
+		ADD	#2,R0
+		MOV	R0,LX1
+		MOV	SN_B,R1
+		CMP	R1,SN_P
+		BGT	13$
+		DEC	R1			; on or above the plane: upward
+		BR	14$
+13$:		INC	R1			; below it: downward
+14$:		MOV	R1,LY0
+		MOV	R1,LY1
+		CALL	SEG_LINE
+		MOV	SN_B,R1			; the stalk, from the plane to the
+		CMP	R1,SN_P			;   row before the blip
+		BEQ	16$			; level: there is none
+		BLT	15$
+		DEC	R1			; below: it ends a row above
+		BR	17$
+15$:		INC	R1			; above: a row below
+17$:		MOV	R1,LY1
+		MOV	SN_P,LY0
+		MOV	SN_X,LX0
+		MOV	SN_X,LX1
+		CALL	SEG_LINE
+16$:		CLR	NOCLIP
+		MOV	(SP)+,UN_I
+		MOV	(SP)+,UN_P
+		RETURN
+
+; =========================================================================
+; DRAW_PLANET - the world, as a circle.
+;
+; Elite draws its planets as outlines rather than solids, which is what
+; lets an 8-bit machine put something the size of a world on screen; the
+; УКНЦ has no more reason to fill it.  The circle is sixteen chords,
+; with x stretched by 5/3 like everything else, so it reads as round
+; rather than as an egg.
+; =========================================================================
+PL_R:		.WORD	0
+PL_RX:		.WORD	0
+PL_CX:		.WORD	0
+PL_CY:		.WORD	0
+PL_BODY:	.WORD	0		; the body's radius in world units
+PL_SX:		.WORD	0		; one spike's direction
+PL_SY:		.WORD	0
+PL_N:		.WORD	0		; chords this body is worth
+PL_SKIP:	.WORD	0		; bytes to skip between them
+
+; The early exits go through 98$ rather than the 9$ at the bottom: a
+; PDP-11 branch only reaches 254 bytes, and the corona put the end of
+; this routine further away than that.
+; cos and sin at 11.25-degree steps, in units of 256, one full turn.
+; Thirty-two points, so a body can be drawn with 32, 16 or 8 chords by
+; taking every entry, every second or every fourth.  SCANTAB in
+; src/hud.mac is the coarser sixteen-point version the scanner and the
+; corona use; this one exists so a planet can be round.
+CIRCTAB:
+		.WORD	251., 50.
+		.WORD	237., 98.
+		.WORD	213., 142.
+		.WORD	181., 181.
+		.WORD	142., 213.
+		.WORD	98., 237.
+		.WORD	50., 251.
+		.WORD	0., 256.
+		.WORD	-50., 251.
+		.WORD	-98., 237.
+		.WORD	-142., 213.
+		.WORD	-181., 181.
+		.WORD	-213., 142.
+		.WORD	-237., 98.
+		.WORD	-251., 50.
+		.WORD	-256., 0.
+		.WORD	-251., -50.
+		.WORD	-237., -98.
+		.WORD	-213., -142.
+		.WORD	-181., -181.
+		.WORD	-142., -213.
+		.WORD	-98., -237.
+		.WORD	-50., -251.
+		.WORD	0., -256.
+		.WORD	50., -251.
+		.WORD	98., -237.
+		.WORD	142., -213.
+		.WORD	181., -181.
+		.WORD	213., -142.
+		.WORD	237., -98.
+		.WORD	251., -50.
+		.WORD	256., 0.
+
+BODY_DIRTY:	.WORD	0,0		; per body: it moved, so it is redrawn
+BODY_IDX:	.WORD	0		; which body is being looked at, in the
+					; order the slots hold them
+
+; =========================================================================
+; BODY_RADIUS - R5 = a body's slot, SD_Z its distance.  Returns in R0 the
+; radius it would be drawn at, or 0 if it is not drawn at all.  Clobbers
+; R2 and R3.
+; =========================================================================
+BODY_RADIUS:	TST	U.SX(R5)		; did its centre project at all?
+		BEQ	8$
+		MOV	#PLANET_R,R2		; a sun is smaller but nearer, and
+		BIT	#UF_SUN,U.FLAGS(R5)	; wears a corona
+		BEQ	1$
+		MOV	#SUN_R,R2
+1$:		MOV	R2,PL_BODY
+		MOV	SD_SH,R3		; a far body: its z was narrowed by
+		NEG	R3			;   SD_SH, so the radius is too
+		ASH	R3,R2
+		MOV	#PROJ_D,R3		; radius on screen = R * D / z
+		MUL	R3,R2			; R2 even - the full 32 bits
+		DIV	SD_Z,R2
+		BVS	8$			; too close to divide: skip it
+		CMP	R2,#2
+		BLT	8$
+		CMP	R2,#600.
+		BGT	8$
+		MOV	R2,R0
+		BIT	#UF_SUN,U.FLAGS(R5)
+		BEQ	9$
+		MOV	R0,SUN_LASTR		; the size the nova swells from
+		TST	NOVA_R			; and the nova's own (CorrData4Nova,
+		BEQ	9$			;   src/mission_fly.mac)
+		MOV	NOVA_R,R0
+9$:		RETURN
+8$:		CLR	R0
+		RETURN
+
+SUN_LASTR:	.WORD	0		; the sun's radius as last measured
+NOVA_R:		.WORD	0		; SunRadiusNova: 0, or the swollen one
+
+; =========================================================================
+; BODY_MEASURE - has the body in UN_P moved since it was drawn?  If it
+; has, say so, and leave the redrawing to the pass at the end of
+; UNIV_DRAW.  This is the whole saving: measuring is a multiply and a
+; divide, drawing is eight long chords.
+; =========================================================================
+BODY_MEASURE:	MOV	UN_P,R5
+		CALL	BODY_RADIUS
+		MOV	UN_P,R5
+		CMP	R0,U.BR(R5)		; a different size, or none
+		BNE	8$
+		TST	R0			; not on screen either time
+		BEQ	9$
+		CMP	U.SX(R5),U.BCX(R5)
+		BNE	8$
+		CMP	U.SY(R5),U.BCY(R5)
+		BNE	8$
+9$:		RETURN
+8$:		MOV	BODY_IDX,R0		; this one, and not the other
+		CMP	R0,#NBODIES		; a third body would have nowhere
+		BGE	7$			; to keep its segments; there has
+		ASL	R0			; never been one, and this is what
+		MOV	#1,BODY_DIRTY(R0)	; would happen if there were
+7$:		RETURN
+
+; =========================================================================
+; BODY_BOX - where the body about to be drawn sits against the clip
+; rectangle.  Returns C set when none of it can be on screen, and leaves
+; NOCLIP set when all of it is, which lets BODY_LINE skip the clipper for
+; every chord.
+;
+; This is SHIP_CONE's job done for the discs: a hull has been protected
+; from the clipper since the round that put `NOCLIP` in, and the planet
+; and the sun had nothing - which showed up as **39 segments a frame
+; clipped away** while turning, at about 180 us each, all of them chords
+; of a body that had swung off the side of the view.
+;
+; The box is TWICE the half-widths, because a sun's corona reaches half
+; again beyond its rim; the meridians stay inside the disc.  It is
+; screen-space and exact, so nothing here can cut a chord that shows.
+; Clobbers R0..R5.
+; =========================================================================
+BODY_BOX:	CLR	NOCLIP
+		MOV	PL_RX,R0
+		ASL	R0			; twice the half-width across ...
+		BLT	9$			; (an absurd size: clip as usual)
+		MOV	PL_R,R1
+		ASL	R1			; ... and down
+		BLT	9$
+		MOV	PL_CX,R2		; the box, in screen coordinates
+		SUB	R0,R2
+		BVS	9$
+		MOV	PL_CX,R3
+		ADD	R0,R3
+		BVS	9$
+		MOV	PL_CY,R4
+		SUB	R1,R4
+		BVS	9$
+		MOV	PL_CY,R5
+		ADD	R1,R5
+		BVS	9$
+
+		CMP	R2,CLIPX1		; wholly off one side, or above or
+		BGT	8$			; below: nothing of it is drawn
+		CMP	R3,CLIPX0
+		BLT	8$
+		CMP	R4,CLIPY1
+		BGT	8$
+		CMP	R5,CLIPY0
+		BLT	8$
+
+		CMP	R2,CLIPX0		; wholly inside: no chord of it can
+		BLT	9$			; leave the view, so none of them
+		CMP	R3,CLIPX1		; needs the clipper
+		BGT	9$
+		CMP	R4,CLIPY0
+		BLT	9$
+		CMP	R5,CLIPY1
+		BGT	9$
+		MOV	#1,NOCLIP
+9$:		CLC
+		RETURN
+8$:		SEC
+		RETURN
+
+DRAW_PLANET:	MOV	UN_P,R5
+		CALL	BODY_RADIUS
+		MOV	UN_P,R5
+		MOV	R0,U.BR(R5)		; what will be on screen after
+		MOV	U.SX(R5),U.BCX(R5)	; this, so the next frame can see
+		MOV	U.SY(R5),U.BCY(R5)	; whether it still holds
+		MOV	R0,PL_R
+		BIT	#UF_SUN,U.FLAGS(R5)
+		BEQ	1$
+		MOV	U.SX(R5),PL_CX
+		MOV	U.SY(R5),PL_CY
+		MUL	#XASP_N,R0
+		DIV	#XASP_D,R0
+		MOV	R0,PL_RX
+		JMP	SUN_FILL
+1$:		TST	R0
+		BEQ	98$
+		MOV	U.SX(R5),PL_CX
+		MOV	U.SY(R5),PL_CY
+		BR	2$
+98$:		RETURN
+2$:		MOV	PL_R,R0			; and stretched across: rx = r*5/3.
+		MUL	#XASP_N,R0		; R0 is even, so MUL leaves the full
+		DIV	#XASP_D,R0		; 32 bits in R0:R1 for DIV to use
+		MOV	R0,PL_RX
+
+		CALL	BODY_BOX		; off the side of the view: none of
+		BCC	3$			; its chords is worth clipping, one
+		RETURN				; at a time, to find that out
+3$:
+
+		; How many chords it takes to look round.  An n-gon of
+		; half-width rx misses the true circle by about
+		; rx*pi^2/(2*n^2), so the count wanted grows with the square
+		; root of the size; these thresholds keep that under a pixel,
+		; which is where more chords stop being visible and only
+		; cost.  Eight was what this drew before, and at the size a
+		; planet actually appears - about 41 by 69 - it was visibly
+		; an octagon: the error came to five pixels.  Sixteen brings
+		; that to 1.3, which at this resolution reads as round, and
+		; costs nothing measurable; thirty-two is kept for a body
+		; large enough that sixteen would show its corners, and is
+		; worth about 10% of the frame while turning, which is why it
+		; is not simply used throughout.
+		MOV	#8.,PL_N		; a speck: a dot with corners
+		MOV	#12.,PL_SKIP		; every fourth point
+		CMP	PL_R,#9.
+		BLT	4$
+		MOV	#16.,PL_N
+		MOV	#4,PL_SKIP		; every second
+		CMP	PL_R,#100.
+		BLT	4$
+		MOV	#32.,PL_N		; filling the view: every one
+		CLR	PL_SKIP
+4$:		MOV	PL_N,PL_EN		; the outline is just an ellipse
+		MOV	PL_SKIP,PL_ESKIP	; with the body's own half-widths
+		MOV	PL_RX,PL_ERX
+		MOV	PL_R,PL_ERY
+		CALL	PL_ELLIPSE
+
+		JMP	PLANET_DETAIL

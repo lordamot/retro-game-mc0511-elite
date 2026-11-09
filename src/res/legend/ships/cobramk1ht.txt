@@ -1,0 +1,61 @@
+# d_CobraMk1Ht - extracted from orig/legend by tools/legend_ships.py;
+# object 38 of AdrDataShips, hull d_CobraMk1.
+# `make extract` overwrites it.
+name COBRAMK1HT
+index 38
+class 2
+speed 28
+energy 150
+bounty 0
+laser 80
+collide 95
+cargo 1
+launch 2
+dot 50
+rating 464
+flags 160
+flags2 1
+laservert 2
+type 8
+objflags 116
+shipnum 5
+radius 66
+vertex   -18    -1    50
+vertex    18    -1    50
+vertex   -66     0     7
+vertex    66     0     7
+vertex   -32    12   -38
+vertex    32    12   -38
+vertex   -54   -12   -38
+vertex    54   -12   -38
+vertex     0    12    -6
+vertex     0    -1    50
+vertex     0    -1    60
+edge 8 1 31 4 0
+edge 1 0 31 1 0
+edge 0 8 31 2 0
+edge 6 7 31 7 1
+edge 7 1 31 5 1
+edge 0 6 31 3 1
+edge 4 8 31 6 2
+edge 0 2 31 3 2
+edge 2 4 31 8 2
+edge 2 6 31 8 3
+edge 8 5 31 6 4
+edge 5 3 31 9 4
+edge 3 1 31 5 4
+edge 7 3 31 9 5
+edge 4 5 31 7 6
+edge 4 6 31 8 7
+edge 7 5 31 9 7
+edge 9 10 31 4 0
+normal    0   62   15
+normal    0  -63    7
+normal  -10   62   10
+normal  -12  -61   12
+normal   10   62   10
+normal   12  -61   12
+normal    0  112    0
+normal    0    0 -112
+normal  -44   40  -22
+normal   44   40  -22

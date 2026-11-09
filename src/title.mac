@@ -1,0 +1,188 @@
+; =========================================================================
+; title.mac - the screen the game opens on.  AN OVERLAY (src/ovl.list):
+; the resident reads it into OVL_BASE and calls the jump at its top.
+;
+; Elite Legend opens on its logo - the winged emblem under the words
+; ELITE LEGEND, a Spectrum screen it keeps in RAM page 7 - and so does
+; this port since phase 6 (2026-09-25), where the 1985 port turned a
+; Cobra over the game's name.  The logo is text in the repository
+; (src/res/legend/logo.txt), compiled by tools/logo_gen.py into
+; build/logo.mac, which this overlay carries: 176 by 192 Spectrum pixels,
+; run-length coded, drawn twice as wide through EXPTAB (the УКНЦ's
+; pixels are about 0.6 as wide as they are tall, so a Spectrum pixel
+; doubled is 1.2 of its height - near enough its shape), the emblem in
+; plane 2 (yellow in the view band) and the words in plane 1 (white:
+; Legend's cyan would want plane 0, which the CPU cannot write).  The
+; tune plays under it from the PPU, and the prompt blinks below it.
+; =========================================================================
+
+		JMP	TITLE_SCREEN		; the overlay's entry, at OVL_BASE
+
+TI_TICK:	.WORD	0
+TI_BLINK = 20.			; frames the prompt spends on, out of 32
+LOGO_X	= 18.			; the logo's left byte column: 44 bytes wide,
+LOGO_Y	= 4.			;   centred on 80; its first line
+TI_PY	= 212.			; the prompt's line and the credits'
+TI_CY	= 268.
+
+; =========================================================================
+; TITLE_SCREEN - hold the title until ФИКС.  Returns with the screen
+; blank and the segment buffer empty, ready for the game to draw itself.
+; =========================================================================
+TITLE_SCREEN:	CLR	R0			; a clean screen, both bands
+		MOV	#SCRH,R1
+		CLR	R2
+		CALL	FILL_LINES
+		CALL	SEG_RESET
+		CLR	TI_TICK
+		CALL	RING_WAIT		; the CPU draws it itself
+		CALL	LG_DRAW
+		MOV	#13.,TX			; 54 characters, centred on 80
+		MOV	#TI_CY,TY
+		MOV	#S_T_CREDITS,R1
+		CALL	PUTS
+
+		MOV	#2,R0			; and the tune, round and round,
+		CALL	TUNE			;   from the PPU (COMMAND_3)
+		CALL	HULL_RESET		; nothing is in the sky yet: the
+					;   system's set is loaded on arrival
+
+1$:		CALL	VSYNC
+		CALL	INPUT_POLL
+		MOV	KEYS_EDGE,R0
+		BIT	#K_FIRE,R0
+		BNE	80$
+		MOV	TI_TICK,R0		; the prompt blinks, which is what
+		BIC	#177740,R0		; says the game is waiting for you
+		BNE	3$
+		MOV	#28.,TX
+		MOV	#TI_PY,TY
+		MOV	#S_M_PRESSFIRE,R1
+		CALL	PUTS2
+3$:		MOV	TI_TICK,R0
+		BIC	#177740,R0
+		CMP	R0,#TI_BLINK
+		BNE	4$
+		MOV	#28.,R0
+		MOV	#TI_PY,R1
+		MOV	#26.,R2
+		CALL	TEXT_CLEAR
+4$:		INC	TI_TICK
+		BR	1$
+
+80$:		CLR	R0			; the tune stops with the title
+		CALL	TUNE
+		CLR	R0			; and the screen is cleared for
+		MOV	#SCRH,R1		; the game
+		CLR	R2
+		CALL	FILL_LINES
+		CALL	SEG_RESET
+		JMP	INPUT_FLUSH
+
+; =========================================================================
+; LG_DRAW - the logo, out of LOGO_RLE: LOGO_H rows of LOGO_W bytes, each
+; byte doubled into two screen bytes through EXPTAB and written as a
+; word through the window - the low byte is plane 1, the high plane 2 -
+; so a white cell's byte goes low and a yellow cell's high.  An empty
+; byte is skipped: the screen is black already.  Clobbers R0..R5.
+; =========================================================================
+LG_P:		.WORD	0		; the stream
+LG_N:		.WORD	0		; bytes left in this run
+LG_LIT:		.WORD	0		; nonzero: the run is of literals
+LG_ROW:		.WORD	0
+LG_COL:		.WORD	0
+LG_CM:		.WORD	0		; this cell row's colour bits: cells
+LG_CM2:		.WORD	0		;   0..15, then 16 up
+LG_A:		.WORD	0		; the row's plane address
+
+LG_DRAW:	MOV	#LOGO_RLE,LG_P
+		CLR	LG_N
+		CLR	LG_ROW
+		MOV	#<<LOGO_Y*SCRWB>+VRAM+LOGO_X>,LG_A
+10$:		MOV	LG_ROW,R0		; the row's cells' colours: three
+		ASR	R0			;   bytes a row of cells
+		ASR	R0
+		ASR	R0
+		MOV	R0,R1
+		ASL	R1
+		ADD	R0,R1
+		ADD	#LOGO_CM,R1
+		MOVB	(R1)+,R0
+		BIC	#177400,R0
+		MOVB	(R1)+,R2
+		SWAB	R2
+		CLRB	R2
+		BIS	R2,R0
+		MOV	R0,LG_CM
+		CLR	LG_CM2			; the third byte, cells 16 up
+		MOVB	@R1,LG_CM2
+		CLR	LG_COL
+		MOV	LG_A,R3
+20$:		CALL	LG_BYTE
+		TST	R0
+		BEQ	30$
+		ASL	R0
+		MOV	EXPTAB(R0),R4		; the byte doubled: low is the left
+		MOV	LG_COL,R0		; white or yellow: the cell's bit
+		MOV	#LG_CM,R1
+		CMP	R0,#16.
+		BLO	21$
+		SUB	#16.,R0
+		TST	(R1)+
+21$:		MOV	#1,R2
+		ASH	R0,R2
+		BIT	R2,@R1
+		BNE	22$
+		MOV	R4,R2			; yellow: plane 2, the high byte
+		CLRB	R2
+		MOVB	R4,R5
+		SWAB	R5
+		CLRB	R5
+		MOV	R3,@#VADDR
+		MOV	R5,@#VDATA
+		INC	R3
+		MOV	R3,@#VADDR
+		MOV	R2,@#VDATA
+		BR	29$
+22$:		MOV	R4,R5			; white: plane 1, the low byte
+		BIC	#177400,R5
+		MOV	R3,@#VADDR
+		MOV	R5,@#VDATA
+		INC	R3
+		SWAB	R4
+		BIC	#177400,R4
+		MOV	R3,@#VADDR
+		MOV	R4,@#VDATA
+29$:		DEC	R3
+30$:		ADD	#2,R3
+		INC	LG_COL
+		CMP	LG_COL,#LOGO_W
+		BLO	20$
+		ADD	#SCRWB,LG_A
+		INC	LG_ROW
+		CMP	LG_ROW,#LOGO_H
+		BLO	10$
+		RETURN
+
+; LG_BYTE - the next byte of the stream in R0.  Clobbers R0, R1.
+LG_BYTE:	TST	LG_N
+		BNE	2$
+		MOVB	@LG_P,R0		; a new run: c < 128 is c+1
+		BIC	#177400,R0		;   literals, else c-127 empties
+		INC	LG_P
+		CLR	LG_LIT
+		CMP	R0,#128.
+		BHIS	1$
+		INC	R0
+		INC	LG_LIT
+		BR	3$
+1$:		SUB	#127.,R0
+3$:		MOV	R0,LG_N
+2$:		DEC	LG_N
+		CLR	R0
+		TST	LG_LIT
+		BEQ	9$
+		MOVB	@LG_P,R0
+		BIC	#177400,R0
+		INC	LG_P
+9$:		RETURN

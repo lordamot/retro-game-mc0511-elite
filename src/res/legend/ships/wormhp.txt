@@ -1,0 +1,22 @@
+# d_WormHp - extracted from orig/legend by tools/legend_ships.py;
+# object 53 of AdrDataShips, hull d_Worm.
+# `make extract` overwrites it.
+name WORMHP
+index 53
+class 4
+speed 24
+energy 85
+bounty 13
+laser 96
+collide 50
+cargo 2
+launch 0
+dot 12
+rating 384
+flags 12
+flags2 2
+laservert 1
+type 10
+objflags 192
+shipnum 20
+geometry WORMHT

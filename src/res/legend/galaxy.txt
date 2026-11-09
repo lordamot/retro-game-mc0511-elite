@@ -1,0 +1,5 @@
+# Extracted from orig/legend by tools/legend_tables.py; `make extract` overwrites it.
+# BaseGalaxyData: the seed of galaxy 1 (six bytes, then the first
+# five again so a galaxy's seed is read at a rotation), in
+# GalaxyData.a80.  The same #4A5A 4802 53B7 as the 1985 game.
+seed 74 90 72 2 83 183 74 90 72 2 83

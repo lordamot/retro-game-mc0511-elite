@@ -1,0 +1,42 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Engine/Messages/ProductsRus.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+mProd_00+0|{nFlgPrn_2xx}{nPrnGalNum}Продовольствие
+mProd_01+0|{nFlgPrn_2xx}{nFlgPrn_1xx}Текстиль
+mProd_02+0|{nFlgPrn_2xx}{nPrnGalNum}Радиоизотопы
+mProd_03+0|{nFlgPrn_2xx}{nFlgPrn0xx}Рабы
+mProd_04+0|Алкогольные напитки
+mProd_05+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Предметы Роскоши
+mProd_06+0|{nFlgPrn_2xx}{nPrnPlanetPresent}Наркотики
+mProd_07+0|{nFlgPrn_2xx}{nPlanetDest}Компьютеры
+mProd_08+0|{nFlgPrn_2xx}{nPrnPlanetPresent}Механизмы
+mProd_09+0|{nFlgPrn_2xx}{nFlgPrn_1xx}Сплавы
+mProd_10+0|{nFlgPrn_2xx}{nPrnGalNum}Ручное Оружие
+mProd_11+0|{nFlgPrn_2xx}{nPrnPilotName}Меха
+mProd_12+0|{nFlgPrn_2xx}{nPrnPilotName}Руда
+mProd_13+0|{nFlgPrn_2xx}{nFlgPrn_1xx}Золото
+mProd_14+0|{nFlgPrn_2xx}{nFlgPrn_1xx}Платина
+mProd_15+0|{nFlgPrn_2xx}{nPlanetDest}Бриллианты
+mProd_16+0|Чужеродные предметы
+mProd_17+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Черные Металлы
+mProd_18+0|{nFlgPrn_2xx}{nPrnPlanetPresent}Древесина
+mProd_19+0|{nFlgPrn_2xx}{nPlanetDest}Процессоры
+mProd_20+0|{nFlgPrn_2xx}{nPrnGalNum}Мясо животных
+mProd_21+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Шкуры животных
+mProd_22+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Военное оружие
+mProd_23+0|{nFlgPrn_2xx}{nFlgPrn_xx1}Фермерские машины
+mProd_24+0|{nFlgPrn_2xx}{nPrnPlanetPresent}Удобрения
+mProd_25+0|{nFlgPrn_2xx}{nPrnPilotName}Зерно
+mProd_26+0|{nFlgPrn_2xx}{nPlanetDest}Беспилотник
+mProd_27+0|{nFlgPrn_2xx}{nFlgPrn_xx1}Тяжелые пластмассы
+mProd_28+0|{nFlgPrn_2xx}{nFlgPrn_xx1}Водородное топливо
+mProd_29+0|{nFlgPrn_2xx}{nFlgPrn_xx1}Запчасти для машин
+mProd_30+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Жидкий кислород
+mProd_31+0|{nFlgPrn_2xx}{nPrnGalNum}Живые животные
+mProd_32+0|{nFlgPrn_2xx}{nPlanetDest}Медикаменты
+mProd_33+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Военное топливо
+mProd_34+0|{nFlgPrn_2xx}{nFlgPrn_2xx}Парализующий газ
+mProd_35+0|{nFlgPrn_2xx}{nFlgPrn_1xx}Роботы
+mProd_36+0|{nFlgPrn_2xx}{nFlgPrn_xx1}Синтетическое Мясо
+mProd_37+0|{nFlgPrn_2xx}{nPrnPilotName}Вода

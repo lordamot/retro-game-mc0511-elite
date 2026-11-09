@@ -1,0 +1,60 @@
+; Player alien item, eObjPilot goto734 and eObjSlot SetPlayerDrone.
+; Resident: the flight overlay has no room for another launcher.
+ALIEN_LAUNCH:	MOV	#MF_ALIEN,R0
+		CALL	MF_AVAIL
+		BCS	9$
+		MOV	MISS_LOCK,R0
+		BEQ	9$
+		CALL	SLOT_OF
+		TST	U.TYPE(R4)
+		BEQ	9$
+		TST	U.EXPL(R4)
+		BNE	9$
+		MOV	R0,BD_T
+		MOV	#SH_TARGLETH,R0
+		CLR	R1
+		MOV	#-40.,R2
+		MOV	#300.,R3
+		MOV	#48.,R4
+		CALL	UNIV_ADD
+		BCS	9$
+		BISB	#KB_PLAYER,U.TYP(R5)
+		BIC	#UF_DROP!UF_DERELICT!UF_HOSTILE,U.FLAGS(R5)
+		CLR	U.TURN(R5)
+		MOV	BD_T,U.TARGET(R5)
+		MOV	#96.,U.ENERGY(R5)
+		CALL	AI_RND
+		BIC	#^C3,R0
+		BIS	#AI_PIRATE!AI_ATTACK,R0
+		MOVB	R0,U.AIF(R5)
+		DEC	P_CARGO+<G_ALIEN*2>
+		INC	P_FREECARGO
+		CLR	MISS_LOCK
+		MOV	#FX_ALIEN,R0
+		JMP	SFX_PLAY
+9$:		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY
+
+; Legend goto729: an abandoned boarding drone is spent.  A Targlet
+; becomes a scoopable alien item, overriding its random header cargo.
+DRONE_LOST:	BITB	#KB_DRONE,U.TYP(R5)
+		BEQ	1$
+		CLR	U.TYPE(R5)
+		RETURN
+1$:		BICB	#KB_PLAYER,U.TYP(R5)
+		BIS	#UF_DROP!UF_DERELICT!UF_ALIENITEM,U.FLAGS(R5)
+		CLRB	U.FL3(R5)
+		MOVB	#64.,U.TLR(R5)
+		RETURN
+
+; MoveAllObjAI's player branch: the Targlet fires at its chosen target
+; with a shorter counter; a boarding drone never fires.
+ALIEN_ATTACK:	BITB	#KB_DRONE,U.TYP(R5)
+		BNE	9$
+		MOVB	U.CNT(R5),R0
+		BIC	#^C17,R0
+		INC	R0
+		MOVB	R0,U.CNT(R5)
+		MOV	U.TARGET(R5),R0
+		JMP	FV_ATTACK		; flight overlay is active here
+9$:		RETURN

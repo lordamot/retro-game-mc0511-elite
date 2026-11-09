@@ -1,0 +1,48 @@
+# d_Cargo2H - extracted from orig/legend by tools/legend_ships.py;
+# object 13 of AdrDataShips, hull d_Cargo2.
+# `make extract` overwrites it.
+name CARGO2H
+index 13
+class 1
+speed 15
+energy 17
+bounty 0
+laser 0
+collide 20
+cargo 0
+launch 0
+dot 12
+rating 31
+flags 0
+flags2 2
+laservert 0
+type 7
+objflags 128
+shipnum 0
+radius 26
+vertex   -12   -15     0
+vertex     0     0   -25
+vertex    12   -15     0
+vertex   -12    15     0
+vertex    12    15     0
+vertex     0     0    26
+edge 0 1 31 1 0
+edge 1 2 31 7 0
+edge 2 0 31 5 0
+edge 3 1 31 2 1
+edge 0 3 31 4 1
+edge 3 4 31 3 2
+edge 4 1 31 7 2
+edge 3 5 31 4 3
+edge 5 4 31 6 3
+edge 0 5 31 5 4
+edge 2 5 31 6 5
+edge 2 4 31 7 6
+normal    0  -54  -33
+normal  -57    0  -28
+normal    0   54  -33
+normal    0   54   33
+normal  -57    0   28
+normal    0  -54   33
+normal   57    0   28
+normal   57    0  -28

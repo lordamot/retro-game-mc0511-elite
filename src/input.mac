@@ -1,0 +1,64 @@
+; =========================================================================
+; input.mac - acknowledged PPU keyboard packets and the DAT key file.
+; The PPU keeps pending edges while a packet waits; CPU input reads that
+; immutable packet once. Flush requests are acknowledged on the PPU tick.
+; No CPU interrupt vector is replaced and redraws cannot lose key edges.
+; =========================================================================
+
+; Immutable edge packets: PPU publishes data then sequence, CPU consumes
+; once and acknowledges. Pending edges remain on PPU while a packet waits.
+KB_SEQ: .WORD 0
+KB_ACK: .WORD 0
+KB_FLUSH: .WORD 0
+KB_FLUSHED: .WORD 0
+INPUT_POLL:
+ CLR KEYS_EDGE
+ CLR KEYS2_EDGE
+ MOV KB_FLUSH,R0
+ CMP R0,KB_FLUSHED
+ BNE 9$
+ MOV KB_SEQ,R0
+ CMP R0,KB_ACK
+ BEQ 9$
+ MOV KEYS_ACC,KEYS_EDGE
+ MOV KEYS2_ACC,KEYS2_EDGE
+ MOV R0,KB_ACK
+ ADD CPU_VSYNC,RNDSEED ; human input supplies entropy, no CPU timer hook
+9$: RETURN
+INPUT_FLUSH:
+ INC KB_FLUSH
+ CLR KEYS_EDGE
+ CLR KEYS2_EDGE
+ RETURN
+
+; WAIT_KEY - block until any key is newly pressed; returns it in R0.
+WAIT_KEY:	CALL	VSYNC
+		CALL	INPUT_POLL
+		MOV	KEYS_EDGE,R0
+		BEQ	WAIT_KEY
+		RETURN
+
+; =========================================================================
+; KEY_INIT - the key file (KEYS_LBA; tools/keyfile.py writes it from
+; src/res/setup.txt): its four tables over the PPU's own copy of them,
+; and the pause menu's options as they start - Legend's setup.ini.  At
+; boot, after OVL_INIT and while the window is still free; a sector that
+; is not a key file changes nothing, and the build's own keys stand.
+; Clobbers R0..R5.
+; =========================================================================
+KEY_INIT:	MOV	#KEYS_LBA,R0
+		MOV	#OVL_BASE,R1
+		MOV	#256.,R2
+		CALL	DATA_READ
+		BCS	9$
+		CMP	OVL_BASE+<KEYTAB_WORDS*2>,#KEYS_MAGIC
+		BNE	9$
+		MOV	OVL_BASE+<KEYTAB_WORDS*2>+2,OPTIONS
+		MOV	L2372$,R0		; the PPU block's address
+		ADD	#KEYTAB-PP_START,R0
+		MOV	R0,OC_PPU
+		MOV	#KEYTAB_WORDS,OC_WDS
+		MOV	#1,OC_DIR		; out of the window
+		CALL	OC_COPY
+9$:		MOV	#-1,OVL_CUR		; nothing is in the window
+		RETURN

@@ -1,0 +1,81 @@
+# d_AspH - extracted from orig/legend by tools/legend_ships.py;
+# object 29 of AdrDataShips, hull d_Asp.
+# `make extract` overwrites it.
+name ASPH
+index 29
+class 3
+speed 40
+energy 150
+bounty 200
+laser 250
+collide 60
+cargo 4
+launch 2
+dot 24
+rating 832
+flags 140
+flags2 1
+laservert 11
+type 10
+objflags 248
+shipnum 3
+radius 83
+vertex     0   -18     0
+vertex     0    -9   -45
+vertex     0     9   -45
+vertex    43     0   -45
+vertex   -43     0   -45
+vertex    69    -3     0
+vertex   -69    -3     0
+vertex    43   -14    28
+vertex   -43   -14    28
+vertex    43    14    28
+vertex   -43    14    28
+vertex    26    -7    73
+vertex   -26    -7    73
+vertex   -17     0   -45
+vertex    17     0   -45
+vertex     0    -4   -45
+vertex     0     4   -45
+vertex     0    -7    73
+vertex     0    -7    83
+edge 0 1 22 2 1
+edge 0 7 22 1 0
+edge 0 8 22 2 0
+edge 1 3 31 11 1
+edge 3 5 31 6 1
+edge 5 11 16 9 7
+edge 11 12 31 4 0
+edge 6 12 16 10 8
+edge 4 6 31 5 2
+edge 1 4 31 11 2
+edge 5 7 31 7 1
+edge 7 11 31 7 0
+edge 6 8 31 8 2
+edge 8 12 31 8 0
+edge 3 2 31 11 6
+edge 4 2 31 11 5
+edge 9 2 22 6 3
+edge 10 2 22 5 3
+edge 9 10 22 4 3
+edge 6 10 31 10 5
+edge 12 10 31 10 4
+edge 5 9 31 9 6
+edge 11 9 31 9 4
+edge 13 15 10 11 11
+edge 15 14 9 11 11
+edge 14 16 8 11 11
+edge 16 13 8 11 11
+edge 18 17 10 4 0
+normal    0  -35    5
+normal    8  -38   -7
+normal   -8  -38   -7
+normal    0   24   -1
+normal    0   43   19
+normal   -6   28   -2
+normal    6   28   -2
+normal   59  -64   31
+normal  -59  -64   31
+normal   80   46   50
+normal  -80   46   50
+normal    0    0  -90

@@ -1,0 +1,30 @@
+; =========================================================================
+; ovl_fly.mac - the flight overlay: the code that runs only while the
+; sky moves, in the window the docked screens use (src/ovl.mac).
+;
+; A screen stops the sky - the flight frame is skipped while SCREEN is
+; not the cockpit, and nothing moves in the station - so the window is
+; idle in flight, and what only the frame calls can live in it: the
+; ships' minds (src/ai_fly.mac), the J-drive (src/jdrive_fly.mac) and
+; the boarding drone (src/drone_fly.mac).  The missions' frame
+; (src/mission_fly.mac) began here and is resident now: the window is
+; full.  FLY_OVL (src/main.mac) reads
+; it in at the top of every flight frame, which costs a compare when it
+; is there and a disk read when a screen has had the window since.
+;
+; Everything these keep from one frame to the next is in the resident
+; (src/ai.mac, src/jdrive.mac, src/drone.mac): an overlay comes back off
+; the disk as it was built, and a check pokes the resident.
+;
+; The resident reaches it through the table below, one JMP an entry,
+; at the addresses FV_* in src/defs.mac name; nothing else in it may be
+; called from outside the flight frame.
+; =========================================================================
+
+		JMP	AI_STEP			; FV_AI
+		JMP	SPAWN_TICK		; FV_SPAWN
+		JMP	JDRIVE_STEP		; FV_JDRIVE
+		JMP	DRONE_LAUNCH		; FV_DRONE
+		JMP	MS_PORTAL		; FV_PORTAL
+		JMP	OBJ_ATTACK		; FV_ATTACK
+		.IIF	NE, .-OVL_BASE-FV_END, .ERROR ; the table and FV_* disagree

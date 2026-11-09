@@ -1,0 +1,57 @@
+; The CPU's copy of the PPU program (PP_START..PP_END, src/ppu.mac) is
+; dead once PP_MAIN_LOAD has pushed it - the first thing main.mac does -
+; except the four published words from PP_KEYS_DATA on, which the PPU
+; writes during normal timer service.  The buffers below are laid over the dead
+; part: nothing reads them before the push, and a .BLKW emits nothing,
+; so the image still carries the program underneath (2026-09-11: the
+; resident was 148 bytes from full).
+TAIL_DOT = .
+. = PP_START
+UNIV:		.BLKW	<U.SIZE/2>*NUNIV	; the slots (src/space.mac)
+NPSHOT:		.BLKW	NUNIV		; this frame's NPC beam targets
+; Disk scratch is used only by synchronous disk probes and commander
+; name reads. Those callers never retain it across a SHIP_DRAW. Geometry
+; is rebuilt per hull; the PPU consumes copied ring records, not SVX.
+SCRATCH:
+SVX:		.BLKW	MAXVERT		; projected vertex coordinates
+SVY:		.BLKW	MAXVERT		;   (src/ship.mac)
+; Collision radii live only in COLLIDE_STEP, before drawing. VERT_MARK
+; consumes SVNEED before the projection pass replaces it with SVOK.
+CO_R:
+SVOK:
+SVNEED:		.BLKW	MAXVERT
+		.IIF	GT, NUNIV-MAXVERT, .ERROR ; collision radii must fit the shared vertex array
+SVLIST:		.BLKB	MAXVERT		; the vertices they use, each once, as
+		.EVEN			;   word offsets (VERT_MARK)
+SLIST:		.BLKW	MAXEDGE		; the edges VERT_MARK keeps, as pairs
+					;   of vertex word offsets, so the draw
+					;   pass walks only those
+		.IIF	LT, .-SCRATCH-256., .ERROR ; scratch must fit in the geometry workspace
+EXPTAB:		.BLKW	256.		; byte -> its bits doubled (src/text.mac,
+					;   filled by TEXT_INIT)
+BENCH_BUF:	.BLKW	16.		; the window benchmark's (src/main.mac)
+LREC:		.BLKW	3		; a walk thrown away (src/gfx.mac)
+VIEW_MAT:	.BLKW	9.		; a slot's orientation, turned
+					;   (src/space.mac)
+OVL_DIR:	.BLKW	OVL_N*2		; the overlay directory and OC_TAB
+					;   (src/ovl.mac), filled by OVL_INIT
+ST_PRICE:	.BLKW	NGOODS_L	; the station's prices and the
+AST_QTY:	.BLKW	NGOODS_L	;   hermit's stock (src/market.mac),
+					;   filled by MKT_ARRIVE at the start
+HUD_LAST:	.BLKW	NGAUGES		; the gauges' last readings (src/hud.mac),
+					;   set by the dashboard overlay
+PLANET_CT:	.BLKB	NPLANET_CT*C.SIZE ; the planet's offers (src/contract.mac),
+		.EVEN			;   made by CT_MAKE before they are shown
+; Initialized by FPAIR_INIT after PP_MAIN_LOAD; persistent thereafter.
+FPAIR:		.BLKW	256.
+SU_SPAN: .BLKW VIEW_H
+PP_OVER_END = .
+		.IIF	GT, PP_OVER_END-PP_KEYS_DATA, .ERROR ; the buffers over the PPU copy reach its published words
+. = TAIL_DOT
+
+PROG_USED:
+		.IIF GT, .-PROG_SIZE, .ERROR
+		.BLKB	PROG_SIZE-.	; pad the image to PROG_SIZE; the
+PROG_END:				;   build fails here once the program
+					;   outgrows it
+		.END RT_ENTRY

@@ -1,0 +1,31 @@
+# d_SquareH - extracted from orig/legend by tools/legend_ships.py;
+# object 66 of AdrDataShips, hull d_Square.
+# `make extract` overwrites it.
+name SQUAREH
+index 66
+class 1
+speed 15
+energy 17
+bounty 0
+laser 0
+collide 20
+cargo 73
+launch 0
+dot 12
+rating 31
+flags 0
+flags2 3
+laservert 0
+type 7
+objflags 128
+shipnum 0
+radius 80
+vertex     0     0     1
+vertex     0    80     1
+vertex    80    80     1
+vertex    80     0     1
+edge 0 1 31 15 15
+edge 1 2 31 15 15
+edge 2 0 31 15 15
+edge 0 3 31 15 15
+edge 3 2 31 15 15

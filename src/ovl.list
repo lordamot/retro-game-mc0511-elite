@@ -1,0 +1,22 @@
+# Overlays, one a line: NAME: module module ...  The line's position is
+# the overlay's number (OVL_* in src/defs.mac must agree).  Each is
+# assembled on its own against the resident's symbols, laid out at
+# OVL_BASE, and written to the disk after the resident; its first word
+# must be a jump to its entry point.  See src/ovl.mac.  A build/strings_*
+# file is the strings tagged for that overlay in src/res/text/strings.txt.
+title: src/title.mac build/logo.mac
+charts: src/ovl_charts.mac build/strings_charts.mac
+info: src/ovl_info.mac src/planet.mac build/planet.mac build/strings_info.mac
+trade: src/ovl_trade.mac build/strings_trade.mac
+cmdr: src/ovl_cmdr.mac src/nameask.mac src/splash.mac build/strings_cmdr.mac build/splash_font.mac
+pilot: src/ovl_pilot.mac build/legend_equip_names.mac build/strings_pilot.mac
+equip: src/ovl_equip.mac build/legend_equip.mac build/legend_catalog_fit.mac build/strings_equip.mac
+yard: src/ovl_yard.mac build/legend_equip_price.mac build/legend_catalog.mac build/strings_yard.mac
+save: src/ovl_save.mac src/nameask.mac build/strings_save.mac
+carrier: src/ovl_carrier.mac build/strings_carrier.mac
+ctgen: src/ovl_ctgen.mac build/strings_ctgen.mac
+fly: src/ovl_fly.mac src/ai_fly.mac src/jdrive_fly.mac src/drone_fly.mac src/portal_fly.mac
+mission: src/ovl_mission.mac build/mistext.mac
+dash: src/ovl_dash.mac build/scanners.mac build/strings_dash.mac
+pause: src/ovl_pause.mac build/strings_pause.mac
+sfx: src/ppu_sfx.mac build/sfx.mac

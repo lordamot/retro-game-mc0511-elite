@@ -1,0 +1,1136 @@
+; =========================================================================
+; mission.mac - Elite Legend's missions: the resident half.
+;
+; Legend's missions (Menu/Missions.a80, Engine/eMissions.a80,
+; eMissionsLow.a80 and the hooks in eJumpLow.a80, eObjPilot.a80 and
+; BuySell.a80) keep their whole state in the pilot's record - P_MSTAT,
+; P_M1..P_M7, P_MCOMPLETE, P_MALIEN, P_WAR, P_RANK (src/pilot.mac) - and
+; do their talking docked.  So the talking is an overlay,
+; src/ovl_mission.mac, with Legend's own text read off the disk a
+; message at a time (tools/mission_text.py); what stays here is what the
+; flight and the jumps call:
+;
+;   MS_ARRIVE   a hyperspace arrival: the next mission is issued, when a
+;               kill has said one may be (HypEnd)
+;   MS_CARRY    a kill that carried the rating into its third byte: the
+;               "may issue" flag, when nothing is open (IncBattleRating)
+;   MS_GALAXY   a galactic jump: the missions it ends (JumpToGalaxy)
+;   MS_LAUNCH   leaving the station (BeginLaunch)
+;   MS_DOCK1/2  the docking's two turns at the overlay (BeginDocking),
+;               either side of the carrier market's settling
+;   MS_MARKET   the market screen entered (GoMission1)
+;
+; and the helpers they share: MS_RATING (IncBattleRating_DE), MS_NAMEOF
+; (a system's name in any galaxy, into MS_NAME - Legend's plNameMission,
+; the one buffer the three missions that name a system share).
+; =========================================================================
+
+MS_NAME:	.BLKB	10.		; plNameMission3/4/5: a system's name
+
+; =========================================================================
+; MS_ARRIVE - HypEnd's mission block, after a hyperspace jump that was
+; not intercepted.  Nothing is issued in the first galaxy (number 0) or
+; beyond the forty-eight, nor unless P_MSTAT bit 7 says a kill has
+; allowed it, and the bit is spent here.  Legend tries missions 4..7
+; first, each on its own condition of what is complete and the kills
+; (later steps); then the three basic ones in turn by the bits of the
+; rating's third byte ANDed with what is complete: bit 0 the nova, bit
+; 1 the cloaked Asp, bit 2 the Targon station.  Clobbers R0..R5.
+; =========================================================================
+MS_ARRIVE:	CLRB	P_M2			; the cloaked Asp is left behind
+		CLR	PT_GUARD		;   and a portal's guard, and a
+		CLR	PIRATE_ON		;   station the pirates held
+		CALL	MS_SETM3		; SetVarMission3 and 45 (HypEnd),
+		CALL	MS_SETM45		;   the issuing, then EndJump's
+		CALL	MS_ISSUE		;   SetVars4War and SetVars4Mission6
+		CALL	MS_SETWAR
+		CALL	MS_SETM6
+		JMP	MS_SETM7
+
+MS_ISSUE:	TST	P_GALAXY		; the first galaxy: no missions
+		BEQ	100$
+		CMP	P_GALAXY,#48.
+		BHIS	100$
+		BITB	#200,P_MSTAT		; a kill said one may be issued
+		BNE	101$
+		JMP	MS_PIRATES		; else maybe the pirates' station
+100$:		RETURN
+101$:
+		BICB	#200,P_MSTAT
+		MOVB	P_RATING+2,R2		; missions 4 and 5 first: each on
+		BIC	#177400,R2		;   what is complete against the
+		MOVB	P_MCOMPLETE,R3		;   rating's third byte, and the
+		BIC	#177400,R3		;   kills
+		MOV	R2,R0			; the Constrictor: 0, 1, 2 complete,
+		BIS	#26,R0			;   4 not, rating bit 0 set
+		COM	R3
+		BIC	R3,R0
+		COM	R3
+		MOV	#7,R1
+		XOR	R1,R0
+		BIC	#^C27,R0
+		BNE	5$
+		MOV	#800.,R0
+		CALL	MS_KILLS
+		BCS	1$
+		MOVB	#1,P_M4
+		RETURN
+5$:		MOV	R2,R0			; the plans: 0, 1, 2, 4 complete,
+		BIS	#65,R0			;   5 not, rating bit 1 set
+		COM	R3
+		BIC	R3,R0
+		COM	R3
+		MOV	#27,R1
+		XOR	R1,R0
+		BIC	#^C67,R0
+		BNE	6$
+		MOV	#1280.,R0
+		CALL	MS_KILLS
+		BCS	1$
+		MOVB	#1,P_M5
+		RETURN
+6$:		MOV	R2,R0			; Confrontation: 0, 1, 2, 4, 5
+		BIS	#164,R0			;   complete, 6 not, rating bits 0
+		COM	R3			;   and 1 set, a war that is over,
+		BIC	R3,R0			;   1792 kills
+		COM	R3
+		MOV	#67,R1
+		XOR	R1,R0
+		BIC	#^C167,R0
+		BNE	7$
+		CMPB	P_WAR,#1
+		BNE	1$
+		MOV	#1792.,R0
+		CALL	MS_KILLS
+		BCS	1$
+		TSTB	P_M6			; once
+		BNE	9$
+		MOVB	#1,P_M6
+		RETURN
+7$:		MOVB	P_MCOMPLETE,R0		; Retribution: 0..6 complete, the
+		COM	R0			;   rating's third byte #40 up,
+		BIC	#^C177,R0		;   3000 kills
+		BNE	1$
+		CMPB	P_RATING+2,#100
+		BLO	1$
+		MOV	#3000.,R0
+		CALL	MS_KILLS
+		BCS	1$
+		CMPB	P_M7,#1			; done: the basic ones instead
+		BEQ	1$
+		BHI	9$			; under way: nothing
+		MOVB	#2,P_M7
+		RETURN
+1$:		MOVB	P_RATING+2,R0		; the basic three (goto908):
+		BICB	#^C7,R0			;   PilotRating2 & complete
+		MOVB	P_MCOMPLETE,R1
+		COM	R1
+		BIC	R1,R0
+		BIT	#1,R0			; bit 0 clear: the nova
+		BNE	2$
+		BISB	#1,P_MCOMPLETE		; complete the moment it is issued
+		MOVB	#1,P_M1
+		MOVB	#2,P_COLOUR		; a red star
+		CLR	P_FUEL			; and the tank runs dry on arrival
+					;   (SetFuelZero)
+9$:		RETURN
+2$:		BIT	#2,R0			; bit 1: the cloaked Asp may come
+		BNE	3$			;   (its bit is set when it is won)
+		BISB	#102,P_MSTAT
+		RETURN
+3$:		BIT	#4,R0			; bit 2: the Targon station
+		BEQ	31$
+		JMP	MS_PIRATES
+31$:
+		BISB	#4,P_MCOMPLETE		; complete the moment it is issued
+		MOVB	#1,P_M3
+		CALL	RND_BYTE		; a system of this galaxy
+		MOVB	R0,P_M3+1
+		RETURN
+
+; MS_KILLS - TestDestObj_BC: C set if the kills are fewer than R0.
+; Clobbers nothing.
+MS_KILLS:	TST	P_DESTR+2
+		BNE	1$
+		CMP	P_DESTR,R0
+		RETURN
+1$:		CLC
+		RETURN
+
+; MS_SETM45 - SetVarMission45, on every arrival: the plans (P_M5 3 up)
+; are 3 in the target system and 4 elsewhere; the Constrictor's trail
+; (P_M4 3 up) loses its two flags, and in the named system gains one -
+; the message at the next dock (bit 7), or, in its last phase (bit 4),
+; leave for the ship to be met (bit 5).  The two share the target in
+; P_M4+1 (galaxy) and P_M4+2 (system).  Clobbers R0, R1.
+MS_SETM45:	CLR	R1			; R1 = 1 here, at the target
+		CMPB	P_GALAXY,P_M4+1
+		BNE	1$
+		CMPB	P_PLANET,P_M4+2
+		BNE	1$
+		INC	R1
+1$:		CMPB	P_M5,#3
+		BLO	3$
+		MOVB	#4,P_M5
+		TST	R1
+		BEQ	3$
+		MOVB	#3,P_M5
+3$:		MOVB	P_M4,R0
+		BIC	#177400,R0
+		CMP	R0,#3
+		BLO	9$
+		BIC	#240,R0
+		TST	R1
+		BEQ	5$
+		BIS	#200,R0
+		BIT	#20,R0
+		BEQ	5$
+		MOV	#240,R1
+		XOR	R1,R0
+5$:		MOVB	R0,P_M4
+9$:		RETURN
+
+; MS_SETM6 - SetVars4Mission6, on every arrival while mission 6 is in its
+; second or third part (4..6): the system's Targon station is forgotten
+; (P_M3 0) - the third part done if it had been brought down (5) - and
+; the part-two system, the leftmost of the galaxy the orders name
+; (P_M6+1, P_M4+2), is Targon-held (P_M3 4).  Clobbers R0.
+MS_SETM6:	MOVB	P_M6,R0
+		CMP	R0,#4
+		BLO	9$
+		CMP	R0,#7
+		BHIS	9$
+		CMP	R0,#6			; the third part: its station down
+		BNE	1$
+		CMPB	P_M3,#5
+		BNE	1$
+		INCB	P_M6
+1$:		CLRB	P_M3
+		CMPB	P_GALAXY,P_M6+1
+		BNE	9$
+		CMPB	P_PLANET,P_M4+2
+		BNE	9$
+		MOVB	#4,P_M3
+9$:		RETURN
+
+; MS_SETM3 - SetVarMission3, on every arrival: a Targon station brought
+; down (bit 3, MS_STNKILL) makes it 5, the reward's; else an issued
+; mission is offered from the next dock (1 -> 2), one given up at the
+; target is taken up again (4 -> 3), and arriving at the target makes
+; it 4 whatever it was.  Clobbers R0.
+MS_SETM3:	MOVB	P_M3,R0
+		BEQ	9$
+		BIT	#10,R0
+		BEQ	1$
+		MOVB	#5,P_M3
+		RETURN
+1$:		CMP	R0,#1
+		BNE	2$
+		MOVB	#2,P_M3
+2$:		CMP	R0,#4
+		BNE	3$
+		MOVB	#3,P_M3
+3$:		CMPB	P_PLANET,P_M3+1
+		BNE	9$
+		MOVB	#4,P_M3
+9$:		RETURN
+
+; =========================================================================
+; MS_CARRY - a kill of the commander's carried the rating into its third
+; byte (IncBattleRatingABS's goto755): with no mission open - the first
+; bytes of P_M1, P_M3, P_M4, P_M5 and P_M6 all nought - one may be
+; issued at the next arrival.  Clobbers R0.
+; =========================================================================
+MS_CARRY:	MOVB	P_RANK,R0		; the war (IncBattleRatingABS):
+		BIC	#177400,R0
+		CMP	R0,#300			;   retired, the next promotion is
+		BLO	1$			;   off, and a mission may come
+		BICB	#1,P_RANK
+		BR	8$
+1$:		TST	R0
+		BEQ	2$
+		BIT	#1,R0			; a rank: promotion is due, and
+		BNE	9$			;   stays due till the dock
+		INCB	P_RANK
+		RETURN
+2$:		MOVB	P_M1,R0			; no war yet: nothing open ...
+		BISB	P_M3,R0
+		BISB	P_M4,R0
+		BISB	P_M5,R0
+		BISB	P_M6,R0
+		BNE	9$
+		BITB	#10,P_MCOMPLETE		; ... the alien computer found ...
+		BEQ	8$
+		TSTB	P_WAR			; ... never a war ...
+		BNE	8$
+		BICB	#200,P_MSTAT
+		CMP	P_RATING+2,#40		; ... a rating #200000 up, and the
+		BLO	8$			;   jumps' high byte against its
+		MOVB	P_JUMPS+1,R1		;   third byte: the Targons invade
+		COM	R1			;   (goto755)
+		MOVB	P_RATING+2,R0
+		BIC	R1,R0
+		BIC	#177400,R0
+		BEQ	8$
+		MOVB	#201,P_RANK		; the offer is due
+		MOVB	#201,P_WAR		; rising, level one
+		CALL	RND_BYTE		; one of the first eight galaxies
+		ASR	R0
+		BIC	#^C7,R0
+		MOVB	R0,P_WAR+1
+		CLRB	P_WAR+2
+		CALL	MS_WARPOS		; and where it began
+		MOVB	R0,P_M3+1
+		RETURN
+8$:		BISB	#200,P_MSTAT
+9$:		RETURN
+
+; =========================================================================
+; The Targon war (eMissions.a80, eMissionsLow.a80).  P_WAR is Legend's
+; PilotTargonWar: the level (0 never, 1 over, 2 up under way; bit 7
+; rising, and the rest the size of it), the galaxy it is in, the
+; sub-mission flags a bit a rank, and a counter for the rank's task.
+; It began at the leftmost world of the galaxy the commander was in
+; (SearchLeftmostPlanet), WAR_X/WAR_Y, which the zones are measured from:
+; the occupied zone (param 0), the front (#3C) and the rear (#78) are
+; circles about the galaxy's left edge at WAR_Y, of radius the level
+; plus half the param.
+; =========================================================================
+WAR_X:		.WORD	0		; CrdXWarPlanet: the leftmost world of
+WAR_Y:		.WORD	0		;   the galaxy in hand
+WAR_T:		.WORD	136		; var_11: the war's clock, #5E
+
+; MS_WARPOS - SearchLeftmostPlanet: this galaxy's leftmost world into
+; WAR_X/WAR_Y; R0 = its number.  Clobbers R0..R5.
+MS_WARPOS:	MOV	GALNUM,R0
+		CALL	MS_LEFTMOST
+		MOV	ML_BX,WAR_X
+		MOV	ML_BY,WAR_Y
+		RETURN
+
+; MS_ZONE - TestPilotInZoneWar / TestPlaneInZoneWar: R0 = the zone's
+; param (0, #3C, #78), R1 = a system's x, R2 its y.  C set inside the
+; zone of the war in this galaxy.  Clobbers R0..R3.
+MS_ZONE:	CMPB	P_GALAXY,P_WAR+1	; the war's galaxy
+		BNE	8$
+		MOVB	P_WAR,R3
+		BIC	#177400,R3
+		CMP	R3,#2			; and under way
+		BLO	8$
+		ASL	R3			; the level twice, a byte, and the
+		BIC	#177400,R3		;   param, saturated, halved: the
+		ADD	R0,R3			;   radius
+		CMP	R3,#377
+		BLOS	1$
+		MOV	#377,R3
+1$:		ASR	R3
+		MUL	R3,R3			; R3 odd: the low word, r squared
+		MOV	R3,-(SP)
+		MOV	WAR_Y,R3		; across: from the war's y
+		SUB	R2,R3
+		BGE	2$
+		NEG	R3
+2$:		MUL	R3,R3
+		ASR	R1			; along: half the x, from the edge
+		MUL	R1,R1
+		ADD	R1,R3
+		BCS	7$			; past sixteen bits: far off
+		CMP	R3,(SP)+
+		RETURN				; C: inside
+7$:		TST	(SP)+
+8$:		CLC
+		RETURN
+
+; MS_HEREZONE - MS_ZONE for the system the commander is in.
+MS_HEREZONE:	MOVB	P_PLANETDATA+3,R1
+		BIC	#177400,R1
+		MOVB	P_PLANETDATA+1,R2
+		BIC	#177400,R2
+		BR	MS_ZONE
+
+; MS_COMBAT - TestPilotInZoneCombat: C set at the front, the #3C zone
+; less the occupied one.  Clobbers R0..R3.
+MS_COMBAT:	MOV	#74,R0
+		CALL	MS_HEREZONE
+		BCC	9$
+		CLR	R0
+		CALL	MS_HEREZONE
+		BCS	8$
+		SEC
+		RETURN
+8$:		CLC
+9$:		RETURN
+
+; MS_SETWAR - SetVars4War, on arrival: in the war's galaxy under way,
+; the system is the Targons' in the occupied zone (P_M3 4) and nobody's
+; elsewhere.  (The front's market is MS_WARMKT's.)  Clobbers R0..R3.
+MS_SETWAR:	CMPB	P_WAR,#2
+		BLO	9$
+		CLRB	P_M3
+		CLR	R0
+		CALL	MS_HEREZONE
+		BCC	9$
+		MOVB	#4,P_M3
+9$:		RETURN
+
+; MS_WARMKT - the rest of SetVars4War, after the market is stocked: at
+; the front there is no food, water or medicine to be had, and no
+; firearms, battle weapons, drones, hydrogen or military fuel.
+; Clobbers R0..R3.
+MS_WARMKT:	CMPB	P_WAR,#2
+		BLO	9$
+		CALL	MS_COMBAT
+		BCC	9$
+		MOV	#MW_GOODS,R1
+1$:		MOVB	(R1)+,R0
+		BMI	9$
+		ASL	R0
+		CLR	P_PRODUCT(R0)
+		BR	1$
+9$:		RETURN
+MW_GOODS:	.BYTE	0, 32., 37., 10., 22., 26., 28., 33., -1
+		.EVEN
+
+; MS_WARSTEP - ProgressMissionWar, every flight frame in a system: the
+; war's clock gains a quarter of what the level lacks of #FF, and at
+; each 65536th the war grows a level, rising - with MAYDAY on the
+; message line - or shrinks one, falling; past #FF it turns to fall,
+; and at level 1 it is over.  Clobbers R0..R3.
+MS_WARSTEP:	MOVB	P_WAR,R0
+		BIC	#177400,R0
+		CMP	R0,#2
+		BLO	9$
+		COM	R0
+		BIC	#177400,R0
+		ASR	R0
+		ASR	R0
+		ADD	R0,WAR_T		; var_11 as one word: its carry is
+		BCC	9$			;   the high byte's wrap
+		MOVB	P_WAR,R0
+		BPL	3$
+		INCB	P_WAR			; rising
+		BNE	2$
+		MOVB	#177,P_WAR		; past #FF: it falls from here
+		RETURN
+2$:		MOVB	P_WAR+1,R0		; MAYDAY! АТАКОВАНА ГАЛАКТИКА N
+		ADD	#'1,R0
+		MOVB	R0,MW_DIGIT
+		MOV	#S_M_WARINV,R1
+		MOV	#MW_DIGIT,HD_NAME
+		JMP	SAY_LINE2
+3$:		DECB	P_WAR			; falling
+9$:		RETURN
+MW_DIGIT:	.BYTE	0, 0
+
+
+; =========================================================================
+; MS_GALAXY - JumpToGalaxy's toll on the missions: the nova, the Targon
+; station and the plans are left behind.  (The contracts are torn up by
+; the caller, CT_REFUSEALL.)  Clobbers nothing.
+; =========================================================================
+MS_GALAXY:	CLRB	P_M1
+		CLRB	P_M3
+		CLRB	P_M5
+		MOV	R5,-(SP)		; the war's leftmost world is this
+		CALL	MS_WARPOS		;   galaxy's (SearchLeftmostPlanet)
+		MOVB	R0,P_M3+1
+		MOV	(SP)+,R5
+		CMPB	P_M4,#2			; the Constrictor's trail ends too -
+		BEQ	9$			;   but for the reward waiting, and
+		CMPB	P_M4,#10		;   the hop to the next galaxy the
+		BNE	8$			;   trail pointed at, which lands on
+		CMPB	P_GALAXY,P_M4+1		;   its second phase with the next
+		BNE	8$			;   rumour due
+		MOVB	SYS_INDEX,P_M4+2
+		MOVB	#214,P_M4
+		RETURN
+8$:		CLRB	P_M4
+9$:		RETURN
+
+; =========================================================================
+; MS_LAUNCH - BeginLaunch: leaving the station of the nova's system
+; lights the fuse (P_M1 1 -> 2).  Clobbers nothing.
+; =========================================================================
+MS_LAUNCH:	CMPB	P_M1,#1
+		BNE	9$
+		MOVB	#2,P_M1
+9$:		RETURN
+
+; =========================================================================
+; MS_DOCK1 / MS_DOCK2 / MS_MARKET - the overlay's three entries: the
+; docking's missions before the carrier market settles (GoMission7, and
+; at the main station the pirates, missions 3, 4, 5 and Raxxla), those
+; after it (the war and mission 6), and the market screen's (GoMission1:
+; people to take aboard, or to set down).  Each may put up screens of
+; its own and waits for their keys.  Never from overlay code: they load
+; one.  Clobbers everything.
+; =========================================================================
+MS_DOCK1:	MOVB	P_M3,R0			; nothing to say without a mission
+		BISB	P_M4,R0			;   open, nor away from Raxxla, nor
+		BISB	P_M5,R0			;   the pirates: no disk read either
+		BISB	P_M7,R0
+		BIS	PIRATE_ON,R0
+		BNE	1$
+		CMP	P_GALAXY,#255.
+		BNE	MS_NONE
+1$:		CLR	R0
+		BR	MS_OVL
+		CLR	R0
+		BR	MS_OVL
+MS_DOCK2:	TSTB	P_WAR			; the war, and mission 6's odd
+		BNE	1$			;   states: the military station's
+		BITB	#1,P_M6			;   word
+		BEQ	MS_NONE
+1$:		MOV	#1,R0
+		BR	MS_OVL
+MS_MARKET:	MOVB	P_M1,R0			; the nova, or people aboard, or a
+		BISB	P_M1+1,R0		;   rank in the war, or Retribution
+		BISB	P_RANK,R0
+		BISB	P_M7,R0
+		BNE	1$
+		CMP	DOCKED_AT,#BK_GENSHIP	;   or at a generation ship
+		BNE	MS_NONE
+1$:		MOV	#2,R0
+MS_OVL:		MOV	R0,-(SP)
+		MOV	#OVL_MISSION,R0
+		CALL	OVL_LOAD
+		MOV	(SP)+,R0
+		JMP	OVL_BASE
+MS_NONE:	RETURN
+
+; =========================================================================
+; MS_RATING - IncBattleRating_DE: R0 more on the 32-bit rating, which is
+; what a mission's reward of #FFFF is.  Clobbers nothing.
+; =========================================================================
+MS_RATING:	ADD	R0,P_RATING
+		ADC	P_RATING+2
+		RETURN
+
+; MS_RATINGA - IncBattleRatingABS: the same, and a carry into the third
+; byte is a kill's leave to issue the next mission (MS_CARRY).
+; Clobbers R0.
+MS_RATINGA:	ADD	R0,P_RATING
+		BCC	9$
+		INC	P_RATING+2
+		JMP	MS_CARRY
+9$:		RETURN
+
+; =========================================================================
+; MS_KILLED - R5 = a ship of the commander's killing, from SHIP_KILLED.
+; The cloaked Asp (DestroyObj): its wreck lets go the container with the
+; cloaking device, and mission 2 waits on it (P_M2 3).  A Targon under
+; the laser (FireLaser's goto867): PilotMissionAlien counts two a kill,
+; and at the wrap, the 128th, the wreck lets go the alien computer's
+; container at its own top speed.  Preserves R5.
+; =========================================================================
+MS_KILLED:	TST	PIRATE_ON		; the pirates' station: a pirate
+		BEQ	10$			;   shot down near it is one fewer,
+		TST	STN_NEAR		;   and at the last it is free
+		BEQ	10$			;   (IncBattleRating)
+		MOVB	U.TYP(R5),R0
+		BIC	#^C7,R0
+		CMP	R0,#KD_PIRATE
+		BNE	10$
+		DEC	PIRATE_ON
+10$:		BIT	#UF_MISSION,U.FLAGS(R5)
+		BEQ	2$
+		TSTB	P_M2			; the Asp's, while mission 2 is on
+		BEQ	1$
+		MOVB	#3,P_M2
+		MOV	#SH_CARGOHC,R0
+		BR	MS_DROPC
+1$:		MOVB	P_M4,R0			; the Constrictor, on its last
+		COM	R0			;   phase: mission 4 won
+		BIT	#140,R0
+		BNE	9$
+		MOVB	#2,P_M4
+		MOV	R5,-(SP)
+		MOV	#S_M_HIJACK,R1
+		CALL	SAY_LINE
+		MOV	(SP)+,R5
+		RETURN
+2$:		CMP	LAST_WEAPON,#LAS_NONE	; the laser's kills only
+		BEQ	9$
+		MOVB	U.TYP(R5),R0
+		BIC	#^C7,R0
+		CMP	R0,#KD_TARGON
+		BNE	9$
+		CMPB	P_M6,#6			; mission 6's third part: a cruiser
+		BNE	3$			;   (missile-proof) under the laser
+		BITB	#KB_MISSPROOF,U.TYP(R5)	;   frees the system
+		BEQ	3$
+		INCB	P_M6
+3$:
+		BISB	#1,P_MALIEN		; set, then one more: two a kill
+		INCB	P_MALIEN		;   since the 1.09 conversion
+		BNE	9$
+		MOV	#SH_CARGOHA,R0
+		CALL	MS_DROPC
+		BCS	9$
+		MOV	R4,-(SP)		; it flies off the wreck at its
+		MOV	#SH_CARGOHA,R0		;   own top speed
+		MOV	#SS_SPEED,R1
+		CALL	SHIP_STAT
+		MOV	(SP)+,R4
+		MOV	R0,U.SPEED(R4)
+9$:		RETURN
+
+; MS_DROPC - container type R0 where the ship at R5 died, clear of the
+; wreck the way SHIP_DROP lets a drop go - three hundred below, since a
+; drop born inside its parent collides with it here (Legend's pass
+; through each other): R4 = it, C set if the sky is full.  Preserves R5.
+MS_DROPC:	MOV	R5,-(SP)
+		MOV	U.X(R5),R1
+		MOV	U.Y(R5),R2
+		SUB	#300.,R2
+		MOV	U.Z(R5),R3
+		CLR	R4
+		CALL	UNIV_ADD
+		MOV	R5,R4
+		MOV	(SP)+,R5
+		RETURN
+
+; =========================================================================
+; MS_SCOOP - R5 = a drop the scoop has caught: C set if it was one of the
+; missions' own containers (AddFoundCargo's goto534), taken care of
+; here.  The cloaking device's wins mission 2: the Asp may come no more,
+; and the device is fitted and the rating gains #FFFF - or, with one
+; fitted already, it is a tonne of computers: C clear and R0 = 7, the
+; good.  The alien computer's completes its own bit, and fits the same
+; way.  Anything else: C clear, R0 = -1.  Clobbers R0..R4.
+; =========================================================================
+MS_SCOOP:	CMP	U.TYPE(R5),#SH_CARGOHC
+		BNE	1$
+		BISB	#2,P_MCOMPLETE
+		BICB	#100,P_MSTAT
+		CLRB	P_M2
+		MOV	#P_CLOAK,R4
+		MOV	#S_M_GOTCLOAK,R1
+		BR	2$
+1$:		CMP	U.TYPE(R5),#SH_CARGOHA
+		BNE	8$
+		BISB	#10,P_MCOMPLETE
+		MOV	#P_ALIENCOMP,R4
+		MOV	#S_M_GOTALIEN,R1
+2$:		TSTB	(R4)			; fitted already: computers
+		BPL	7$
+		CLRB	(R4)			; fitted, whole
+		CLR	U.TYPE(R5)
+		CALL	SAY_LINE
+		MOV	#177777,R0
+		CALL	MS_RATINGA
+		MOV	#FX_CARGO,R0
+		CALL	SFX_PLAY
+		SEC
+		RETURN
+7$:		MOV	#7,R0			; computers
+		CLC
+		RETURN
+8$:		MOV	#-1,R0
+		CLC
+		RETURN
+
+; =========================================================================
+; MS_JAMMED - Z set while mission 3's naval ECM jams the Targon station's
+; system: P_M3 4, and the naval ECM fitted and whole.  Ships there fire
+; no ECM, and neither can the commander (eObjMove's goto398,
+; eObjPilotLow).  Clobbers R0.
+; MS_STNOK - the same test: a missile of the commander's that reaches
+; the Targon station then brings it down (MS_STNKILL).
+; =========================================================================
+MS_JAMMED:
+MS_STNOK:	CMPB	P_M3,#4
+		BNE	9$
+		MOVB	P_ECM,R0
+		BIC	#^C<DEV_OFF!DEV_NAVAL>,R0
+		CMP	R0,#DEV_NAVAL
+9$:		RETURN
+
+; MS_STNKILL - R4 = the Targon station, hit by the commander's missile:
+; it goes up, mission 3 notes it (bit 3; the reward is at the next
+; arrival's MS_SETM3 and the dock after), and the rating gains #FFFF.
+; Preserves R4, R5.
+MS_STNKILL:	MOV	#EXPL_LEN,U.EXPL(R4)
+		CLR	U.SPEED(R4)
+		BISB	#10,P_M3
+		MOV	R4,-(SP)
+		MOVB	P_RANK,R0		; the war's tasks (goto780): a major
+		BIC	#^C316,R0		;   downs occupied stations, more
+		CMP	R0,#210			;   than two to four of them; a
+		BNE	3$			;   colonel the command base, in
+		CLR	R0			;   deep space
+		CALL	MS_HEREZONE
+		BCC	8$
+		INCB	P_WAR+3
+		CALL	RND_BYTE
+		BIC	#^C3,R0
+		ASR	R0
+		ADC	R0
+		ADD	#2,R0
+		CMPB	R0,P_WAR+3
+		BHIS	8$
+		BISB	#10,P_WAR+2
+		BR	8$
+3$:		CMP	R0,#214
+		BNE	8$
+		TST	WITCH
+		BEQ	8$
+		BISB	#40,P_WAR+2
+8$:		MOV	(SP)+,R4
+		MOV	#177777,R0
+		JMP	MS_RATINGA
+
+; =========================================================================
+; MS_DESCENT - the space bar on function 6 (goto795's neighbour): the
+; troops leave in a craft of a Sidewinder's hull and fly at the locked
+; slot the way a missile does; the hold is the ship's again.  Clobbers
+; everything.
+; =========================================================================
+MS_DESCENT:	MOV	#SH_SIDEWINDERH,R0
+		CLR	R1
+		MOV	#-40.,R2
+		MOV	#300.,R3
+		CLR	R4
+		CALL	UNIV_ADD
+		BCS	8$
+		BIS	#UF_MISSILE!UF_MISSION,U.FLAGS(R5)
+		MOV	MISS_LOCK,U.TARGET(R5)
+		MOV	#MISS_LIFE,U.ENERGY(R5)
+		CLR	MISS_LOCK
+		CLRB	P_M1+1
+		CALL	CAPACITY
+		MOV	R0,P_FREECARGO
+		MOV	#FX_DESCENT,R0		; LaunchDescent
+		JMP	SFX_PLAY
+8$:		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY
+
+; MS_LANDING - R4 = a station the troops' craft has reached (goto776): in
+; a system of the occupied zone, not in deep space, the landing is the
+; lieutenant colonel's task done; the occupation falls back - the war
+; turned to falling, a level at a time, till this system is out of it -
+; and the station is freed and gone from the sky, the Targon system is
+; nobody's, and the rating gains #FFFF.  Clobbers R0..R3.
+MS_LANDING:	TST	WITCH
+		BNE	9$
+		MOV	R4,-(SP)
+		CLR	R0
+		CALL	MS_HEREZONE
+		BCC	8$
+		BISB	#20,P_WAR+2
+1$:		BICB	#200,P_WAR		; falling, a level at a time
+		DECB	P_WAR
+		CLR	R0
+		CALL	MS_HEREZONE
+		BCS	1$
+		MOV	(SP),R4
+		CLR	U.TYPE(R4)		; the station is ours, and gone
+		CLR	AGGRESSOR
+		CLRB	P_M3
+		MOV	#177777,R0
+		CALL	MS_RATINGA
+8$:		MOV	(SP)+,R4
+9$:		RETURN
+
+; =========================================================================
+; MS_BASE - SetTargonStation, in deep space: a pilot serving at the front
+; (not stood down) whose jump was cut short in the #3C zone, one to
+; the right of the war's first world and two toward
+; the galaxy's middle finds the Targons' command base there: a station
+; of the system's kind, angry, the Targon system (P_M3 4).  Clobbers
+; R0..R5.
+; =========================================================================
+MS_BASE:	BITB	#100,P_RANK
+		BNE	9$
+		MOV	#74,R0
+		MOV	HOME_X,R1
+		MOV	HOME_Y,R2
+		CALL	MS_ZONE
+		BCC	9$
+		MOV	WAR_Y,R0		; two nearer the middle
+		ADD	#2,R0
+		CMP	WAR_Y,#128.
+		BLO	1$
+		SUB	#4,R0
+1$:		CMP	R0,HOME_Y
+		BNE	9$
+		MOV	WAR_X,R0
+		INC	R0
+		CMP	R0,HOME_X
+		BNE	9$
+		MOV	STATION_TYPE,R0		; the base, ahead
+		CLR	R1
+		CLR	R2
+		MOV	#STATION_Z,R3
+		MOV	#-1,R4
+		CALL	UNIV_ADD
+		BCS	9$
+		BIS	#UF_STATION!UF_HOSTILE,U.FLAGS(R5)
+		MOVB	#4,P_M3
+9$:		RETURN
+
+
+; MS_TARGOID - Z set while the commander flies a Targoid ship (yard
+; numbers 18 and 19, Legend's #12 with bit 0 masked).  Clobbers R0.
+MS_TARGOID:	MOV	P_SHIP,R0
+		BIC	#1,R0
+		CMP	R0,#18.
+		RETURN
+
+; =========================================================================
+; MS_SPAWN - SetRndShip's mission block, before the contraband roll: with
+; no Asp about, one roll in eight, and room in the sky, the cloaked Asp
+; while mission 2 is open (P_MSTAT bits 6 and 1) - with its ECM, four
+; missiles, the mission's mark, the cloak on, and two to four fighters
+; with it.  C set if it spawned.  Clobbers everything.
+; =========================================================================
+MS_SPAWN:	TSTB	P_M2
+		BNE	8$
+		CALL	RND_BYTE
+		CMP	R0,#40
+		BHIS	8$
+		MOVB	P_MSTAT,R0
+		COM	R0
+		BIT	#102,R0
+		BEQ	1$
+		MOVB	P_M4,R0			; the Constrictor, on its last
+		BIT	#40,R0			;   phase, once at a time
+		BEQ	8$
+		BIT	#100,R0
+		BNE	8$
+		MOV	#SH_CONSTRICTORH,R0
+		CALL	SPAWN_LEGEND
+		BCS	8$
+		BISB	#100,P_M4
+		BISB	#F3_ECM!F3_FLEE,U.FL3(R5)	; running, and fast
+		BISB	#F2_SPEED4,U.FL2(R5)
+		BIC	#UF_POD,U.FLAGS(R5)	; no capsule
+		BIS	#UF_MISSION,U.FLAGS(R5)
+		MOVB	#4,U.NLA(R5)
+		NEG	U.Z(R5)			; behind the commander
+		COM	U.ZH(R5)
+		SEC
+		RETURN
+1$:		MOV	#SH_ASPH,R0
+		CALL	SPAWN_LEGEND
+		BCS	8$
+		MOVB	#1,P_M2
+		BISB	#F3_ECM,U.FL3(R5)
+		BIS	#UF_MISSION,U.FLAGS(R5)
+		MOVB	#4,U.NLA(R5)
+		CALL	SPAWN_PACK
+		SEC
+		RETURN
+8$:		CLC
+		RETURN
+
+; =========================================================================
+; MS_NAMEOF - R0 = a galaxy, R1 = a system in it: its name into MS_NAME,
+; and this galaxy's seed and system put back.  Clobbers R0..R5.
+; =========================================================================
+MS_NAMEOF:	MOV	R1,-(SP)
+		CALL	GAL_SEEDN
+		MOV	(SP)+,R0
+		CALL	SYS_SELECT
+		MOV	#SYS_NAME,R0
+		MOV	#MS_NAME,R1
+		MOV	#5,R2
+1$:		MOV	(R0)+,(R1)+
+		SOB	R2,1$
+		CALL	GAL_SEEDOF
+		MOV	SYS_INDEX,R0
+		JMP	SYS_SELECT
+
+; =========================================================================
+; MS_HULLS - the hulls a live mission's ships need, loaded with the core
+; set (HULL_SYSTEM): the Constrictor once its last phase is on.
+; Clobbers R0..R4.
+; =========================================================================
+MS_HULLS:	TST	WITCH			; deep space: the generation ship
+		BEQ	4$			;   and the platform
+		MOV	#SH_SHIPGENH,R0
+		CALL	HULL_LOAD
+		MOV	#SH_PLATFORMH,R0
+		CALL	HULL_LOAD
+		MOV	#SH_COUGARH,R0		;   and the platform's Cougars
+		CALL	HULL_LOAD
+4$:		CALL	MS_PORTALOK		; a portal may be met: its hull
+		BCC	3$			;   (and Raxxla's guard's)
+		MOV	#SH_PORTALH,R0
+		CALL	HULL_LOAD
+		MOV	#SH_FERDELANCEH,R0
+		CALL	HULL_LOAD
+3$:		BITB	#20,P_M4
+		BEQ	1$
+		MOV	#SH_CONSTRICTORH,R0
+		CALL	HULL_LOAD
+1$:		BITB	#100,P_MCOMPLETE	; mission 6's spies and cruisers,
+		BNE	2$			;   from its first part on
+		CMPB	P_M6,#2
+		BLO	9$
+2$:		MOV	#SH_TARGONSPYH,R0
+		CALL	HULL_LOAD
+		MOV	#SH_TARGONINTH,R0
+		CALL	HULL_LOAD
+9$:		RETURN
+
+; =========================================================================
+; MS_CAPTURE - BoardingShip's mission half: R0 = the boarding number of
+; a hull the drone has taken, a Targon spy (64) or the cruiser (65 up).
+; C set if it counts: a spy while mission 6's first part is on - the
+; last of them ends it (P_M6 3); the cruiser while its second part is
+; on (P_M6 5).  Neither goes into a berth.  Clobbers nothing.
+; =========================================================================
+MS_CAPTURE:	CMP	R0,#64.
+		BNE	2$
+		CMPB	P_M6,#2
+		BNE	8$
+		DECB	P_M6+1
+		BNE	7$
+		INCB	P_M6
+7$:		SEC
+		RETURN
+2$:		CMPB	P_M6,#4
+		BNE	8$
+		INCB	P_M6
+		SEC
+		RETURN
+8$:		CLC
+		RETURN
+
+; =========================================================================
+; MS_LEFTMOST - SearchLeftmostPlanet_A: R0 = a galaxy; returns R0 = its
+; leftmost system - the least x, and of those the y nearest 128 - with
+; this galaxy's seed and system put back.  Clobbers R0..R5.
+; =========================================================================
+ML_BX:		.WORD	0
+ML_BY:		.WORD	0
+ML_I:		.WORD	0
+ML_BEST:	.WORD	0
+
+MS_LEFTMOST:	CALL	GAL_SEEDN
+		CALL	GAL_START
+		MOV	#-1,ML_BX
+		CLR	ML_I
+1$:		CALL	SYS_MAKE
+		MOV	SYS_X,R0
+		CMP	R0,ML_BX
+		BHI	5$
+		BLO	4$
+		MOV	SYS_Y,R1		; a tie: the y nearer the middle
+		SUB	#128.,R1
+		BGE	2$
+		NEG	R1
+2$:		MOV	ML_BY,R2
+		SUB	#128.,R2
+		BGE	3$
+		NEG	R2
+3$:		CMP	R1,R2
+		BHIS	5$
+4$:		MOV	R0,ML_BX
+		MOV	SYS_Y,ML_BY
+		MOV	ML_I,ML_BEST
+5$:		INC	ML_I
+		CMP	ML_I,#256.
+		BLO	1$
+		CALL	GAL_SEEDOF
+		MOV	SYS_INDEX,R0
+		CALL	SYS_SELECT
+		MOV	ML_BEST,R0
+		RETURN
+
+; =========================================================================
+; Retribution (mission 7): the Targons' galaxy, #FE, reached through a
+; portal while it is on; P_M7+1..+32 a bit a system, still held (bit 7
+; of the first byte system 0).
+; =========================================================================
+NEAR_PORTAL:	.WORD	0		; NearPortal: a portal is near (the
+				;   message's; src/portal_fly.mac)
+PT_GUARD:	.WORD	0		; Raxxla's portal's guard is out
+M7_BAR:		.WORD	0		; TargonBarrier: b4-0 the Targons still
+				;   to come at a held world, b4 a cruiser
+				;   may be among them, b7 a Fer-de-Lance
+
+; MS_HELD - TestPlanetTargon: R0 = a system of this galaxy; C set if this
+; is the Targons' galaxy and they hold it.  R1 = its byte, R2 its bit.
+; Clobbers R0..R2.
+MS_HELD:	CMP	P_GALAXY,#254.
+		BNE	8$
+		MOV	R0,R1
+		ASH	#-3,R1
+		BIC	#^C37,R1
+		ADD	#P_M7+1,R1
+		BIC	#^C7,R0
+		MOV	#200,R2
+1$:		DEC	R0
+		BLT	2$
+		ASR	R2
+		BR	1$
+2$:		BITB	R2,(R1)
+		BEQ	8$
+		SEC
+		RETURN
+8$:		CLC
+		RETURN
+
+; MS_HELDHERE - TestPilotRetribution: C set with Retribution under way
+; (3 up) and the system the commander is in held.  Clobbers R0..R2.
+MS_HELDHERE:	CMPB	P_M7,#3
+		BLO	8$
+		MOV	P_PLANET,R0
+		JMP	MS_HELD
+8$:		CLC
+		RETURN
+
+; MS_SETM7 - SetVarMission7, on arrival: under way, a held world's station
+; is the Targons' (P_M3 4) and one not held is nobody's; and the barrier
+; - none at one world in eight, by its data, else the fewer worlds they
+; hold the more Targons at each, and a Fer-de-Lance of the League's with
+; Raxxla found, on PilotRnd's bit 5.  Clobbers R0..R3.
+MS_SETM7:	CLR	M7_BAR
+		CMPB	P_M7,#3
+		BLO	9$
+		CALL	MS_HELDHERE
+		BCS	1$
+		CLRB	P_M3
+9$:		RETURN
+1$:		MOVB	#4,P_M3
+		MOVB	P_PLANETDATA+2,R0	; one world in eight: no barrier
+		MOVB	P_PLANETDATA+3,R1
+		XOR	R1,R0
+		MOVB	P_PLANETDATA+4,R1
+		XOR	R1,R0
+		MOVB	P_PLANETDATA+5,R1
+		XOR	R1,R0
+		BIT	#7,R0
+		BEQ	9$
+		CLR	R0			; the worlds held, less one
+		MOV	#P_M7+1,R1
+		MOV	#32.,R2
+2$:		MOVB	(R1)+,R3
+		MOV	#8.,-(SP)
+3$:		ASLB	R3
+		ADC	R0
+		DEC	(SP)
+		BNE	3$
+		TST	(SP)+
+		SOB	R2,2$
+		DEC	R0
+		COM	R0			; its complement, a quarter
+		BIC	#177400,R0
+		ASR	R0
+		ASR	R0
+		BITB	#40,P_RND		; the League's Fer-de-Lance
+		BEQ	4$
+		TSTB	P_MCOMPLETE
+		BPL	4$
+		BIS	#200,R0
+4$:		MOV	R0,M7_BAR
+		RETURN
+
+; MS_PORTALOK - C set in a system where a portal may be met
+; (SetExtendedObj's gate): not deep space, PilotRnd #D0 up, no nova,
+; and on the galaxy's main diagonal or its other one.  Clobbers R0, R1.
+MS_PORTALOK:	TST	WITCH
+		BNE	8$
+		TSTB	P_M1
+		BNE	8$
+		CMPB	P_RND,#320
+		BLO	8$
+		CALL	MS_DIAG
+		BEQ	8$
+		SEC
+		RETURN
+8$:		CLC
+		RETURN
+
+; MS_DIAG - R0 = 1 on the main diagonal (|y - x| under 8), 2 on the
+; other (|255 - y - x| under 8), 0 off both; Z with it.  Clobbers R1.
+MS_DIAG:	MOVB	P_PLANETDATA+1,R0	; y
+		BIC	#177400,R0
+		MOVB	P_PLANETDATA+3,R1	; x
+		BIC	#177400,R1
+		SUB	R1,R0
+		BGE	1$
+		NEG	R0
+1$:		CMP	R0,#8.
+		BHIS	2$
+		MOV	#1,R0
+		RETURN
+2$:		MOVB	P_PLANETDATA+1,R0
+		COMB	R0
+		BIC	#177400,R0
+		SUB	R1,R0
+		BGE	3$
+		NEG	R0
+3$:		CMP	R0,#8.
+		BHIS	4$
+		MOV	#2,R0
+		RETURN
+4$:		CLR	R0
+		RETURN
+
+; =========================================================================
+; The pirates' station (HypEnd's goto906): an arrival that issued
+; nothing, in the galaxies missions come in, may find the station held
+; by pirates, one time in 256 for each step of government under 8; it
+; turns no more, it launches pirates, it answers no call, and a ship
+; docking there is theirs.  Ten to twenty-five pirates shot down near it
+; free it (PIRATE_ON).
+; =========================================================================
+PIRATE_ON:	.WORD	0		; PirateOnStation: pirates still to kill
+
+MS_PIRATES:	CALL	RND_BYTE
+		MOVB	P_GOV,R1
+		COM	R1
+		BIC	#^C7,R1
+		CMP	R1,R0
+		BLO	9$
+		CALL	RND_BYTE
+		BIC	#^C17,R0
+		ADD	#10.,R0
+		MOV	R0,PIRATE_ON
+9$:		RETURN
+
+; =========================================================================
+; MS_DEEP - SetRndShip in deep space: one roll in 128 anything at all;
+; then, seven in eight, nothing; a Targon mostly; the generation ship,
+; one of it; and, to a pilot of missions 1..3 and 5..7, the platform.
+; Both ahead.  Clobbers everything.
+; =========================================================================
+MS_DEEP:	CALL	AI_RND
+		CMP	R0,#376
+		BLO	9$
+		CALL	AI_RND
+		CMP	R0,#340
+		BLO	9$
+		CMP	R0,#376
+		BHIS	1$
+		JMP	SPAWN_TARGON
+1$:		MOV	#SH_SHIPGENH,R1
+		CMP	R0,#377
+		BNE	2$
+		MOVB	P_MCOMPLETE,R0
+		COM	R0
+		BIT	#167,R0
+		BNE	2$
+		MOV	#SH_PLATFORMH,R1
+2$:		MOV	#UNIV,R5		; one of each
+		MOV	#NUNIV,R3
+3$:		CMP	U.TYPE(R5),R1
+		BEQ	9$
+		ADD	#U.SIZE,R5
+		SOB	R3,3$
+		MOV	R1,R0
+		CALL	SPAWN_FWD
+		BCS	9$
+		BIC	#UF_DERELICT,U.FLAGS(R5)
+		BIS	#UF_BASE,U.FLAGS(R5)
+		MOV	#360,U.ENERGY(R5)
+		CMP	U.TYPE(R5),#SH_SHIPGENH	; genGenShipPrice: the generation
+		BNE	9$			;   ship has nothing to sell
+		MOV	#AST_QTY,R0
+		MOV	#NGOODS_L,R1
+4$:		CLR	(R0)+
+		SOB	R1,4$
+9$:		RETURN

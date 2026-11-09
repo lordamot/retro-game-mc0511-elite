@@ -1,0 +1,34 @@
+; Two inertial bearings, held in PMAT's first and last rows: east and
+; north.  Turn them with the sky, never translate them with the ship.
+NAV_TURN:	TST	PROLL
+		BEQ	1$
+		MOV	US_RS,RT_S
+		MOV	US_RT,RT_T
+		MOV	#PMAT,R5
+		CLR	R1
+		CALL	VEC_TURN_P
+		MOV	#PMAT+12.,R5
+		CLR	R1
+		CALL	VEC_TURN_P
+1$:		TST	PPITCH
+		BEQ	9$
+		MOV	US_PS,RT_S
+		MOV	US_PT,RT_T
+		MOV	#PMAT,R5
+		MOV	#2,R1
+		CALL	VEC_TURN_P
+		MOV	#PMAT+12.,R5
+		MOV	#2,R1
+		CALL	VEC_TURN_P
+9$:		RETURN
+
+; Horizontal dash/dot: north/south; vertical dash/dot: east/west.
+NAV_COMPASS:	MOV	PMAT+12.,PN_X
+		MOV	PMAT+14.,PN_Y
+		MOV	PMAT+16.,PN_Z
+		CALL	COMPASS_VECTOR
+		MOV	#1,CO_STYLE
+		MOV	PMAT,PN_X
+		MOV	PMAT+2,PN_Y
+		MOV	PMAT+4,PN_Z
+		JMP	COMPASS_VECTOR

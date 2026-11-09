@@ -1,0 +1,97 @@
+; =========================================================================
+; cockpit.mac - the ship's limits, out of Elite Legend's cockpit block
+; (Cocpits/Cocpit_Var/Ship.var_NN.a80: which block a ship flies with is
+; the catalogue's cockpit column).  Legend's SetCocpitVars unpacks the
+; whole block - the dashboard's indicator addresses included - into
+; ShipVar when the ship changes; this port lays its dashboard out for
+; itself, so only the fields the rules read are kept, in
+; build/legend_cockpit.mac (tools/cockpit_gen.py), and COCKPIT_SET
+; copies the current ship's into the CKV_* words below, where the
+; rules read them:
+;
+;   CKV_MAXMISS   cocpMaxMiss    missiles the rack holds, both kinds
+;   CKV_ENUNITS   cocpMaxEnUnit  energy banks
+;   CKV_MAXFUEL   cocpMaxFuel    tenths of a light year in the tank
+;   CKV_TONS      shipTonnage    the hold, without the larger bay
+;   CKV_TURRETS   shipTurrets    0 none, 1 front, 2 front/rear, 4 all
+;   CKV_SCAN      cocpScanerNum  the scanner variant
+;   CKV_MAXSPEED  the hull's speed byte (SHIP_STATS): Legend's player
+;                 moves at his object's dMaxSpeed, which is the hull's
+;   CKV_STEP      a fifth of it, what the throttle key adds
+;
+; Called wherever P_SHIP is set: a commander into the station
+; (FLY_DOCK), a ship bought or selected in the yard (YD_FLOWN), the
+; capsule's standard ship (SHIP_STANDARD).
+; =========================================================================
+
+CKV_NUM:	.WORD	0		; the cockpit's number, 0..19
+CKV_MAXMISS:	.WORD	4
+CKV_ENUNITS:	.WORD	4
+CKV_MAXFUEL:	.WORD	70.
+CKV_TONS:	.WORD	20.
+CKV_TURRETS:	.WORD	4
+CKV_SCAN:	.WORD	1
+CKV_MAXSPEED:	.WORD	28.
+CKV_STEP:	.WORD	6
+
+; COCKPIT_SET - the CKV_* words from the ship in P_SHIP.  Clobbers R0..R3.
+COCKPIT_SET:	MOV	P_SHIP,R0
+		DEC	R0
+		MOVB	SHIP_CKPT(R0),R1	; the cockpit
+		BIC	#177400,R1
+		MOV	R1,CKV_NUM
+		MOVB	CK_MAXMISS(R1),R2	; MOVB sign-extends: fuel can be 212
+		BIC	#177400,R2
+		MOV	R2,CKV_MAXMISS
+		MOVB	CK_ENUNITS(R1),R2
+		BIC	#177400,R2
+		MOV	R2,CKV_ENUNITS
+		MOVB	CK_MAXFUEL(R1),R2
+		BIC	#177400,R2
+		MOV	R2,CKV_MAXFUEL
+		MOVB	CK_TURRETS(R1),R2
+		BIC	#177400,R2
+		MOV	R2,CKV_TURRETS
+		MOVB	CK_SCANNER(R1),R2
+		BIC	#177400,R2
+		MOV	R2,CKV_SCAN
+		ASL	R1
+		MOV	CK_TONS(R1),CKV_TONS
+		MOVB	SHIP_HULLNO(R0),R3	; the hull's speed: its stats row
+		BIC	#177400,R3		;   is the AdrDataShips number
+		MUL	#SS_SIZE,R3		;   (R3 odd: the low word)
+		MOVB	SHIP_STATS+SS_SPEED(R3),R1
+		BIC	#177400,R1
+		MOV	R1,CKV_MAXSPEED
+		CLR	SCAN_MODE		; the scanner's mode is the cockpit's
+		ADD	#4,R1			; the throttle: five steps to it
+		CLR	R0
+		DIV	#5,R0
+		MOV	R0,CKV_STEP
+		RETURN
+
+; =========================================================================
+; TURRET_KEY - А: the pause menu's ПОВОРОТ ЛАЗЕРНЫХ ТУРРЕЛЕЙ (RotateLasers,
+; Menu/PauseInGame.a80).  With two turrets the front and the rear guns
+; change places; with four every gun moves one mount round - the left
+; one to the front, the front to the right, the right to the rear, the
+; rear to the left.  The laser words move and nothing else: the heat and
+; the rate are the gun in the mount you look through, as they always
+; were.  Fewer than two turrets and the till buzzes.  Clobbers R0, R1.
+; =========================================================================
+TURRET_KEY:	CMP	CKV_TURRETS,#2
+		BLT	8$
+		BGT	4$
+		MOV	P_LASERS,R0		; front and rear
+		MOV	P_LASERS+2,P_LASERS
+		MOV	R0,P_LASERS+2
+		BR	7$
+4$:		MOV	P_LASERS,R0		; the front gun
+		MOV	P_LASERS+4,P_LASERS	; front: the left one
+		MOV	P_LASERS+2,P_LASERS+4	; left: the rear one
+		MOV	P_LASERS+6,P_LASERS+2	; rear: the right one
+		MOV	R0,P_LASERS+6		; right: the front one
+7$:		MOV	#S_M_TURRET,R1
+		JMP	SAY_LINE
+8$:		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY

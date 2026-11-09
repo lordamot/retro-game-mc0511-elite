@@ -1,0 +1,54 @@
+# d_BoulderH - extracted from orig/legend by tools/legend_ships.py;
+# object 23 of AdrDataShips, hull d_Boulder.
+# `make extract` overwrites it.
+name BOULDERH
+index 23
+class 1
+speed 15
+energy 17
+bounty 1
+laser 0
+collide 20
+cargo 8
+launch 0
+dot 16
+rating 8
+flags 0
+flags2 4
+laservert 0
+type 5
+objflags 192
+shipnum 0
+radius 39
+vertex   -18    37   -11
+vertex    30     7    12
+vertex    28    -7   -12
+vertex     2     0   -39
+vertex   -28    34   -30
+vertex     5   -10    13
+vertex    20    17   -30
+edge 5 4 31 0 4
+edge 4 0 31 9 0
+edge 0 5 31 1 0
+edge 1 5 31 2 1
+edge 0 1 31 5 1
+edge 2 5 31 3 2
+edge 1 2 31 6 2
+edge 3 5 31 4 3
+edge 2 3 31 7 3
+edge 3 4 31 8 4
+edge 1 6 31 6 5
+edge 6 0 31 9 5
+edge 2 6 31 7 6
+edge 3 6 31 8 7
+edge 4 6 31 9 8
+normal  -55  -11   29
+normal  -13   23   58
+normal   33  -48   24
+normal   -4  -62  -11
+normal  -49  -39   -9
+normal   32   55    5
+normal   61   11  -11
+normal   41  -19  -44
+normal    9   24  -58
+normal   20   57  -19

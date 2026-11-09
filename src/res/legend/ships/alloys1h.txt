@@ -1,0 +1,32 @@
+# d_Alloys1H - extracted from orig/legend by tools/legend_ships.py;
+# object 8 of AdrDataShips, hull d_Alloys1.
+# `make extract` overwrites it.
+# NOTE: the header counts 4v 4e 0n, the hull has 4v 5e 0n.
+name ALLOYS1H
+index 8
+class 1
+speed 16
+energy 16
+bounty 0
+laser 0
+collide 10
+cargo 73
+launch 0
+dot 12
+rating 32
+flags 0
+flags2 3
+laservert 0
+type 7
+objflags 128
+shipnum 0
+radius 46
+vertex   -15   -22    -9
+vertex   -15    38    -9
+vertex    19    32    11
+vertex    10   -46     6
+edge 0 1 31 15 15
+edge 1 2 31 15 15
+edge 3 0 31 15 15
+edge 2 3 31 15 15
+edge 2 0 31 15 15

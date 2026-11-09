@@ -1,0 +1,1475 @@
+; =========================================================================
+; combat.mac - lasers, wrecks, and ships that shoot back.
+;
+; The gunsight is the middle of the view, so a hit is decided in screen
+; space: a ship is under the guns when the point its centre projected to
+; in the draw pass lands inside a small box around the centre.  That is
+; how the original decides it too, and it costs nothing here because
+; UNIV_DRAW already worked the projection out.
+;
+; The laser has a temperature, and it is Legend's (FireLaser): a shot
+; heats it, it sheds a little every frame, at LASER_MAX the gun cuts out
+; until it has cooled under that again, and a pulse laser only fires on
+; every other frame when the trigger is held - which is what stops a
+; commander simply holding the trigger down.
+; =========================================================================
+
+LASER_ON:	.WORD	0		; firing this frame
+LAS_HELD:	.WORD	0		; fired on the frame before (cng_24)
+LAS_TICK:	.WORD	0		; a frame counter for the rate of fire
+LAS_SHOTS:	.WORD	0		; shots fired since the boot; for the
+					;   verifier, which counts them
+CB_LAS:		.WORD	0		; the gun in the mount being looked
+					;   through, as a LAS_* type
+
+; What each kind of gun is worth, indexed by LAS_* - Legend's eight:
+; pulse, pulse Mk 2, beam, beam Mk 2, military, naval, Targoid, mining.
+; The numbers are Legend's own LaserDamages, to the point: the beam
+; laser hits no harder than the pulse, it fires twice as often; the
+; mining laser hits hardest of all but once in eight frames, and it is
+; for rock, which DROP_CARGO knows.
+LASTAB_DMG:	.WORD	15., 19., 15., 19., 23., 36., 51., 50.
+CB_P:		.WORD	0
+CB_I:		.WORD	0
+CB_T:		.WORD	0
+CB_T2:		.WORD	0
+CB_AIM:		.WORD	0		; is the hostile lined up on him?
+
+; =========================================================================
+; SHIP_KILLED - book the kill in slot R5.  The original keeps two numbers
+; per type for this: a bounty in tenths of a credit, which is what the
+; purse is counted in, and a score in combat-rating points, which is what
+; the ladder on the status page is graded on.  A Thargoid is worth 2048
+; of those and a Sidewinder 256, so the rank finally means something
+; about what you have been shooting at rather than how often.
+; =========================================================================
+SHIP_KILLED:	ADD	#1,P_DESTR		; Legend counts kills in 32 bits
+		ADC	P_DESTR+2
+		CALL	LEGAL_KILL		; and the law by its kind (ai.mac)
+		MOV	U.TYPE(R5),R0
+		MOV	#SS_BOUNTY,R1
+		CALL	SHIP_STAT
+		TST	R0
+		BEQ	1$
+		CALL	CASH_ADD
+1$:		MOV	U.TYPE(R5),R0
+		MOV	#SS_RATING,R1
+		CALL	SHIP_STAT
+		ADD	R0,RATING_L		; a carry into the third byte is
+		BCC	2$			;   when a mission may be offered
+		INC	RATING_H		;   (IncBattleRating)
+		CALL	MS_CARRY
+2$:
+		CALL	MS_KILLED		; a mission's ship, or a Targon's
+					;   last straw (src/mission.mac)
+		MOV	R5,-(SP)		; and whatever it was carrying goes
+		CALL	DROP_CARGO		; into the sky behind it
+		MOV	(SP)+,R5
+		RETURN
+
+; =========================================================================
+; RATING_TALLY - the combat rating with its bottom byte shifted off,
+; which is the number RANK_NAME grades.  The original keeps the rating in
+; three bytes (PilotRating0..2) and reads the ranks off the top two.
+; =========================================================================
+RATING_TALLY:	MOV	RATING_L,R0
+		SWAB	R0			; its high byte drops into the
+		BIC	#177400,R0		; low one
+		MOV	RATING_H,R1
+		SWAB	R1
+		BIC	#377,R1
+		BIS	R1,R0
+		RETURN
+
+; =========================================================================
+; LASER_STEP - read the trigger, draw the beams, and see what they hit.
+; =========================================================================
+LASER_STEP:	CLR	LASER_ON
+		INC	LAS_TICK
+		MOV	LAS_HELD,R1		; fired on the frame before?
+		CLR	LAS_HELD
+		MOV	#LASER_COOL,R0		; cool off, twice as fast with
+		TSTB	P_LASERCOOL		;   the booster fitted and whole
+		BMI	1$
+		BITB	#DEV_BROKEN,P_LASERCOOL
+		BNE	1$
+		MOV	#LASER_COOL2,R0
+1$:		SUB	R0,PLASTEMP
+		BGE	2$
+		CLR	PLASTEMP
+2$:		BIT	#K_FIRE,KEYS
+		BEQ	9$
+		CMP	PLASTEMP,#LASER_MAX	; too hot to fire
+		BGE	9$
+		MOV	VIEW_DIR,R0		; a mount with no gun in it does
+		ASL	R0			; nothing at all, which is what
+		MOV	PLASERS(R0),R0		; makes the other three worth
+		BIT	#DEV_NONE!DEV_BROKEN,R0	; buying - nor does a broken one
+		BNE	9$
+		BIC	#^C7,R0
+		MOV	R0,CB_LAS
+		MOV	#1,R2			; the rate of fire, as a mask on
+		CMP	R0,#LAS_BEAM		;   the frame counter: a pulse
+		BLO	3$			;   laser every other frame, a
+		MOV	#7,R2			;   mining laser every eighth,
+		CMP	R0,#LAS_MINING		;   the beam-class guns every
+		BEQ	3$			;   frame
+		CLR	R2
+3$:		MOV	#1,LAS_HELD		; and a trigger that was up fires
+		TST	R1			;   at once whatever the frame
+		BEQ	4$
+		BIT	R2,LAS_TICK
+		BNE	9$
+4$:		MOV	#1,LASER_ON
+		MOV	#LASER_HEAT,R0		; each shot heats the gun, a
+		TST	R2			;   beam-class one a little more
+		BNE	5$
+		ADD	#2,R0
+5$:		ADD	PLASTEMP,R0
+		CMP	R0,#LASER_CAP
+		BLE	6$
+		MOV	#LASER_CAP,R0
+6$:		MOV	R0,PLASTEMP
+		INC	LAS_SHOTS
+		BIS	#CLOAK_SEEN_SHOT,CLOAK_SEEN	; and gives you away
+		MOV	#LASER_COST,R0		; and the banks pay for it:
+		MOV	#4,R1			;   Legend's DamageEnergyUnit
+		CALL	DEC_ENERGY
+		MOV	CB_LAS,R0		; the gun's own sound (SetSoundsInGame:
+		ADD	#FX_LASER,R0		;   PilotLasers by type, on B)
+		CALL	SFX_PLAY
+
+		MOV	#0,LX0			; the two beams, from the lower
+		MOV	#VIEW_H-1,LY0		; corners of the view to the
+		MOV	#VIEW_XC,LX1		; gunsight
+		MOV	#VIEW_YC,LY1
+		CALL	SEG_LINE
+		MOV	#SCRW-1,LX0
+		MOV	#VIEW_H-1,LY0
+		MOV	#VIEW_XC,LX1
+		MOV	#VIEW_YC,LY1
+		CALL	SEG_LINE
+		CALL	LASER_HIT
+9$:		RETURN
+
+; LASER_HIT - damage the nearest ship under the gunsight.
+LASER_HIT:	MOV	#UNIV,CB_P
+		MOV	#NUNIV,CB_I
+10$:		MOV	CB_P,R5
+		TST	U.TYPE(R5)
+		BEQ	80$
+		TST	U.EXPL(R5)		; already burning
+		BNE	80$
+		BIT	#UF_PLANET!UF_SUN,U.FLAGS(R5)
+		BNE	80$			; a world is not a target
+		TST	U.SX(R5)		; not projected this frame
+		BEQ	80$
+
+		MOV	U.SX(R5),R0		; is it under the gunsight?
+		SUB	#VIEW_XC,R0
+		BGE	1$
+		NEG	R0
+1$:		CMP	R0,#GUNSIGHT_X
+		BGT	80$
+		MOV	U.SY(R5),R0
+		SUB	#VIEW_YC,R0
+		BGE	2$
+		NEG	R0
+2$:		CMP	R0,#GUNSIGHT_Y
+		BGT	80$
+
+		BIT	#UF_DOCK,U.FLAGS(R5)	; a bay is rock: nothing comes of
+		BEQ	51$			;   shooting it but, for a hermit's
+		CALL	BASE_KIND		;   (goto790), the law's whole
+		CMP	R0,#BK_HERMIT		;   contempt - or a generation
+		BEQ	52$			;   ship's
+		CMP	R0,#BK_GENSHIP
+		BNE	80$
+52$:
+		MOV	#-1,LEGAL
+		BR	80$
+51$:		BIT	#UF_MISSILE,U.FLAGS(R5)	; a missile can be shot out of
+		BEQ	5$			; the sky, which is what a
+		MOV	#EXPL_LEN,U.EXPL(R5)	; commander without an ECM has to
+		CLR	U.SPEED(R5)		; do - and it pays nothing, being
+		MOV	#FX_KILL,R0		; nobody's ship
+		CALL	SFX_PLAY
+		RETURN
+
+5$:		MOV	U.ENERGY(R5),R0		; a hit, for what this gun is worth
+		MOV	CB_LAS,R1
+		ASL	R1
+		BITB	#KB_MISSPROOF,U.TYP(R5)
+		BEQ	53$
+		CMP	LASTAB_DMG(R1),#51.
+		BHIS	53$
+		RETURN				; only the Targoid laser penetrates
+53$:
+		SUB	LASTAB_DMG(R1),R0
+		MOV	R0,U.ENERGY(R5)
+		BGT	4$
+		MOV	CB_LAS,LAST_WEAPON	; the rock knows what cut it
+		MOV	#EXPL_LEN,U.EXPL(R5)	; and a kill
+		CLR	U.SPEED(R5)
+		CALL	SHIP_KILLED
+3$:		MOV	#2,TX			; say so: the string has been in the
+		MOV	#4,TY			; table since the port had a laser,
+		MOV	#S_M_TARGET,R1		; with nothing printing it
+		CALL	PUTS2
+		MOV	#40.,HYP_SHOW
+		MOV	#FX_KILL,R0
+		CALL	SFX_PLAY
+		RETURN				; one target a shot
+4$:		MOV	#FX_LHIT,R0		; a hit that did not kill
+		CALL	SFX_PLAY
+		CALL	SHIP_HURT		; it survived, and knows (src/ai.mac)
+80$:		ADD	#U.SIZE,CB_P
+		DEC	CB_I
+		BLE	81$
+		JMP	10$
+81$:		RETURN
+
+; =========================================================================
+; EXPL_DRAW - a wreck: a ring of dots that widens as it burns out, then
+; the slot is freed.  Drawn through the segment buffer so it is rubbed
+; out with the rest of the frame.
+; =========================================================================
+EXPL_DRAW:	MOV	#UNIV,CB_P
+		MOV	#NUNIV,CB_I
+10$:		MOV	CB_P,R5
+		TST	U.TYPE(R5)
+		BEQ	80$
+		MOV	U.EXPL(R5),R0
+		BEQ	80$
+		DEC	R0
+		MOV	R0,U.EXPL(R5)
+		BNE	11$
+		CLR	U.TYPE(R5)		; burnt out
+		BR	80$
+11$:		TST	U.SX(R5)
+		BEQ	80$
+		MOV	#EXPL_LEN,R1		; radius grows as it fades
+		SUB	R0,R1
+		ASL	R1
+		ASL	R1
+		MOV	R1,CB_T
+		MOV	#SCANTAB,R4
+		MOV	#8.,R3
+12$:		MOV	(R4)+,R1		; cos - R1 is odd, low word
+		MUL	CB_T,R1
+		ASH	#-8.,R1
+		ADD	U.SX(R5),R1
+		MOV	R1,LX0
+		MOV	(R4)+,R1		; sin
+		MUL	CB_T,R1
+		ASH	#-8.,R1
+		ADD	U.SY(R5),R1
+		MOV	R1,LY0
+		MOV	LX0,LX1
+		MOV	LY0,LY1
+		INC	LX1
+		MOV	R3,-(SP)
+		MOV	R4,-(SP)
+		MOV	R5,-(SP)
+		CALL	SEG_LINE
+		MOV	(SP)+,R5
+		MOV	(SP)+,R4
+		MOV	(SP)+,R3
+		CMP	R4,#SCANTAB+64.		; the table is sixteen entries;
+		BLO	13$			; eight dots is plenty
+		MOV	#SCANTAB,R4
+13$:		DEC	R3
+		BGT	12$
+80$:		ADD	#U.SIZE,CB_P
+		DEC	CB_I
+		BGT	10$
+		RETURN
+
+; =========================================================================
+; COLLIDE_STEP - ships that run into each other, and into you.
+;
+; Every object carries its own collision distance in the blueprint
+; header - 160 for a Coriolis, 95 for a Cobra Mk III, 20 for a canister -
+; and two of them touch when their centres come inside the sum of the
+; two.  The test is a box rather than a sphere, which is what the
+; original does too and costs three subtractions instead of three
+; multiplies.
+;
+; The station is the exception: it is a lump of rock with a hangar in it
+; and does not come off worse, so whatever hits it is the only thing
+; that breaks up.  Ramming counts as a kill and pays like one - the
+; commander's hull is not a gentle way to stop a Sidewinder, but it does
+; stop it, and it costs two hits on the shields to do.
+; =========================================================================
+; CO_R, each slot's collision distance, is laid over the dead copy of
+; the PPU program in src/tail.mac (NUNIV words)
+CO_I:		.WORD	0
+CO_J:		.WORD	0
+CO_P:		.WORD	0
+CO_Q:		.WORD	0
+CO_D:		.WORD	0		; the sum being tested against
+CO_N:		.WORD	0		; four times it: the room they want
+CO_DX:		.WORD	0		; and the gap between them, signed
+CO_DY:		.WORD	0
+CO_AX:		.WORD	0		; ... and unsigned, which is what both
+CO_AY:		.WORD	0		; tests actually compare
+CO_AZ:		.WORD	0
+
+COLLIDE_STEP:	MOV	#UNIV,CO_P		; what each slot is worth first,
+		CLR	CO_I			; so the tests below are only
+10$:		MOV	CO_P,R5			; arithmetic
+		MOV	CO_I,R2
+		ASL	R2
+		CLR	CO_R(R2)
+		MOV	U.TYPE(R5),R0
+		BEQ	18$
+		TST	U.EXPL(R5)		; a wreck runs into nothing
+		BNE	18$
+		BIT	#UF_PLANET!UF_SUN!UF_MISSILE,U.FLAGS(R5)
+		BNE	18$			; worlds and missiles have their
+		BITB	#KB_PLAYER,U.TYP(R5)	; own arrangements, and a drone of
+		BNE	18$			; yours passes through (Legend's all do)
+		CALL	U_NEAR			; far slots fail every collision test;
+		BCS	18$			; exclude them once, before the pair walk
+		MOV	U.TYPE(R5),R0		; U_NEAR clobbers R0
+		MOV	#SS_COLLIDE,R1
+		CALL	SHIP_STAT
+		MOV	CO_I,R2
+		ASL	R2
+		MOV	R0,CO_R(R2)
+18$:		ADD	#U.SIZE,CO_P
+		INC	CO_I
+		CMP	CO_I,#NUNIV
+		BLT	10$
+
+		MOV	#UNIV,CO_P		; then every slot against the
+		CLR	CO_I			; commander and against the slots
+20$:		MOV	CO_I,R2			; after it
+		ASL	R2
+		TST	CO_R(R2)
+		BEQ	60$
+		CALL	CO_PLAYER
+		MOV	CO_I,R2			; it may have just broken up on
+		ASL	R2			; the hull
+		TST	CO_R(R2)
+		BEQ	60$
+		CALL	CO_PAIRS
+60$:		ADD	#U.SIZE,CO_P
+		INC	CO_I
+		CMP	CO_I,#NUNIV
+		BLT	20$
+		RETURN
+
+; CO_PLAYER - the slot in CO_I against the commander, who sits at the
+; origin.  Two separate routines rather than one long one: a PDP-11
+; branch reaches 254 bytes and the pair loop puts the far end of this
+; one well past that.
+CO_PLAYER:	MOV	CO_I,R2
+		ASL	R2
+		MOV	CO_R(R2),CO_D
+		MOV	CO_P,R5
+		CALL	U_NEAR			; beyond sixteen bits nothing meets
+		BCS	9$
+		MOV	U.X(R5),R0
+		BGE	1$
+		NEG	R0
+1$:		CMP	R0,CO_D
+		BGE	9$
+		MOV	U.Y(R5),R0
+		BGE	2$
+		NEG	R0
+2$:		CMP	R0,CO_D
+		BGE	9$
+		MOV	U.Z(R5),R0
+		BGE	3$
+		NEG	R0
+3$:		CMP	R0,CO_D
+		BGE	9$
+		CLR	R1			; the blow is what was hit: its
+		TST	U.ZH(R5)		;   collision byte (objCollision),
+		BPL	31$			;   on the shield that faced it
+		INC	R1
+31$:		MOV	R1,-(SP)
+		MOV	U.TYPE(R5),R0
+		MOV	#SS_COLLIDE,R1
+		CALL	SHIP_STAT
+		MOV	R0,-(SP)
+		BIT	#UF_DOCK,U.FLAGS(R5)	; the station is not something
+		BEQ	32$			; you bounce off, and its byte is
+		MOV	PSPEED,R0		; not the blow: a bump on it is
+		ASL	R0			; twice the speed and BUMP_HIT
+		ADD	#BUMP_HIT,R0		; (Legend's goto424), as the slot
+		MOV	R0,(SP)			; charges a fast approach
+		BR	4$
+32$:
+		MOV	#EXPL_LEN,U.EXPL(R5)
+		CLR	U.SPEED(R5)
+		CALL	SHIP_KILLED
+		MOV	CO_I,R2			; nothing left here to collide
+		ASL	R2			; with again
+		CLR	CO_R(R2)
+4$:		MOV	#FX_BUMP,R0
+		CALL	SFX_PLAY
+		MOV	(SP)+,R0		; and the hull pays for it
+		MOV	(SP)+,R1
+		JMP	HIT_PLAYER
+9$:		RETURN
+
+; CO_PAIRS - the slot in CO_I against every slot after it.
+CO_PAIRS:	MOV	CO_I,R0
+		INC	R0
+		MOV	R0,CO_J
+		MOV	CO_P,R0
+		ADD	#U.SIZE,R0
+		MOV	R0,CO_Q
+10$:		CMP	CO_J,#NUNIV
+		BGE	9$
+		MOV	CO_J,R2
+		ASL	R2
+		MOV	CO_R(R2),R3
+		BEQ	50$
+		MOV	CO_I,R2
+		ASL	R2
+		ADD	CO_R(R2),R3		; the two hulls together
+		MOV	R3,CO_D
+		ASL	R3
+		ASL	R3			; and the room they would rather
+		MOV	R3,CO_N			; have around them
+
+		MOV	CO_P,R5
+		MOV	CO_Q,R4
+		CALL	U_NEAR
+		BCS	50$
+		CALL	U_NEAR4
+		BCS	50$
+		; Two near ships can still be more than 32767 apart - a
+		; service station 18000 behind, a trader 22000 ahead - and
+		; the subtraction then overflows into a small number of the
+		; wrong sign.  BVS straight off the SUB says "far apart"; the
+		; MOV after it would have cleared V anyway.
+		MOV	U.X(R5),R0
+		SUB	U.X(R4),R0
+		BVS	50$
+		MOV	R0,CO_DX
+		BGE	41$
+		NEG	R0
+41$:		MOV	R0,CO_AX
+		CMP	R0,CO_N
+		BGE	50$
+		MOV	U.Y(R5),R0
+		SUB	U.Y(R4),R0
+		BVS	50$
+		MOV	R0,CO_DY
+		BGE	42$
+		NEG	R0
+42$:		MOV	R0,CO_AY
+		CMP	R0,CO_N
+		BGE	50$
+		MOV	U.Z(R5),R0
+		SUB	U.Z(R4),R0
+		BVS	50$
+		BGE	43$
+		NEG	R0
+43$:		CMP	R0,CO_N
+		BGE	50$
+		MOV	R0,CO_AZ
+
+		CMP	CO_AX,CO_D		; met, or merely crowded?
+		BGE	44$
+		CMP	CO_AY,CO_D
+		BGE	44$
+		CMP	CO_AZ,CO_D
+		BGE	44$
+		MOV	CO_P,R5			; they have met: both take the
+		MOV	CO_Q,R4			; knock and are pushed apart
+		CALL	CO_BUMP			; (two ships: Legend says nothing)
+		BR	50$
+44$:		MOV	CO_P,R5			; crowded: they give way
+		MOV	CO_Q,R4
+		CALL	CO_SHEER
+50$:		ADD	#U.SIZE,CO_Q
+		INC	CO_J
+		BR	10$
+9$:		RETURN
+
+; =========================================================================
+; CO_BUMP - R5 and R4 have run into each other.
+;
+; They are pushed apart along z and both take a knock; only a ship that
+; was already nearly out breaks up.  Killing both outright was the first
+; version and it was wrong twice over: a pack of hostiles all closing on
+; the same point wiped itself out before it reached the commander, and
+; the two Thargoids that meet you in witchspace arrived inside each
+; other.  The station is a lump of rock with a hangar in it and takes
+; neither the damage nor the push.
+; =========================================================================
+CO_KNOCK = 40.			; energy a collision takes off each of them
+CO_PUSH	= 150.			; and how far apart it leaves them
+
+CO_BUMP:	MOV	R5,-(SP)
+		MOV	R4,-(SP)
+		CALL	CO_HURT			; the first one
+		MOV	(SP)+,R4		; the pops come off in the reverse
+		MOV	(SP)+,R5		;   of the pushes.  Crossed, the
+					;   second CO_HURT hit the FIRST ship
+					;   again with the push reversed, so
+					;   one of them took both knocks and
+					;   went nowhere and the other took
+					;   nothing - and they met again next
+					;   frame
+		MOV	R5,-(SP)
+		MOV	R4,R5			; and the second, pushed the other
+		NEG	R4			; way
+		CALL	CO_HURT
+		MOV	(SP)+,R5
+		RETURN
+
+; CO_HURT - R5 = a ship in a collision, R4 = the other one, which is
+; only used for its sign: R5 is pushed away from it.
+CO_HURT:	BIT	#UF_DOCK,U.FLAGS(R5)
+		BNE	9$
+		MOV	U.Z(R5),R0		; apart, so they do not meet again
+		TST	R4			; on the next frame as well
+		BGE	1$
+		ADD	#CO_PUSH,R0
+		BR	2$
+1$:		SUB	#CO_PUSH,R0
+2$:		MOV	R0,U.Z(R5)
+		CALL	U_SXT
+		MOV	U.ENERGY(R5),R0		; and dented
+		SUB	#CO_KNOCK,R0
+		MOV	R0,U.ENERGY(R5)
+		BGT	9$
+		MOV	#EXPL_LEN,U.EXPL(R5)	; that was the last of it: no
+		CLR	U.SPEED(R5)		; bounty and no cargo, because
+9$:		RETURN				; nobody shot it down
+
+; =========================================================================
+; CO_SHEER - two ships crowding each other give way.
+;
+; Elite's ships fly through one another; this port's collide, and until
+; now the only thing that came of two of them closing on the same point
+; was a bang.  Inside four hull radii each is pushed a little the way it
+; is already leaning, which reads as two ships making room rather than as
+; either of them dodging - and it is the same three subtractions the
+; collision test has already done, so it costs nothing worth measuring.
+; A station does not give way to anybody.
+; =========================================================================
+CO_SHEER:	BIT	#UF_DOCK,U.FLAGS(R5)
+		BNE	9$
+		BIT	#UF_DOCK,U.FLAGS(R4)
+		BNE	9$
+		MOV	#CO_GIVE,R0
+		TST	CO_DX
+		BGE	1$
+		NEG	R0
+1$:		ADD	R0,U.X(R5)
+		SUB	R0,U.X(R4)
+		MOV	#CO_GIVE,R0
+		TST	CO_DY
+		BGE	2$
+		NEG	R0
+2$:		ADD	R0,U.Y(R5)
+		SUB	R0,U.Y(R4)
+		CALL	U_SXT
+		CALL	U_SXT4
+9$:		RETURN
+
+; HIT_PLAYER - the commander takes a blow of R0 on the shield R1 names
+; (0 forward, 1 aft): Legend's DecEnergyShieldFR.  Military shields
+; halve what the shield feels; the shield loses five times the blow,
+; and the blows it cannot cover the banks take as struck
+; (DecEnergyPlayer, below); with the banks dry the game starts again.
+; A blow the shield feels of HEAVY_BLOW or more is HEAVY_DAMAGE, and so
+; is a run of blows reaching the banks: each adds 5 to HP_INT, which
+; sheds 2 a frame (Legend's var_05 loses one on each of the two shield
+; calls a frame that carry no blow), and HEAVY_RUN of it is a call.
+; Clobbers R0..R3.
+HP_C:		.WORD	0		; what the shield feels
+HP_E:		.WORD	0		; the blow as struck
+HP_INT:		.WORD	0		; how hard the blows have been coming
+HP_TICK:	.WORD	0		; the frame HP_INT was last shed on
+HIT_PLAYER:	TST	R0
+		BLE	9$
+		MOV	R0,HP_E
+		MOV	#FX_EHIT,R0		; heard on C (SetSoundsInGame bit 6)
+		CALL	SFX_PLAY
+		MOV	HP_E,R0
+		MOV	FLY_TICK,R2		; shed the intensity the frames
+		SUB	HP_TICK,R2		;   since the last blow allow
+		BEQ	12$
+		ADD	R2,HP_TICK
+		ASL	R2
+		SUB	R2,HP_INT
+		BGE	12$
+		CLR	HP_INT
+12$:		TSTB	P_MILSHIELDS
+		BMI	1$
+		BITB	#DEV_BROKEN,P_MILSHIELDS
+		BNE	1$
+		ASR	R0
+1$:		MOV	R0,HP_C
+		CMP	R0,#HEAVY_BLOW		; a big one breaks something
+		BLO	11$
+		MOV	R1,-(SP)
+		CALL	HEAVY_DAMAGE
+		MOV	(SP)+,R1
+11$:		MOV	#PSHIELD_F,R2
+		TST	R1
+		BEQ	2$
+		MOV	#PSHIELD_A,R2
+2$:		MOV	#5,R3
+3$:		MOV	(R2),R0
+		SUB	HP_C,R0
+		BLT	4$
+		MOV	R0,(R2)
+		SOB	R3,3$
+		RETURN
+4$:		CLR	(R2)			; the shield is down: the rest of
+		DEC	R3			;   the blows land on the banks
+		BEQ	9$
+		MOV	HP_E,R0
+		MOV	R3,R1
+		CALL	DEC_ENERGY
+		ADD	#5,HP_INT		; and blows that keep reaching
+		CMP	HP_INT,#HEAVY_RUN	;   them break something too
+		BLO	9$
+		JMP	HEAVY_DAMAGE
+9$:		RETURN
+
+; =========================================================================
+; HEAVY_DAMAGE - Legend's HeavyDamage: the wear byte counts it, and a
+; roll of 64 says what it cost - 0 drains the tank, 1..6 breaks one of
+; the twenty devices the sky can break (the roll picks which of six,
+; a second roll which eight of the twenty), 7..16 spoils a tonne of one
+; of the first thirty-two goods (3..8 twice as likely, as Legend has
+; it), and the rest nothing.  A device that is not there or already
+; broken, a good the hold has none of, a tank already dry: nothing is
+; said.  Once a frame at most.  Clobbers R0..R3.
+; =========================================================================
+HD_TICK:	.WORD	-1
+HD_NAME:	.WORD	0		; the second half of the message
+DEV_NAMES:	.WORD	S_D_ENERGYUNIT, S_D_GALDRIVE, S_D_ECM, S_D_INJECTORS
+		.WORD	S_D_EBOMB, S_D_AUTOECM, S_D_AUTOPOD, S_D_DRONE
+		.WORD	S_D_SHIELDGEN, S_D_MILSHIELDS, S_D_LASERCOOL, S_D_CLOAK
+		.WORD	S_D_ALIENCOMP, S_D_OREPROC, S_D_ESCPOD, S_D_FUELCOLL
+		.WORD	S_D_FUELSCOOPS, S_D_DOCKCOMP, S_D_AUTOTAKE, S_D_EJECT
+HEAVY_DAMAGE:	CMP	FLY_TICK,HD_TICK	; once a frame
+		BEQ	9$
+		MOV	FLY_TICK,HD_TICK
+		MOV	R4,-(SP)		; the callers keep these
+		MOV	R5,-(SP)
+		CMPB	P_WEAR,#377		; PilotFactorRepair counts every
+		BEQ	1$			;   one, up to 255
+		INCB	P_WEAR
+1$:		CALL	RND_BYTE
+		BIC	#177700,R0		; 0..63
+		BNE	2$
+		TST	PFUEL			; 0: the tank
+		BEQ	8$
+		CLR	PFUEL
+		MOV	#S_M_FUELLOST,R1
+		CLR	HD_NAME
+		BR	7$
+2$:		CMP	R0,#17.			; 17..63: nothing
+		BHIS	8$
+		DEC	R0
+		CMP	R0,#6
+		BHIS	5$			; 6..15: a tonne
+		MOV	R0,R4			; 0..5: a device, which of the
+		CALL	RND_BYTE		;   twenty a second roll's bits
+		BIC	#177761,R0		;   3-1 say: 0, 2 .. 14, plus it
+		ADD	R4,R0
+		MOV	R0,R4
+		ADD	#P_ENERGYUNIT,R4	; PilotDevicesBreak
+		BITB	#DEV_OFF,(R4)
+		BNE	8$			; not there, or broken already
+		BISB	#DEV_BROKEN,(R4)
+		ASL	R0
+		MOV	DEV_NAMES(R0),HD_NAME
+		MOV	#S_M_BROKEN,R1
+		BR	7$
+5$:		CALL	RND_BYTE		; one of the first thirty-two
+		BIC	#177740,R0		;   goods, 13..18 folded down onto
+		CMP	R0,#13.			;   3..8 (DestroyCargo)
+		BLO	6$
+		CMP	R0,#19.
+		BHIS	6$
+		SUB	#10.,R0
+6$:		ASL	R0
+		TST	P_CARGO(R0)
+		BEQ	8$			; none aboard
+		DEC	P_CARGO(R0)
+		INC	P_FREECARGO
+		MOV	GOODNAMES(R0),HD_NAME
+		MOV	#S_M_CARGOLOST,R1
+7$:		CALL	SAY_LINE2		; say so, where the arrival
+					;   message goes
+8$:		MOV	(SP)+,R5
+		MOV	(SP)+,R4
+9$:		RETURN
+
+; DEC_ENERGY - the banks lose R1 blows of R0 (DecEnergyPlayer): the
+; first bank first, a bank that cannot cover a blow is emptied and the
+; blow passed on, and the last one dry is the end.  Clobbers R0..R3.
+DEC_ENERGY:	MOV	#PBANKS,R2
+		MOV	CKV_ENUNITS,R3
+1$:		CMP	(R2),R0
+		BLO	2$
+		SUB	R0,(R2)
+		SOB	R1,1$
+		RETURN
+2$:		CLR	(R2)
+		TST	(R2)+
+		SOB	R3,1$
+		JMP	PLAYER_DEAD		; dead: the banks are empty
+
+; ENERGY_TOTAL - R0 = what is in the banks together.  Clobbers R2, R3.
+ENERGY_TOTAL:	CLR	R0
+		MOV	#PBANKS,R2
+		MOV	CKV_ENUNITS,R3
+1$:		ADD	(R2)+,R0
+		SOB	R3,1$
+		RETURN
+
+; =========================================================================
+; RECHARGE - Legend's EnergyRecovery, once an interrupt: the flight loop
+; runs slower than fifty a second, so a frame catches up on the
+; interrupts it took, within reason.  Called every frame.  Clobbers
+; R0..R3.
+; =========================================================================
+RC_LAST:	.WORD	0
+RC_N:		.WORD	0
+RECHARGE:	MOV	FRAMES,R0
+		SUB	RC_LAST,R0
+		BLE	9$
+		ADD	R0,RC_LAST
+		CMP	R0,#16.			; a frame is five to eight of them
+		BLOS	1$
+		MOV	#16.,R0
+1$:		MOV	R0,RC_N
+2$:		CALL	RC_TICK
+		DEC	RC_N
+		BGT	2$
+9$:		RETURN
+
+; RC_TICK - one interrupt's worth.  A point goes into the last bank
+; short of full; with every bank full, a point onto each shield, or two
+; with a shield generator (goto505, goto514).  An energy unit fitted
+; and whole adds points before that one: one plain, three naval, five
+; Thargoid - Legend's rla of the device byte with the compare's carry
+; in it.
+RC_TICK:	MOVB	P_ENERGYUNIT,R1
+		BIC	#177400,R1
+		CMP	R1,#100			; absent or broken: the one point
+		BHIS	1$
+		ASL	R1
+		BIS	#1,R1
+		BIC	#177770,R1
+2$:		CALL	RC_POINT
+		BCC	9$			; nothing left to recover
+		SOB	R1,2$
+1$:		JMP	RC_POINT
+9$:		RETURN
+
+; RC_POINT - one point, C set if it went somewhere.  Clobbers R0, R2, R3.
+RC_POINT:	MOV	CKV_ENUNITS,R3
+		MOV	R3,R2
+		ASL	R2
+		ADD	#PBANKS-2,R2		; the last bank
+1$:		CMP	(R2),#ENERGY_MAX
+		BHIS	2$
+		INC	(R2)
+		SEC
+		RETURN
+2$:		TST	-(R2)
+		SOB	R3,1$
+		MOVB	P_SHIELDGEN,R0		; the banks are full: the shields,
+		BIC	#177400,R0		;   twice over with a generator
+		CMP	R0,#100
+		BHIS	RC_SHIELDS
+		CALL	RC_SHIELDS
+RC_SHIELDS:	CLR	R0
+		CMP	PSHIELD_F,#ENERGY_MAX
+		BHIS	1$
+		INC	PSHIELD_F
+		INC	R0
+1$:		CMP	PSHIELD_A,#ENERGY_MAX
+		BHIS	2$
+		INC	PSHIELD_A
+		INC	R0
+2$:		TST	R0			; C clear
+		BEQ	3$
+		SEC
+3$:		RETURN
+
+; =========================================================================
+; Missiles.
+;
+; Space locks onto whatever is under the gunsight, and space again lets
+; it go.  A missile is an ordinary entry in the universe carrying the
+; slot of its quarry, so it draws and moves like everything else; each
+; frame it closes a fixed step and pulls a fraction of the way onto the
+; line to the target, which reads as a missile correcting its aim
+; rather than sliding along a wire.
+; =========================================================================
+
+MISS_LOCK:	.WORD	0		; the locked slot, +1; 0 = nothing
+MS_P:		.WORD	0
+MS_I:		.WORD	0
+MS_T:		.WORD	0
+
+; =========================================================================
+; LOCK_SHOW - say whether a missile is locked on.
+;
+; The lock is a state and not an event, so it is not a message that
+; fades: it goes up when the lock is taken and comes down when the
+; missile leaves or the lock is dropped.  LOCK_SHOWN is what is
+; currently on the screen, so the line is only drawn when it changes -
+; and anything that blanks the view clears LOCK_SHOWN, which puts it
+; back on the next frame.
+; =========================================================================
+LOCK_SHOWN:	.WORD	0
+
+LOCK_SHOW:	MOV	MISS_LOCK,R0
+		BEQ	1$
+		MOV	#1,R0
+1$:		CMP	R0,LOCK_SHOWN
+		BEQ	9$
+		MOV	R0,LOCK_SHOWN
+		BNE	2$
+		MOV	#2,R0			; the lock has gone
+		MOV	#16.,R1
+		MOV	#26.,R2
+		JMP	TEXT_CLEAR
+2$:		MOV	#2,TX
+		MOV	#16.,TY
+		MOV	#S_M_LOCK,R1
+		JMP	PUTS
+9$:		RETURN
+
+; MISSILE_KEY - space, in flight: what "8" has it doing (MISS_KIND).
+MISSILE_KEY:	MOV	KEYS_EDGE,R0
+		BIT	#K_MISSILE,R0
+		BEQ	9$
+		CMP	MISS_KIND,#MF_TANK	; the tank needs no lock (goto569)
+		BEQ	7$
+		TST	MISS_LOCK
+		BEQ	6$
+		CMP	MISS_KIND,#MF_TAKE
+		BEQ	5$
+		CMP	MISS_KIND,#MF_DESCENT
+		BEQ	4$
+		CMP	MISS_KIND,#MF_DRONE
+		BNE	3$
+		JMP	FV_DRONE		; a drone goes for the locked wreck
+3$:		CMP	MISS_KIND,#MF_ALIEN
+		BNE	LAUNCH_MISSILE
+		JMP	ALIEN_LAUNCH
+4$:		JMP	MS_DESCENT		; the troops go for the locked station
+5$:		JMP	TAKE_LOCK		; the locked drop comes in
+7$:		JMP	TANK_FILL
+6$:		; ---- no lock yet: take whatever is under the gunsight ----
+		CALL	FIND_TARGET
+		BCS	8$
+		MOV	R0,MISS_LOCK
+		MOV	#FX_KEY,R0		; FX_Beep_Set, as Legend's lock does
+		JMP	SFX_PLAY
+8$:		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY
+9$:		RETURN
+
+; FIND_TARGET - R0 = slot index + 1 of a ship under the gunsight,
+; C set if there is none.
+FIND_TARGET:	MOV	#UNIV,MS_P
+		CLR	MS_I
+10$:		MOV	MS_P,R5
+		TST	U.TYPE(R5)
+		BEQ	80$
+		TST	U.EXPL(R5)
+		BNE	80$
+		BIT	#UF_MISSILE!UF_PLANET,U.FLAGS(R5)
+		BNE	80$			; not a world, a missile, or the
+		BIT	#UF_DOCK,U.FLAGS(R5)	; station you are trying to dock at
+		BEQ	3$			; - unless the Targons hold it (P_M3
+		BIT	#UF_STATION,U.FLAGS(R5)	;   4): mission 3's missile and the
+		BEQ	80$			;   war's troops are for it
+		CMPB	P_M3,#4
+		BNE	80$
+3$:		TST	U.SX(R5)
+		BEQ	80$
+		MOV	U.SX(R5),R0
+		SUB	#VIEW_XC,R0
+		BGE	1$
+		NEG	R0
+1$:		CMP	R0,#GUNSIGHT_X
+		BGT	80$
+		MOV	U.SY(R5),R0
+		SUB	#VIEW_YC,R0
+		BGE	2$
+		NEG	R0
+2$:		CMP	R0,#GUNSIGHT_Y
+		BGT	80$
+		MOV	MS_I,R0
+		INC	R0
+		CLC
+		RETURN
+80$:		ADD	#U.SIZE,MS_P
+		INC	MS_I
+		CMP	MS_I,#NUNIV
+		BLT	10$
+		SEC
+		RETURN
+
+; LAUNCH_MISSILE - let the locked one go.
+LAUNCH_MISSILE:	TST	ECM_TIME
+		BEQ	0$
+		CMP	MISS_KIND,#MF_MILMISS
+		BEQ	0$
+		MOV	#S_M_JAMMED,R1
+		JMP	SAY_LINE
+0$:		MOV	#PMISSILES,R1		; the rack MISS_KIND names
+		CMP	MISS_KIND,#MF_MILMISS
+		BNE	1$
+		MOV	#P_MISSTYPE,R1
+1$:		TST	(R1)
+		BEQ	8$
+		MOV	R1,-(SP)
+		MOV	#SH_MISSILE,R0
+		CLR	R1
+		MOV	#-40.,R2		; it leaves from under the hull
+		MOV	#300.,R3
+		CLR	R4
+		CALL	UNIV_ADD
+		MOV	(SP)+,R1
+		BCS	8$
+		BIS	#UF_MISSILE,U.FLAGS(R5)
+		CMP	MISS_KIND,#MF_MILMISS
+		BNE	2$
+		BIS	#UF_MILMISS,U.FLAGS(R5)
+2$:		MOV	MISS_LOCK,U.TARGET(R5)
+		MOV	#MISS_LIFE,U.ENERGY(R5)	; U.ENERGY doubles as its fuse
+		BIS	#CLOAK_SEEN_SHOT,CLOAK_SEEN	; and gives you away
+		DEC	(R1)
+		CLR	MISS_LOCK
+		MOV	#FX_MISSILE,R0
+		JMP	SFX_PLAY
+8$:		CLR	MISS_LOCK
+		MOV	#FX_KEY,R0
+		JMP	SFX_PLAY
+
+; =========================================================================
+; MISS_ATPLAYER - one frame of a missile with the commander's name on it.
+; R5 = the missile's slot.
+;
+; It flies the way the commander's own do - an eighth of the way onto the
+; line to its quarry and a fixed step closer - except that its quarry is
+; the origin, so there is nothing to look up.  Three hits' worth when it
+; arrives: a missile is not something to sit still for, and the answer to
+; one is an ECM, a laser, or somewhere else to be.
+; =========================================================================
+MISS_ATPLAYER:	CALL	U_NEAR			; a missile beyond sixteen bits
+		BCC	.+4			;   is flying nowhere this frame
+		RETURN
+		MOV	U.X(R5),R0		; onto the line to the origin
+		ASH	#-3,R0
+		SUB	R0,U.X(R5)
+		MOV	U.Y(R5),R0
+		ASH	#-3,R0
+		SUB	R0,U.Y(R5)
+		MOV	U.Z(R5),R0		; and closing
+		BLE	1$
+		SUB	#MISS_SPEED,U.Z(R5)
+		BR	2$
+1$:		ADD	#MISS_SPEED,U.Z(R5)
+
+2$:		CALL	U_SXT
+		MOV	U.Z(R5),R0
+		BGE	3$
+		NEG	R0
+3$:		CMP	R0,#MISS_HIT
+		BGT	5$
+		MOV	U.X(R5),R0
+		BGE	4$
+		NEG	R0
+4$:		CMP	R0,#MISS_HIT
+		BGT	5$
+
+		CLR	U.TYPE(R5)		; it has arrived: a missile's blow
+		MOV	#FX_KILL,R0		;   is its collision byte and
+		CALL	SFX_PLAY		;   MISSILE_HIT more (objCollision)
+		MOV	#SH_MISSILE,R0
+		MOV	#SS_COLLIDE,R1
+		CALL	SHIP_STAT
+		ADD	#MISSILE_HIT,R0
+		CLR	R1
+		TST	U.ZH(R5)
+		BPL	41$
+		INC	R1
+41$:		JMP	HIT_PLAYER
+
+5$:		DEC	U.ENERGY(R5)		; it does not fly for ever either
+		BGT	9$
+		CLR	U.TYPE(R5)
+9$:		RETURN
+
+; =========================================================================
+; ECM_FIRE - the ECM, as Legend runs it: there is one ECM field in the
+; sky, ECM_TIME (TimeWorkECM), and whoever starts it - you on the key,
+; the auto-ECM, or a ship answering your missile - it runs ECM_FRAMES.
+; While it runs MISSILE_STEP breaks up every ordinary missile, yours
+; included, and a military one only under a naval ECM of yours that is
+; switched on; nobody launches anything; and your banks pay ECM_COST
+; four times a frame if you have an ECM at all.  ECM_ON in the device
+; byte says yours is the one running.
+; =========================================================================
+ECM_TIME:	.WORD	0		; frames left
+ECM_FIRE:	TST	ECM_TIME		; one at a time
+		BEQ	ECM_START
+		RETURN
+ECM_START:	BITB	#DEV_OFF,P_ECM		; fitted and working
+		BNE	9$
+		CALL	MS_JAMMED		; and not the naval one jamming the
+		BEQ	9$			;   Targon station's system
+		MOV	#ECM_FRAMES,ECM_TIME
+		BISB	#ECM_ON,P_ECM
+		MOV	#2,TX
+		MOV	#4,TY
+		MOV	#S_M_ECM,R1
+		CALL	PUTS2
+		MOV	#40.,HYP_SHOW
+		MOV	#FX_ECM,R0		; the field's sound, round and round
+		JMP	SFX_PLAY		;   until it ends (ECM_STEP)
+9$:		RETURN
+
+; ECM_STEP - once a frame, first thing in MISSILE_STEP: the auto-ECM
+; (UseAutoECMePod) fires yours the frame a missile is launched at you
+; if it is armed and none is running; the field counts down, and yours
+; is switched off when it ends; and the cost.  Clobbers R0..R3.
+ECM_STEP:	CALL	CLOAK_STEP
+		CALL	AUTOPOD_STEP
+		MOVB	P_AUTOECM,R0
+		BICB	#AUTOECM_OUT,P_AUTOECM
+		BIC	#177417,R0		; fitted, whole, armed, and a
+		CMP	R0,#AUTOECM_ARMED!AUTOECM_OUT	;   missile just out
+		BNE	1$
+		TST	ECM_TIME
+		BNE	1$
+		CALL	ECM_START
+1$:		TST	ECM_TIME
+		BEQ	9$
+		DEC	ECM_TIME
+		BNE	2$
+		BICB	#ECM_ON,P_ECM
+		MOV	#FX_OFFB,R0		; and the field's sound with it
+		CALL	SFX_PLAY
+2$:		BITB	#DEV_OFF,P_ECM		; anyone's ECM costs you, if you
+		BNE	9$			;   have one to run
+		MOV	#ECM_COST,R0
+		MOV	#4,R1
+		CALL	DEC_ENERGY
+9$:		RETURN
+
+; =========================================================================
+; The cloak (Use_Y_Cloacking): "9" switches it on if the last bank is
+; full, and off again; while it is on your banks pay CLOAK_COST four
+; times a frame, and a hostile lined up on you acts only on a roll
+; under CLOAK_SEEN - a byte that halves a frame and keeps bit 5, so it
+; settles at 63, and that every shot of yours sets bit 7 of
+; (ChanceFireLaser).  A broken
+; cloak goes off.  The auto-eject (UseAutoECMePod's second half): the
+; capsule fitted and whole and P_AUTOPOD armed, the last bank under
+; POD_BANK, and ESCAPE_POD is asked for the next frame.
+; =========================================================================
+CLOAK_ON:	.WORD	0
+CLOAK_SEEN:	.WORD	CLOAK_SEEN_MIN
+POD_NOW:	.WORD	0		; FLY_CONTROLS ejects on it
+CLOAK_KEY:	BITB	#DEV_OFF,P_CLOAK
+		BNE	9$
+		MOV	#S_M_CLOAKOFF,R1
+		TST	CLOAK_ON
+		BEQ	1$
+		CLR	CLOAK_ON
+		BR	2$
+1$:		CALL	LAST_BANK		; on wants the last bank full
+		CMP	(R0),#ENERGY_MAX
+		BLT	9$
+		MOV	#1,CLOAK_ON
+		MOV	#S_M_CLOAKON,R1
+2$:		JMP	SAY_LINE
+9$:		RETURN
+
+; CLOAK_STEP - once a frame, from ECM_STEP.  Clobbers R0..R3.
+CLOAK_STEP:	MOV	CLOAK_SEEN,R0		; less seen every frame
+		ASR	R0
+		BIS	#CLOAK_SEEN_MIN,R0
+		MOV	R0,CLOAK_SEEN
+		TST	CLOAK_ON
+		BEQ	9$
+		BITB	#DEV_OFF,P_CLOAK	; broken: it goes off
+		BEQ	1$
+		CLR	CLOAK_ON
+		BR	9$
+1$:		MOV	#CLOAK_COST,R0
+		MOV	#4,R1
+		CALL	DEC_ENERGY
+9$:		RETURN
+
+; AUTOPOD_STEP - once a frame, from ECM_STEP.  Clobbers R0.
+AUTOPOD_STEP:	MOVB	P_ESCPOD,R0		; the capsule fitted and whole,
+		BISB	P_AUTOPOD,R0		;   the auto-eject too and armed:
+		BIC	#177400,R0		;   the two bytes or to the bit
+		CMP	R0,#AUTOPOD_ARMED
+		BNE	9$
+		CALL	LAST_BANK
+		CMP	(R0),#POD_BANK
+		BGE	9$
+		MOV	#1,POD_NOW
+9$:		RETURN
+
+; LAST_BANK - R0 = the address of the ship's last bank.
+LAST_BANK:	MOV	CKV_ENUNITS,R0
+		ASL	R0
+		ADD	#PBANKS-2,R0
+		RETURN
+
+; SAY_LINE - the string R1 on the message line, for HYP_SHOW frames, and
+; Legend's beep;
+; SAY_LINE2 the same with a second string, from HD_NAME, after it.
+; Clobbers R0..R5.
+SAY_LINE:	CLR	HD_NAME
+SAY_LINE2:	MOV	R1,-(SP)
+		MOV	#FX_KEY,R0		; a message is a beep (ePrnTxt's
+		CALL	SFX_PLAY		;   FX_Beep_Set)
+		MOV	#2,R0
+		MOV	#4,R1
+		MOV	#40.,R2
+		CALL	TEXT_CLEAR
+		MOV	#2,TX
+		MOV	#4,TY
+		MOV	(SP)+,R1
+		CALL	PUTS2
+		MOV	HD_NAME,R1
+		BEQ	1$
+		CALL	PUTS2
+1$:		MOV	#40.,HYP_SHOW
+		RETURN
+
+; MISS_KINDKEY - "8": what the space bar does next (Legend's
+; TypeUseTarget, on its D key): a missile off either rack, the auto-take
+; on the locked drop, a boarding drone at the locked wreck, or the
+; extra tank into the main one - each only while there is something to
+; do it with (TestMissileFunct), and round to the plain missiles
+; whether there are any or not.
+MISS_KIND:	.WORD	0		; MF_* in defs.mac
+MISS_KINDKEY:	MOV	MISS_KIND,R0
+1$:		INC	R0
+		CMP	R0,#MF_LAST
+		BHIS	2$
+		CALL	MF_AVAIL
+		BCS	1$
+		BR	3$
+2$:		CLR	R0
+3$:		MOV	R0,MISS_KIND
+		ASL	R0
+		MOV	MF_NAMES(R0),R1
+		JMP	SAY_LINE
+MF_NAMES:	.WORD	S_M_INCOMING, S_M_MILMISS, S_M_ALIEN, S_M_TAKE, S_M_DRONE, S_M_TANK
+		.WORD	S_M_DESCENT
+
+; MF_AVAIL - R0 = a function; C set if there is nothing for it to do.
+; Clobbers R1.
+MF_AVAIL:	CMP	R0,#MF_MILMISS
+		BHI	1$
+		BEQ	11$
+		TST	PMISSILES		; a missile on the rack
+		BEQ	9$
+		RETURN
+11$:		TST	P_MISSTYPE		; a military one
+		BEQ	9$
+		RETURN
+1$:		CMP	R0,#MF_ALIEN
+		BNE	10$
+		BITB	#DEV_OFF,P_ALIENCOMP
+		BNE	9$
+		TST	P_CARGO+<G_ALIEN*2>
+		BEQ	9$
+		CLC
+		RETURN
+10$:		CMP	R0,#MF_TAKE
+		BNE	12$
+		BITB	#DEV_OFF,P_AUTOTAKE	; the device, fitted and whole
+		BNE	9$
+		RETURN
+12$:		CMP	R0,#MF_DRONE
+		BNE	2$
+		BITB	#DEV_OFF,P_DRONE	; the system, fitted and whole, and
+		BNE	9$			;   a drone in the hold (goto742)
+		TST	P_CARGO+<2*G_DRONE>
+		BEQ	9$
+		RETURN
+2$:		CMP	R0,#MF_DESCENT		; the troops aboard (function 6)
+		BNE	21$
+		CMPB	P_M1+1,#3
+		BNE	9$
+		RETURN
+21$:		CMP	R0,#MF_TANK
+		BNE	9$
+		MOVB	P_TANKS,R1		; a tank, with something in it
+		BMI	9$
+		BIC	#177700,R1
+		BEQ	9$
+		CLC
+		RETURN
+9$:		SEC
+		RETURN
+
+; =========================================================================
+; BOMB_FIRE - the two bombs, once and once only (UseEnergyBomb, and
+; goto434 in eObjMove.a80): everything in the sky that is not a world or
+; a bay comes apart and counts as yours - all but one hull, told by its
+; SPEED: the energy bomb (kind 0) spares the hull whose speed is 39,
+; the Targon mother ship, and the Q-bomb (kind 1, bit 0 of the device
+; byte) the one whose speed is 38, the Targon-6 - Legend adds the kind
+; to the speed and compares with #27.  Not here: Legend's missile-proof
+; objects (oTypeObj bit 4), which the port's stats do not carry.
+; =========================================================================
+CB_KIND:	.WORD	0
+BOMB_FIRE:	BITB	#DEV_OFF,P_EBOMB	; fitted and working
+		BNE	9$
+		MOVB	P_EBOMB,R0		; which bomb
+		BIC	#177776,R0
+		MOV	R0,CB_KIND
+		MOVB	#DEV_NONE,P_EBOMB
+		MOV	#LAS_NONE,LAST_WEAPON
+		MOV	#UNIV,CB_P
+		MOV	#NUNIV,CB_I
+1$:		MOV	CB_P,R5
+		MOV	U.TYPE(R5),R0
+		BEQ	3$
+		TST	U.EXPL(R5)
+		BNE	3$
+		BIT	#UF_PLANET!UF_SUN!UF_DOCK,U.FLAGS(R5)
+		BNE	3$
+		BITB	#KB_MISSPROOF,U.TYP(R5)
+		BNE	3$
+		MOV	#SS_SPEED,R1		; the one hull this kind cannot
+		CALL	SHIP_STAT		;   touch
+		ADD	CB_KIND,R0
+		CMP	R0,#BOMB_SPARE
+		BEQ	3$
+		MOV	#EXPL_LEN,U.EXPL(R5)
+		CLR	U.SPEED(R5)
+		BIT	#UF_MISSILE,U.FLAGS(R5)	; a missile pays nothing
+		BNE	3$
+		CALL	SHIP_KILLED
+3$:		ADD	#U.SIZE,CB_P
+		DEC	CB_I
+		BGT	1$
+		MOV	#S_M_BOMB,R1
+		TST	CB_KIND
+		BEQ	4$
+		MOV	#S_M_CASCADE,R1
+4$:		CALL	SAY_LINE
+		MOV	#FX_BOMB,R0
+		JMP	SFX_PLAY
+9$:		RETURN
+
+; =========================================================================
+; ESCAPE_POD - the last resort.
+;
+; Elite's capsule saves the commander and nothing else: the ship, its
+; cargo and everything bolted to it are left behind, and what comes back
+; is a standard Cobra in the nearest station.  The purse and the rank
+; survive, and so - Elite is oddly generous here - does a clean record,
+; because the authorities have no ship to charge.
+; =========================================================================
+ESCAPE_POD:	BITB	#DEV_OFF,P_ESCPOD	; fitted and working
+		BNE	9$
+		TST	DOCKED
+		BNE	9$
+		TST	WITCH			; no rescue in free space
+		BNE	9$
+		CALL	FIND_STATION
+		BCS	9$
+		BIT	#UF_HOSTILE,U.FLAGS(R5)
+		BNE	9$
+		CALL	SHIP_STANDARD		; a new ship, empty and standard
+					;   (src/pilot.mac), the capsule gone
+					;   with the old one
+		CALL	SHIP_RESET		; and out of witchspace, if that
+					;   is where the capsule was fired
+		MOV	#1,DOCKED
+		CLR	DOCKED_AT		; the station picks the capsule up
+		CLC				; and the record is halved
+		ROR	LEGAL			;   (AutoEscapePod, v1.09)
+		CALL	CT_REFUSEPASS		; the passengers stay behind
+		CALL	UNIV_CLEAR
+		CALL	SEG_RESET
+		CALL	SAVE_CMDR
+		MOV	#FX_DOCK,R0
+		CALL	SFX_BIG
+		CALL	DRAW_DOCKED
+		MOV	#4,TX
+		MOV	#140.,TY
+		MOV	#S_M_ESCAPE,R1
+		JMP	PUTS
+9$:		RETURN
+
+; =========================================================================
+; MISSILE_STEP - fly every missile one frame.
+; =========================================================================
+MISSILE_STEP:	CALL	ECM_STEP
+		MOV	#UNIV,MS_P
+		MOV	#NUNIV,MS_I
+10$:		MOV	MS_P,R5
+		TST	U.TYPE(R5)
+		BNE	11$
+79$:		JMP	80$			; the loop is longer than a branch
+78$:		JMP	70$			;   reaches: the skips hop through
+11$:		BIT	#UF_MISSILE,U.FLAGS(R5)
+		BEQ	79$
+		TST	U.EXPL(R5)		; one that has been broken up - by
+		BNE	79$			; an ECM, or by a steady hand on the
+					; laser - stops flying at once, and
+					; does not arrive after all
+		TST	ECM_TIME		; an ECM is running: an ordinary
+		BEQ	14$			;   missile comes apart, a military
+		BIT	#UF_MILMISS,U.FLAGS(R5)	;   one only under a naval ECM of
+		BEQ	13$			;   yours, switched on (MoveMissile)
+		MOVB	P_ECM,R0
+		BIC	#^C<DEV_OFF!ECM_ON!DEV_NAVAL>,R0
+		CMP	R0,#ECM_ON!DEV_NAVAL
+		BNE	14$
+13$:		MOV	#EXPL_LEN,U.EXPL(R5)
+		CLR	U.SPEED(R5)
+		BR	79$
+14$:		MOV	U.TARGET(R5),R0		; has the quarry gone?
+		BEQ	78$
+		BGT	15$
+		CALL	MISS_ATPLAYER		; negative: it is coming for you
+		BR	79$
+15$:		DEC	R0
+		MOV	R5,MS_T			; keep the missile's own slot: MUL
+		MOV	R0,R1			; into an even register would put
+		MUL	#U.SIZE,R1		; the product in R4:R5 and destroy
+		MOV	R1,R4			; it.  R1 is odd, so only the low
+		ADD	#UNIV,R4		; word is kept, which is all the
+		MOV	MS_T,R5			; offset needs.
+		TST	U.TYPE(R4)
+		BEQ	78$
+		TST	U.EXPL(R4)
+		BNE	78$
+		BIT	#UF_DOCK,U.FLAGS(R4)	; a lock left on the station's
+		BEQ	12$			;   slot: the missile is spent, the
+		BIT	#UF_STATION,U.FLAGS(R4)	;   station is rock - unless it is
+		BEQ	78$			;   mission 3's Targon station, a
+		BIT	#UF_HOSTILE,U.FLAGS(R5)	;   missile of the commander's and
+		BNE	78$			;   the naval ECM aboard, which
+		BIT	#UF_MISSION,U.FLAGS(R5)	;   brings it down - or the war's
+		BNE	12$			;   troops, who land on it
+		CALL	MS_STNOK
+		BNE	78$
+12$:
+		BITB	#F3_ECM,U.FL3(R4)	; the quarry has an ECM: it may
+		BEQ	16$			;   answer, if none is running yet
+		CALL	MS_JAMMED		;   and the naval ECM is not jamming
+		BEQ	16$			;   it (mission 3)
+		TST	ECM_TIME		;   (goto398; the missile comes
+		BNE	16$			;   apart next frame, above)
+		MOV	R5,MS_T
+		CALL	RND_BYTE		; clobbers R5
+		MOV	MS_T,R5
+		CMP	R0,#ECM_SHIP_CH
+		BHIS	16$
+		MOV	#ECM_FRAMES,ECM_TIME
+		CMP	R0,#ECM_SHIP_BREAK	; and one time in five that was
+		BLO	17$			;   its ECM's last
+		BICB	#F3_ECM,U.FL3(R4)
+17$:		MOV	R4,-(SP)
+		MOV	#FX_ECM,R0
+		CALL	SFX_PLAY
+		MOV	(SP)+,R4
+		MOV	MS_T,R5
+16$:
+		CALL	U_NEAR4			; either beyond sixteen bits: the
+		BCC	161$
+		JMP	70$
+161$:		CALL	U_NEAR
+		BCC	162$
+		JMP	70$
+162$:
+		MOV	U.X(R4),R0		; steer an eighth of the way onto
+		SUB	U.X(R5),R0		; the line to it
+		ASH	#-3,R0
+		ADD	R0,U.X(R5)
+		MOV	U.Y(R4),R0
+		SUB	U.Y(R5),R0
+		ASH	#-3,R0
+		ADD	R0,U.Y(R5)
+
+		MOV	U.Z(R4),R0		; and close on it
+		SUB	U.Z(R5),R0
+		MOV	R0,MS_T
+		BGE	20$
+		NEG	R0
+20$:		CMP	R0,#MISS_HIT
+		BGT	30$
+		MOV	U.X(R4),R0		; near enough in z - and in x?
+		SUB	U.X(R5),R0
+		BGE	21$
+		NEG	R0
+21$:		CMP	R0,#MISS_HIT
+		BGT	30$
+		MOV	#MISS_DMG,R0		; a hit: what its kind takes off
+		BIT	#UF_MILMISS,U.FLAGS(R5)	;   the hull (objMisD), and a
+		BEQ	22$			;   Python's 250 rides out an
+		MOV	#MISS_DMG_MIL,R0	;   ordinary one
+22$:		CLR	U.TYPE(R5)		; the missile is spent either way
+		BIT	#UF_MISSION,U.FLAGS(R5)	; the troops: they land on a station
+		BEQ	25$			;   and nothing else
+		BIT	#UF_STATION,U.FLAGS(R4)
+		BEQ	26$
+		CALL	MS_LANDING
+26$:		BR	80$
+25$:		BIT	#UF_STATION,U.FLAGS(R4)	; mission 3's Targon station: down
+		BEQ	24$
+		CALL	MS_STNKILL
+		BR	80$
+24$:		BITB	#KB_MISSPROOF,U.TYP(R4)
+		BEQ	241$
+		JMP	80$			; missile spent; protected hull intact
+241$:		SUB	R0,U.ENERGY(R4)
+		BGT	23$
+		MOV	#EXPL_LEN,U.EXPL(R4)	; a kill
+		CLR	U.SPEED(R4)
+		MOV	R4,R5			; book it against what was hit,
+		MOV	#LAS_NONE,LAST_WEAPON		; not against the missile
+		CALL	SHIP_KILLED
+		MOV	#2,TX
+		MOV	#4,TY
+		MOV	#S_M_TARGET,R1
+		CALL	PUTS2
+		MOV	#40.,HYP_SHOW
+		MOV	#FX_KILL,R0
+		CALL	SFX_PLAY
+		BR	80$
+23$:		MOV	R4,R5			; it survived, and knows
+		CALL	SHIP_HURT		;   (src/ai.mac)
+		MOV	#FX_KILL,R0
+		CALL	SFX_PLAY
+		BR	80$
+30$:		TST	MS_T
+		BGE	31$
+		SUB	#MISS_SPEED,U.Z(R5)
+		BR	40$
+31$:		ADD	#MISS_SPEED,U.Z(R5)
+40$:		CALL	U_SXT
+		DEC	U.ENERGY(R5)		; and it does not fly for ever
+		BGT	80$
+70$:		CLR	U.TYPE(R5)
+80$:		ADD	#U.SIZE,MS_P
+		DEC	MS_I
+		BLE	9$			; the loop outgrew a branch with
+		JMP	10$			;   the near gates in it
+9$:		RETURN

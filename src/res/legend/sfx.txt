@@ -1,0 +1,1023 @@
+# Elite Legend's AY sound effects, from orig/legend's LibSFX by
+# tools/sfx_gen.py --extract.  A frame a line: v= the volume, t= the
+# tone period (hex), n= the noise period (hex), `loop` back to the
+# loop point after it, `end` after it.  src/ppu_sfx.mac plays them
+# on the first AY chip; the game numbers them by the table.
+
+table KeyPressed PressOption PilotLaser0 PilotLaser0 PilotLaser2 PilotLaser2 PilotLaser5 PilotLaser5 PilotLaser6 PilotLaser7 PilotLaserHit EnemyLaserHit LaunchMissile ECMsystem SFXoff E_Bomb GameOver CaptureDron AlienDrone PressPause CaptureCargo Refueled LaunchDescent JumpGate Docking Launch HyperJump Collision DestroyObj
+
+effect KeyPressed TauCeti/KeyPressed.cse
+loopat 0
+v=12 t=016E
+v=8 t=0019
+v=5 t=000C
+v=0 end
+
+effect PressOption TauCeti/PressOption.cse
+loopat 0
+v=15 t=0028
+v=13 t=0028
+v=12 t=0028
+v=13 t=0028
+v=10 t=0029
+v=9 t=0028
+v=8 t=0028
+v=7 t=0028
+v=0 end
+
+effect PilotLaser0 MSX/MSX2_08.sfx
+loopat 0
+v=14 t=00A5
+v=13 t=00AD
+v=12 t=00B5
+v=10 t=00C5
+v=9 t=00D5
+v=8 t=00E5
+v=7 t=00E5
+v=7 t=00E5
+v=6 t=0105
+v=6 t=0105
+v=5 t=0125
+v=5 t=0125
+v=5 t=0145
+v=5 t=0145 end
+
+effect PilotLaser2 MSX/MSX2_09.sfx
+loopat 0
+v=12 t=00E2
+v=13 t=00BE
+v=12 t=00AA
+v=11 t=0099
+v=12 t=0088
+v=11 t=0077
+v=10 t=0066
+v=9 t=0055 end
+
+effect PilotLaser5 sfxElite/LaserMilitary.cse
+loopat 0
+v=13 t=00D0
+v=15 t=00D0
+v=14 t=009A
+v=14 t=00A0
+v=13 t=00B0
+v=13 t=00B5
+v=13 t=00BA
+v=12 t=00C0
+v=12 t=00CA
+v=12 t=00DA end
+
+effect PilotLaser6 sfxElite/LaserTargon.cse
+loopat 0
+v=15 t=00FF
+v=14 t=017E
+v=13 t=023D
+v=12 t=035B
+v=11 t=0508
+v=10 t=078C
+v=9 t=0B52 end
+
+effect PilotLaser7 MSX/MSX8_27.sfx
+loopat 0
+v=13 t=0100
+v=13 t=0080
+v=13 t=0040
+v=5 t=0000 end
+
+effect PilotLaserHit sfxElite/PilotLaserHit2.cse
+loopat 0
+v=15 t=0220
+v=15 t=02A0
+v=15 t=0310
+v=15 t=0370
+v=14 t=03C0
+v=14 t=0430
+v=14 t=0430
+v=14 t=0450
+v=14 t=0460
+v=0 end
+
+effect EnemyLaserHit sfxElite/EnemyLaserHit2.cse
+loopat 0
+v=11 t=0330
+v=13 t=0250
+v=14 t=0170
+v=15 t=0130
+v=15 t=00D0
+v=0 end
+
+effect LaunchMissile MSX/MSX2_17.sfx
+loopat 0
+v=14 t=0300
+v=14 t=0300
+v=15 t=0500
+v=15 t=0500
+v=0
+v=14 t=0030 n=00
+v=14 t=0031 n=00
+v=13 t=002F n=00
+v=13 t=002E n=00
+v=12 t=002D n=06
+v=12 t=002E n=06
+v=12 t=002E n=06
+v=11 t=002F n=0C
+v=11 t=002F n=0C
+v=11 t=0030 n=0C
+v=11 t=0030 n=0C
+v=10 t=0031 n=0C
+v=10 t=0031 n=0C
+v=10 t=0032 n=0C
+v=10 t=0032 n=0C
+v=9 t=0033 n=14
+v=9 t=0033 n=14
+v=9 t=0033 n=14
+v=8 t=0034 n=14
+v=8 t=0034 n=14
+v=8 t=0034 n=14
+v=7 t=0035 n=14
+v=7 t=0035 n=14
+v=7 t=0035 n=14
+v=6 t=0036 n=14
+v=6 t=0036 n=14
+v=6 t=0036 n=14
+v=6 t=0037 n=14
+v=6 t=0037 n=14
+v=6 t=0037 n=14
+v=6 t=0038 n=14
+v=6 t=0038 n=14
+v=6 t=0038 n=14
+v=6 t=0039 n=14
+v=6 t=0039 n=14
+v=6 t=0039 n=14
+v=5 t=003A n=14
+v=5 t=003A n=14
+v=5 t=003A n=14 end
+
+effect ECMsystem sfxElite/ECMsystem.cse
+loopat 0
+v=12 t=0080
+v=12 t=0071
+v=12 t=005F
+v=12 t=0040
+v=12 t=007B
+v=12 t=006C
+v=12 t=005B
+v=12 t=003C
+v=12 t=0077
+v=12 t=0067
+v=12 t=0056
+v=12 t=0038
+v=0 loop
+
+effect SFXoff sfxElite/SfxOff.cse
+loopat 0
+v=0 end
+
+effect E_Bomb sfxElite/E_Bomb2.cse
+loopat 0
+v=15 t=0280 n=1D
+v=15 t=0280 n=1D
+v=15 t=0280 n=1D
+v=14 t=0380 n=1D
+v=14 t=0380 n=1D
+v=14 t=0380 n=1D
+v=13 t=0480 n=1D
+v=13 t=0480 n=1D
+v=13 t=0480 n=1A
+v=15 t=0280 n=1E
+v=15 t=0280 n=1E
+v=13 t=0380 n=1E
+v=13 t=0380 n=1E
+v=11 t=0480 n=1E
+v=11 t=0480 n=1E
+v=14 t=0300 n=1E
+v=14 t=0300 n=1E
+v=14 t=0300 n=1E
+v=14 t=0300 n=1E
+v=14 t=0300 n=1E
+v=14 t=0300 n=1E
+v=14 t=0300 n=1E
+v=14 t=0300 n=1E
+v=14 t=0340 n=1E
+v=12 t=0340 n=1E
+v=12 t=0340 n=1E
+v=12 t=0340 n=1E
+v=12 t=0340 n=1E
+v=12 t=0340 n=1E
+v=12 t=0340 n=1E
+v=12 t=0340 n=1E
+v=10 t=0380 n=1E
+v=10 t=0380 n=1E
+v=10 t=0380 n=1E
+v=10 t=0380 n=1E
+v=10 t=0380 n=1E
+v=10 t=0380 n=1E
+v=10 t=0380 n=1E
+v=10 t=0380 n=1E
+v=8 t=03C0 n=1E
+v=8 t=03C0 n=1E
+v=8 t=03C0 n=1E
+v=8 t=03C0 n=1E
+v=8 t=03C0 n=1E
+v=8 t=03C0 n=1E
+v=8 t=03C0 n=1E
+v=8 t=03C0 n=1E
+v=7 t=0400 n=1E
+v=7 t=0400 n=1E
+v=7 t=0400 n=1E
+v=7 t=0400 n=1E
+v=7 t=0400 n=1E
+v=7 t=0400 n=1E
+v=7 t=0400 n=1E
+v=7 t=0400 n=1E
+v=6 t=0440 n=1E
+v=6 t=0440 n=1E
+v=6 t=0440 n=1E
+v=6 t=0440 n=1E
+v=6 t=0440 n=1E
+v=6 t=0440 n=1E
+v=6 t=0440 n=1E
+v=6 t=0440 n=1E
+v=5 t=0480 n=1E
+v=5 t=0480 n=1E
+v=5 t=0480 n=1E
+v=5 t=0480 n=1E
+v=5 t=0480 n=1E
+v=5 t=0480 n=1E
+v=4 t=04C0 n=1E
+v=4 t=04C0 n=1E
+v=4 t=04C0 n=1E
+v=4 t=04C0 n=1E
+v=4 t=04C0 n=1E
+v=4 t=04C0 n=1E
+v=0 end
+
+effect GameOver MSX/MSX1_16.sfx
+loopat 0
+v=15 t=0100 n=10
+v=15 t=0200 n=10
+v=15 t=0300 n=10
+v=14 t=0400 n=10
+v=14 t=0500 n=10
+v=14 t=0600 n=10
+v=13 t=0700 n=10
+v=12 t=0800 n=10
+v=15 t=0600 n=1E
+v=15 t=0280 n=1E
+v=15 t=0300 n=1E
+v=14 t=0380 n=1E
+v=14 t=0400 n=1E
+v=14 t=0480 n=1E
+v=13 t=0500 n=1E
+v=13 t=0580 n=1E
+v=15 t=0300 n=1E
+v=15 t=0300 n=1E
+v=15 t=0300 n=1E
+v=15 t=0300 n=1E
+v=15 t=0300 n=1E
+v=15 t=0300 n=1E
+v=15 t=0340 n=1E
+v=15 t=0340 n=1E
+v=15 t=0340 n=1E
+v=15 t=0340 n=1E
+v=15 t=0340 n=1E
+v=15 t=0340 n=1E
+v=14 t=0380 n=1E
+v=14 t=0380 n=1E
+v=14 t=0380 n=1E
+v=14 t=0380 n=1E
+v=14 t=0380 n=1E
+v=14 t=0380 n=1E
+v=14 t=03C0 n=1E
+v=14 t=03C0 n=1E
+v=14 t=03C0 n=1E
+v=14 t=03C0 n=1E
+v=14 t=03C0 n=1E
+v=14 t=03C0 n=1E
+v=13 t=0400 n=1E
+v=13 t=0400 n=1E
+v=13 t=0400 n=1E
+v=13 t=0400 n=1E
+v=13 t=0400 n=1E
+v=13 t=0400 n=1E
+v=12 t=0440 n=1E
+v=12 t=0440 n=1E
+v=12 t=0440 n=1E
+v=12 t=0440 n=1E
+v=12 t=0440 n=1E
+v=12 t=0440 n=1E
+v=12 t=0480 n=1E
+v=12 t=0480 n=1E
+v=12 t=0480 n=1E
+v=12 t=0480 n=1E
+v=12 t=0480 n=1E
+v=12 t=0480 n=1E
+v=11 t=04C0 n=1E
+v=11 t=04C0 n=1E
+v=11 t=04C0 n=1E
+v=11 t=04C0 n=1E
+v=11 t=04C0 n=1E
+v=11 t=04C0 n=1E
+v=10 t=0500 n=1E
+v=10 t=0500 n=1E
+v=10 t=0500 n=1E
+v=10 t=0500 n=1E
+v=10 t=0500 n=1E
+v=10 t=0500 n=1E
+v=9 t=0540 n=1E
+v=9 t=0540 n=1E
+v=9 t=0540 n=1E
+v=9 t=0540 n=1E
+v=9 t=0540 n=1E
+v=9 t=0540 n=1E
+v=8 t=0580 n=1E
+v=8 t=0580 n=1E
+v=8 t=0580 n=1E
+v=8 t=0580 n=1E
+v=8 t=0580 n=1E
+v=8 t=0580 n=1E
+v=7 t=05C0 n=1E
+v=7 t=05C0 n=1E
+v=7 t=05C0 n=1E
+v=7 t=05C0 n=1E
+v=7 t=05C0 n=1E
+v=7 t=05C0 n=1E
+v=6 t=0600 n=1E
+v=6 t=0600 n=1E
+v=6 t=0600 n=1E
+v=6 t=0600 n=1E
+v=6 t=0600 n=1E
+v=6 t=0600 n=1E end
+
+effect CaptureDron sfxElite/CaptureDron.cse
+loopat 0
+v=8 t=0040
+v=8 t=0040
+v=8 t=0041
+v=8 t=0041
+v=8 t=0042
+v=8 t=0042
+v=8 t=0043
+v=8 t=0043
+v=9 t=0044
+v=9 t=0044
+v=9 t=0045
+v=9 t=0045
+v=9 t=0046
+v=9 t=0046
+v=9 t=0047
+v=9 t=0047
+v=10 t=0048
+v=10 t=0048
+v=10 t=0049
+v=10 t=0049
+v=10 t=004A
+v=10 t=004A
+v=10 t=004B
+v=10 t=004B
+v=11 t=004C
+v=11 t=004C
+v=11 t=004D
+v=11 t=004D
+v=11 t=004E
+v=11 t=004E
+v=11 t=004F
+v=11 t=004F
+v=12 t=0050
+v=12 t=0050
+v=12 t=0051
+v=12 t=0051
+v=12 t=0052
+v=12 t=0052
+v=12 t=0053
+v=12 t=0053
+v=0 end
+
+effect AlienDrone MSX/MSXa_12.sfx
+loopat 0
+v=14 t=02AB
+v=14 t=0285
+v=14 t=0261
+v=14 t=023F
+v=13 t=021E
+v=13 t=01FF
+v=13 t=01E3
+v=12 t=01C8
+v=12 t=01AE
+v=12 t=0196
+v=11 t=017F
+v=11 t=016A
+v=11 t=0155
+v=10 t=0142
+v=10 t=0130
+v=10 t=011F
+v=9 t=010F
+v=9 t=00FF
+v=9 t=00F1
+v=9 t=00E4
+v=8 t=00D7
+v=8 t=00CB
+v=8 t=00BF end
+
+effect PressPause sfxElite/PressPause.cse
+loopat 0
+v=14 t=016A
+v=13 t=00B5
+v=14 t=016A
+v=13 t=00B5
+v=14 t=016A
+v=13 t=00B5
+v=0 end
+
+effect CaptureCargo sfxElite/CaptureCargo2.cse
+loopat 0
+v=11 t=0200
+v=11 t=0300
+v=12 t=01F0
+v=12 t=02F0
+v=13 t=01E0
+v=13 t=02E0
+v=13 t=01D0
+v=13 t=02D0
+v=13 t=01C0
+v=13 t=02C0
+v=13 t=01B0
+v=13 t=02B0
+v=13 t=01A0
+v=13 t=02A0
+v=12 t=0190
+v=11 t=0290
+v=11 t=0180
+v=11 t=0280
+v=10 t=0170
+v=10 t=0270
+v=9 t=0160
+v=9 t=0260
+v=0 end
+
+effect Refueled sfxElite/Refueled.cse
+loopat 0
+v=13 t=00B5
+v=12 t=00B5
+v=13 t=003C
+v=12 t=003C
+v=12 t=00B5
+v=11 t=00B5
+v=12 t=003C
+v=10 t=003C
+v=11 t=00B5
+v=10 t=00B5
+v=10 t=003C
+v=9 t=003C
+v=10 t=00B5
+v=8 t=00B5
+v=9 t=003C
+v=8 t=003C
+v=8 t=00B5
+v=7 t=00B5
+v=8 t=003C
+v=7 t=003C
+v=0 end
+
+effect LaunchDescent sfxElite/LaunchDescent.cse
+loopat 0
+v=8 t=0040
+v=8 t=0040
+v=8 t=0041
+v=8 t=0041
+v=8 t=0042
+v=8 t=0042
+v=8 t=0043
+v=8 t=0043
+v=9 t=0044
+v=9 t=0044
+v=9 t=0045
+v=9 t=0045
+v=9 t=0046
+v=9 t=0046
+v=9 t=0047
+v=9 t=0047
+v=10 t=0048
+v=10 t=0048
+v=10 t=0049
+v=10 t=0049
+v=10 t=004A
+v=10 t=004A
+v=10 t=004B
+v=10 t=004B
+v=11 t=004C
+v=11 t=004C
+v=11 t=004D
+v=11 t=004D
+v=11 t=004E
+v=11 t=004E
+v=11 t=004F
+v=11 t=004F
+v=12 t=0050
+v=12 t=0050
+v=12 t=0051
+v=12 t=0051
+v=12 t=0052
+v=12 t=0052
+v=12 t=0053
+v=12 t=0053
+v=12 t=0054
+v=12 t=0054
+v=0 end
+
+effect JumpGate sfxElite/JumpGate.cse
+loopat 0
+v=14 t=0069
+v=15 t=0073
+v=15 t=0078
+v=15 t=007D
+v=15 t=0082
+v=15 t=008C
+v=15 t=008C
+v=15 t=0096
+v=15 t=009B
+v=15 t=00A5
+v=15 t=00AF
+v=15 t=00AF
+v=15 t=00BF
+v=15 t=00BF
+v=15 t=00C9
+v=15 t=00CE
+v=15 t=00D8
+v=15 t=00E7
+v=15 t=00EC
+v=15 t=00F6
+v=15 t=00F6
+v=15 t=0105
+v=15 t=0114
+v=15 t=0119
+v=15 t=0119
+v=15 t=0128
+v=15 t=013C
+v=15 t=014B
+v=15 t=0192 end
+
+effect Docking sfxElite/Docking5.cse
+loopat 8
+v=0
+v=0
+v=0
+v=0
+v=0
+v=0
+v=0
+v=0
+v=15 t=00BF
+v=15 t=00BF
+v=15 t=00BF
+v=15 t=00BF
+v=15 t=00F6
+v=15 t=0100
+v=15 t=010A
+v=15 t=010A
+v=15 t=0114
+v=15 t=011D
+v=15 t=0122
+v=15 t=012A
+v=14 t=0137
+v=15 t=013C
+v=15 t=0141
+v=15 t=014B
+v=15 t=0153
+v=15 t=0173
+v=15 t=017C
+v=15 t=0183
+v=15 t=0189
+v=15 t=0197
+v=15 t=019C
+v=14 t=01A1
+v=15 t=01B5
+v=15 t=01C5
+v=15 t=01D8
+v=15 t=01E1
+v=15 t=01FB
+v=15 t=01FF
+v=15 t=0204
+v=15 t=0208
+v=15 t=0219
+v=15 t=021E
+v=15 t=021E
+v=15 t=0228
+v=15 t=0256
+v=15 t=025B
+v=15 t=0265
+v=15 t=026E
+v=15 t=02A6
+v=15 t=02AC
+v=15 t=02B1
+v=15 t=02B6
+v=14 t=02BA
+v=15 t=02DD
+v=15 t=02EA
+v=15 t=0329
+v=15 t=032E
+v=15 t=02FC
+v=15 t=0305
+v=15 t=0356
+v=15 t=035F
+v=15 t=0369
+v=15 t=036F
+v=15 t=038D
+v=15 t=0392
+v=15 t=0383
+v=15 t=0387
+v=15 t=03CA
+v=15 t=03D3
+v=15 t=03C0
+v=15 t=03CB
+v=15 t=03DC
+v=15 t=03F4
+v=14 t=0400
+v=15 t=0429
+v=15 t=0429
+v=15 t=0429
+v=15 t=0429
+v=15 t=049E
+v=15 t=04A9
+v=15 t=04C4
+v=15 t=04D3
+v=15 t=0503
+v=15 t=050E
+v=15 t=0530
+v=15 t=053A
+v=15 t=055C
+v=15 t=056B
+v=15 t=05A6
+v=15 t=05B0
+v=15 t=05E5
+v=15 t=05F0
+v=15 t=062B
+v=15 t=063C
+v=15 t=0684
+v=15 t=068F
+v=15 t=06CF
+v=15 t=06DF
+v=15 t=0704
+v=15 t=0711
+v=15 t=073E
+v=15 t=0749
+v=15 t=077D
+v=15 t=0789
+v=15 t=07BD
+v=15 t=07C9
+v=15 t=07FE
+v=15 t=080C
+v=15 t=0849
+v=15 t=0858
+v=15 t=089D
+v=15 t=08AA
+v=15 t=08E3
+v=15 t=08EF
+v=15 t=0935
+v=15 t=0943
+v=15 t=0966
+v=15 t=0972
+v=15 t=09A2
+v=15 t=09AD
+v=15 t=09E4
+v=15 t=09EC
+v=15 t=0A24
+v=15 t=0A2F
+v=15 t=0A65
+v=15 t=0A6D
+v=15 t=0A78
+v=15 t=0A83
+v=15 t=0A92
+v=15 t=0A9E
+v=15 t=0AAB
+v=15 t=0ABA
+v=15 t=0AC9
+v=15 t=0AD8
+v=15 t=0AE8
+v=15 t=0AF4
+v=15 t=0B01
+v=15 t=0B11
+v=15 t=0B20
+v=15 t=0B2F
+v=15 t=0B3E
+v=15 t=0B50
+v=15 t=0B60
+v=14 t=0B6F
+v=12 t=0B7E
+v=10 t=0B8D
+v=8 t=0B9C
+v=6 t=0BAB
+v=4 t=0BB8
+v=2 t=0BC5
+v=0 end
+
+effect Launch sfxElite/Launch2.cse
+loopat 0
+v=6 t=01BA
+v=6 t=01BA
+v=6 t=01BA
+v=7 t=01BA
+v=7 t=01BA
+v=7 t=01BA
+v=8 t=01BA
+v=8 t=01BA
+v=8 t=01BA
+v=9 t=01BA
+v=9 t=01BA
+v=9 t=01BA
+v=9 t=01BA
+v=9 t=01BA
+v=9 t=01BA
+v=9 t=01B5
+v=9 t=01B5
+v=9 t=01B5
+v=10 t=01B0
+v=10 t=01B0
+v=10 t=01B0
+v=10 t=01AB
+v=10 t=01AB
+v=10 t=01AB
+v=10 t=01A6
+v=10 t=01A6
+v=10 t=01A6
+v=10 t=019C
+v=10 t=019C
+v=10 t=019C
+v=10 t=0192
+v=10 t=0192
+v=10 t=0192
+v=10 t=0188
+v=10 t=0188
+v=10 t=0188
+v=11 t=0183
+v=11 t=0183
+v=11 t=0183
+v=11 t=016E
+v=11 t=016E
+v=11 t=016E
+v=12 t=0169
+v=12 t=0169
+v=12 t=0169
+v=11 t=015A
+v=11 t=015A
+v=11 t=015A
+v=11 t=0150
+v=11 t=0150
+v=11 t=0150
+v=11 t=0146
+v=11 t=0146
+v=11 t=0146
+v=11 t=0137
+v=11 t=0137
+v=11 t=0137
+v=12 t=012D
+v=12 t=012D
+v=12 t=012D
+v=13 t=0123
+v=13 t=0123
+v=13 t=0123
+v=13 t=0119
+v=13 t=0119
+v=13 t=0119
+v=12 t=010F
+v=12 t=010F
+v=12 t=010F
+v=11 t=0105
+v=11 t=0105
+v=11 t=0105
+v=11 t=00F6
+v=11 t=00F6
+v=11 t=00F6
+v=13 t=00F1
+v=13 t=00F1
+v=13 t=00F1
+v=15 t=00EC
+v=15 t=00EC
+v=15 t=00EC
+v=15 t=00DD
+v=15 t=00DD
+v=14 t=00DD
+v=14 t=00DD
+v=15 t=00D3
+v=15 t=00D3
+v=15 t=00D3
+v=13 t=00CE
+v=13 t=00CE
+v=13 t=00CE
+v=13 t=00BF
+v=13 t=00BF
+v=15 t=00BF
+v=15 t=00BF
+v=15 t=00B4
+v=15 t=00B4
+v=15 t=00B4
+v=13 t=00AA
+v=13 t=00AA
+v=13 t=00AA
+v=15 t=00A5
+v=15 t=00A5
+v=15 t=00A5
+v=15 t=00A0
+v=15 t=00A0
+v=15 t=00A0
+v=13 t=0096
+v=13 t=0096
+v=13 t=0096
+v=14 t=008C
+v=14 t=008C
+v=14 t=008C
+v=15 t=0087
+v=15 t=0087
+v=15 t=0087
+v=13 t=007D
+v=13 t=007D
+v=13 t=007D
+v=15 t=0078
+v=15 t=0078
+v=15 t=0078
+v=13 t=0069
+v=13 t=0069
+v=13 t=0069
+v=15 t=0069
+v=13 t=005F
+v=13 t=005F
+v=13 t=005F
+v=15 t=005A
+v=15 t=005A
+v=15 t=005A
+v=13 t=0050
+v=13 t=0050
+v=13 t=0050
+v=14 t=004B
+v=14 t=004B
+v=14 t=004B
+v=14 t=0046
+v=14 t=0046
+v=14 t=0046
+v=14 t=0041
+v=14 t=0041
+v=14 t=0041
+v=14 t=003C
+v=14 t=003C
+v=14 t=003C
+v=13 t=0037
+v=13 t=0037
+v=13 t=0037
+v=14 t=0032
+v=14 t=0032
+v=14 t=0032
+v=14 t=002D
+v=14 t=002D
+v=14 t=002D
+v=14 t=0028
+v=14 t=0028
+v=14 t=0028
+v=14 t=0041
+v=14 t=0041
+v=14 t=0041 end
+
+effect HyperJump sfxElite/HyperJump.cse
+loopat 0
+v=7 t=0087
+v=9 t=0023
+v=11 t=0023
+v=12 t=0023
+v=12 t=004B
+v=12 t=0028
+v=13 t=0028
+v=13 t=002D
+v=13 t=002D
+v=14 t=002D
+v=14 t=002D
+v=14 t=002D
+v=14 t=0032
+v=14 t=0032
+v=14 t=0037
+v=14 t=0037
+v=14 t=0037
+v=14 t=003C
+v=14 t=003C
+v=15 t=003C
+v=15 t=007D
+v=15 t=0041
+v=14 t=0046
+v=13 t=004B
+v=14 t=004B
+v=15 t=004B
+v=15 t=004B
+v=15 t=0050
+v=15 t=0050
+v=13 t=0055
+v=12 t=005A
+v=12 t=005F
+v=14 t=005F
+v=14 t=0064
+v=15 t=0064
+v=15 t=0069
+v=15 t=0069
+v=15 t=006E
+v=12 t=0078
+v=12 t=0078
+v=9 t=007D
+v=9 t=0082
+v=11 t=0082
+v=13 t=0087
+v=14 t=008C
+v=15 t=0096
+v=15 t=009B
+v=15 t=009B
+v=15 t=00A0
+v=15 t=00A5
+v=15 t=00AA
+v=14 t=00AF
+v=14 t=00B4
+v=12 t=00BF
+v=11 t=00C4
+v=9 t=00C9
+v=8 t=00CE
+v=7 t=00D8
+v=10 t=00DD
+v=11 t=00E7
+v=13 t=00F1
+v=13 t=0100
+v=14 t=0100
+v=14 t=010A
+v=14 t=010A
+v=14 t=0114
+v=14 t=011E
+v=14 t=0128
+v=14 t=0137
+v=14 t=0146
+v=14 t=014B
+v=14 t=0155
+v=14 t=015A
+v=14 t=0164
+v=14 t=0173
+v=13 t=017E
+v=13 t=019C
+v=13 t=01A6
+v=13 t=01B0
+v=12 t=01BA
+v=12 t=01BF
+v=12 t=01CE
+v=12 t=01DD
+v=11 t=01EC
+v=10 t=020F
+v=10 t=021E
+v=9 t=0228
+v=8 t=0232
+v=8 t=0242
+v=7 t=0242
+v=7 t=0252
+v=6 t=0252
+v=6 t=0262
+v=5 t=0262
+v=5 t=0272
+v=4 t=0272
+v=4 t=0282
+v=3 t=0292
+v=3 t=02A2
+v=3 t=02A2
+v=2 t=02B2
+v=2 t=02B2
+v=1 t=02C2
+v=1 t=02C2 end
+
+effect Collision MSX/MSX2_23.sfx
+loopat 0
+v=15 t=0300
+v=14 t=0500
+v=14 t=0700
+v=14 t=0800
+v=15 t=0A00
+v=14 t=0C00
+v=14 t=0700
+v=13 t=0800
+v=0 t=0000
+v=15 t=0800
+v=14 t=0C00
+v=0 t=0000
+v=15 t=0400
+v=14 t=0700
+v=13 t=0C00
+v=0
+v=15 t=0600
+v=14 t=0800
+v=14 t=0A00
+v=13 t=0C00
+v=0 t=0000
+v=15 t=0A00
+v=14 t=0C00
+v=14 t=0D00
+v=13 t=0E00 end
+
+effect DestroyObj sfxElite/DestroyObj.cse
+loopat 0
+v=15 t=0300
+v=14 t=0500
+v=14 t=0700
+v=14 t=0800
+v=15 t=0A00
+v=14 t=0C00
+v=14 t=0700
+v=13 t=0800
+v=0 end

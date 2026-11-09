@@ -1,0 +1,77 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/DeliveryMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_Delivery+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,16,4}РЫНОК ПЕРЕВОЗЧИКОВ
+Msg_Delivery2+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,17,4}ТЕКУЩИЕ КОНТРАКТЫ
+Msg_nCabins+0|{nFlgPrn0xx}{nFlgPrn_xx1}{nSetCrdXY,2,2}СВОБОДНЫХ КАБИН:
+Msg_Reputation+0|{nSetCrdXY,25,2}РЕПУТАЦИЯ:{nSetCrdXY,2,3}МЕСТА В ТРЮМЕ:{nSetCrdXY,19,3}
+Msg_Goods+0|ПРОДУКТЫ
+Msg_Goods+1|{nSetAdrMsg{dw crProd_01},0,14}{dw crProd_02+5}
+Msg_Goods+2|{nSetAdrMsg{dw crProd_03},0,14}{dw crProd_04}
+Msg_Goods+3|ШМУДАК
+Msg_Goods+4|{nSetAdrMsg{dw crProd_06},0,14}{dw crProd_07}
+Msg_Goods+5|СТАНКИ
+Msg_Goods+6|{nSetAdrMsg{dw crProd_09},0,14}{dw crProd_0A+7}
+Msg_Goods+7|{nSetAdrMsg{dw crProd_0B},0,14}{dw crProd_0C}
+Msg_Goods+8|{nSetAdrMsg{dw crProd_0D},0,14}{dw crProd_0E}
+Msg_Goods+9|{nSetAdrMsg{dw crProd_0F},0АРТЕФАКТЫ,0}МЕТАЛЛОЛОМ
+Msg_Goods+10|{nSetAdrMsg{dw crProd_12},0,14}{dw crProd_13}
+Msg_Goods+11|МЯСО
+Msg_Goods+12|ШКУРЫ
+Msg_Goods+13|{nSetAdrMsg{dw crProd_16+8},0МЕХАНИЗМЫ,0}{nSetAdrMsg{dw crProd_18},0,14}{dw crProd_19}
+Msg_Goods+14|ДРОНЫ
+Msg_Goods+15|ПОЛИМЕРЫ
+Msg_Goods+16|{nSetAdrMsg{dw crProd_1C+11},0ЗАПЧАСТИ,0}{nSetAdrMsg{dw crProd_1E+7},0,14}{dw crProd_1F+6}
+Msg_Goods+17|ЛЕКАРСТВА
+Msg_Goods+18|{nSetAdrMsg{dw crProd_21+8},0ЗАРИН,0}{nSetAdrMsg{dw crProd_23},0МЯСО,0}ВОДА
+Msg_contrGoodsH+0|{nSetCrdX,7}ТОВАРЫ{nSetCrdX,19}{#A5}{nSetCrdX,28}{#A6}{nSetCrdX,34}ЗАЛОГ{nSetCrdX,42}{#A4}
+MsgContrGoods+0|{nSetCrdX,2}{nNumGoods}{nSetCrdX,8}{nNameGoods}{nSetCrdX,35}{nAdvance}{nSetCrdX,19}{nDest}{nSetCrdX,28}{nWithin}{nSetCrdX,43}{nFee}
+Msg_contrPassH+0|{nSetCrdX,7}ПАССАЖИРЫ{nSetCrdX,19}{#A5}{nSetCrdX,28}{#A6}{nSetCrdX,34}АВАНС{nSetCrdX,42}{#A4}
+MsgContrPass+0|{nSetCrdX,2}{nNamePassenger}{nSetCrdX,35}{nAdvance}{nSetCrdX,19}{nDest}{nSetCrdX,28}{nWithin}{nSetCrdX,43}{nFee}
+Msg_contrPackH+0|{nSetCrdX,7}ПОСЫЛКА{nSetCrdX,19}{#A5}{nSetCrdX,28}{#A6}{nSetCrdX,42}{#A4}
+MsgContrPack+0|{nSetCrdX,2}{nNamePackage}{nSetCrdX,19}{nDest}{nSetCrdX,28}{nWithin}{nSetCrdX,43}{nFee}
+Msg_InfoGoods+0|{nFlgPrn_2xx}{nClearDescrMsg}{nSetCrdXY,2,145}{nFlgPrn_xx1}{#A7}{nNameGoods}({nNumGoods}){#A9}{#A8}{#A4}{#AB}, И ВОЗВРАТ ПОЛНОЙ СУММЫ ЗАЛОГА.{nCloseDescrMsg}{#AA}
+Msg_InfoPassng+0|{nFlgPrn_2xx}{nClearDescrMsg}{nSetCrdXY,2,145}{nFlgPrn_xx1}НУЖНО {#A7}ПАССАЖИРОВ{#A9}{#A8}{#A4}{nAdvance} КР АВАНСОМ И {#AB}.{nCloseDescrMsg}{#AA}
+Msg_InfoPackage+0|{nFlgPrn_2xx}{nClearDescrMsg}{nSetCrdXY,2,145}{nFlgPrn_xx1}НЕОБХОДИМО {#A7} {nNamePackage}{#A9}{#A8}{#A4}{#AB}.{nCloseDescrMsg}{#AA}
+Msg_AccRefus+0|{nSetCrdX,5}ЗАКЛЮЧИТЬ КОНТРАКТ
+Msg_AccRefus+1|{nSetCrdX,5}РАЗОРВАТЬ КОНТРАКТ
+msgNamePackage1+0|НАЛОГОВЫЙ ОТЧЕТ
+msgNamePackage1+1|БЛАНКИ ЛИЦЕНЗИЙ
+msgNamePackage1+2|ИСКОВЫЕ ДЕЛА
+msgNamePackage1+3|ОБРАЗЦЫ ВИРУСОВ
+msgNamePackage1+4|СЕКРЕТНОЕ ДОСЬЕ
+msgNamePackage1+5|ГЕОДАННЫЕ
+msgNamePackage1+6|ЗВУКОЗАПИСИ
+msgNamePackage1+7|РЕДКИЕ ЭКСПОНАТЫ
+msgNamePackage1+8|ОПЫТНЫЕ ОБРАЗЦЫ
+msgNamePackage1+9|ПРОТОТИП ЛАЗЕРА
+msgNamePackage1+10|КОНСТРУКЦИИ БОМБ
+msgNamePackage1+11|БИОДАННЫЕ
+msgNamePackage1+12|АРХИВ ДОКУМЕНТОВ
+msgNamePackage1+13|МОДНЫЙ КОСТЮМ
+msgNamePackage1+14|ПЛАНЫ ВТОРЖЕНИЯ
+msgNamePackage1+15|КОЛЬЦО ВЛАСТИ
+msgNamePackage2+0|ЛЬВА
+msgNamePackage2+1|ТИГРА
+msgNamePackage2+2|ВОЛКА
+msgNamePackage2+3|ДРАКОНА
+msgNamePackage2+4|ЕХИДНЫ
+msgNamePackage2+5|ИРБИСА
+msgNamePackage2+6|МЕДВЕДЯ
+msgNamePackage2+7|ПИНГВИНА
+msgNamePackage3+0|КНИГА
+msgNamePackage3+1|СТАТУЯ
+msgNamePackage3+2|АМФОРА
+msgNamePackage3+3|ВАЗА
+msgNamePackage3+4|КУКЛА
+msgNamePackage3+5|КАРТИНА
+msgNamePackage3+6|БРОШЬ
+msgNamePackage3+7|ФЛЕЙТА
+msgNamePackage+0|ВИДЕО 
+msgNamePackage+1|РЕЦЕПТ 
+msgNamePackage+2|ШКУРА 
+msgNamePackage+3|ПРАВИЛА 
+msgNamePackage+4|РЕДКАЯ 
+msgNamePackage+5|ДОСЬЕ НА 
+AdrNamePackage+0|{dw msgDescr_7E}{dw msgDescr_7B}{dw msgNamePackage2}{dw msgDescr_7E}{dw msgNamePackage3}

@@ -1,0 +1,21 @@
+; Repeat a frozen drawing workload without AI/randomness.  HARN_GO is
+; the frame count; HARN_MOVE also advances the sky with the held stick.
+; HARN_TICKS is elapsed 50 Hz interrupts, with the PPU drained at both ends.
+HARN_GO:	.WORD	0
+HARN_MOVE:	.WORD	0
+HARN_TICKS:	.WORD	0
+DRAW_HARNESS:	CALL	RING_WAIT
+		MOV	CPU_VSYNC,HARN_TICKS
+1$:		TST	HARN_MOVE
+		BEQ	2$
+		CALL	UNIV_STEP
+2$:		CALL	UNIV_DRAW
+		CALL	STARS
+		CALL	SEG_FLUSH
+		CALL	RING_WAIT
+		DEC	HARN_GO
+		BGT	1$
+		MOV	CPU_VSYNC,R0
+		SUB	HARN_TICKS,R0
+		MOV	R0,HARN_TICKS
+		RETURN

@@ -1,0 +1,169 @@
+; =========================================================================
+; ovl.mac - overlays: code that lives on the disk and is read into one
+; window of RAM when it is wanted.
+;
+; The УКНЦ has 56K of RAM for everything and Elite Legend is 140K, so
+; the program is a RESIDENT core - the flight engine, the renderer, the
+; HUD, the galaxy - and a set of OVERLAYS: the docked screens, the maps,
+; the title, the missions' dialogue, anything that never runs while the
+; sky is moving.  An overlay is a separately assembled image linked
+; against the resident's symbols (tools/build_elite.py writes them out
+; of the listing), laid out to run at OVL_BASE, and stored on the disk by
+; file-relative block inside ELITE.DAT. Its first word is a jump into
+; its entry point, so the resident calls OVL_BASE and knows nothing else
+; about it.
+;
+; Where each overlay is on the disk is one sector, OVL_DIR_LBA, written
+; by the build and read once at start: two words an overlay, the LBA and
+; the sector count.  The build lays the overlays out AFTER the resident
+; is assembled - they need its addresses - and the resident never needs
+; theirs, which is what keeps the two builds from chasing each other.
+;
+; Only the resident may load an overlay: an overlay asking for another
+; would be replacing itself under its own feet.  Overlay code may not
+; be running when the window is read into, which is why every entry
+; returns to the resident before the next is loaded.
+; =========================================================================
+
+OVL_N	= 32.			; directory entries the sector holds room for
+; OVL_DIR, OVL_N*2 words (lba, sectors per overlay), is laid over the PPU
+; program's dead copy by src/tail.mac: OVL_INIT fills all of it, and
+; runs after the push.
+OVL_CUR:	.WORD	-1		; which one is in the window, -1 = none
+
+; The overlay cache (2026-09-25): the PPU's spare RAM keeps a copy of an
+; overlay as the disk gave it, and the next time it is wanted the PPU
+; copies it back into the window (COMMAND_2) - a few ticks where the
+; disk takes a turn of the platter and more.  The flight overlay has the
+; head of the block to itself, since leaving any screen reads it back;
+; the outfitter and the carrier market, the two biggest screens, have
+; plane 0 above the screen (HBANK_ADDR up, 9728 bytes that only the PPU
+; reaches: exactly their 19 sectors, and an address of 100000 up is how
+; COMMAND_2 tells it from PPU RAM); the others take the rest of the
+; block as they are first read, until it is full,
+; and nothing is let go: СТОП walks the screens in a circle wider than
+; the cache, and emptying it when full would miss on every one of them
+; (measured).  The title and the chooser are never kept.  A copy is
+; taken before the overlay has run, so it is the image as built, which
+; is what the disk would give.
+; OC_TAB, an overlay's PPU address (0 = not kept), is the directory's
+; unused upper half: OVL_INIT's copy of the sector clears it.
+OC_TAB	= OVL_DIR+<OVL_N*2>
+		.IIF	GT, OVL_MISSION-<<OVL_N/2>-1>, .ERROR ; OC_TAB overlaps the directory
+OC_NEXT:	.WORD	0		; the next free PPU address
+OC_OFF:		.WORD	0		; nonzero: no cache (the checks' A/B)
+OVL_TK:		.WORD	0		; ticks the last read took, for the checks
+
+; =========================================================================
+; OVL_INIT - read the directory sector.  Called once at start, before any
+; overlay is asked for; the window is free then, so the sector lands
+; there and the directory is copied out of it.
+; =========================================================================
+OVL_INIT:	MOV	#-1,OVL_CUR
+		MOV	#OVL_DIR_LBA,R0
+		MOV	#OVL_BASE,R1
+		MOV	#256.,R2		; one sector
+		CALL	DATA_READ
+		BCC .+6
+		JMP RT_IOERROR		; a drive that will not read the
+					;   directory cannot run the game
+					;   either: report the error and exit
+		MOV	#OVL_BASE,R0
+		MOV	#OVL_DIR,R1
+		MOV	#OVL_N*2,R2
+1$:		MOV	(R0)+,(R1)+
+		SOB	R2,1$
+		MOV	OC_BASE,OC_NEXT		; past the flight overlay's place
+		ADD	#<OVL_END-OVL_BASE>,OC_NEXT
+		RETURN
+
+; =========================================================================
+; OVL_LOAD - R0 = an overlay's number (OVL_* in defs.mac).  Reads it into
+; the window unless it is there already.  Clobbers R0..R3.  Does not
+; return until the overlay is in. Three failed reads restore the
+; terminal and report an RT-11 error rather than continuing with stale code.
+; =========================================================================
+OVL_LOAD:	CMP	R0,OVL_CUR
+		BEQ	9$
+		MOV	CPU_VSYNC,OVL_TK
+		MOV	R0,-(SP)
+		ASL	R0
+		MOV	OC_TAB(R0),OC_PPU	; a copy in the cache?
+		ASL	R0			; four bytes an entry
+		MOV	OVL_DIR+2(R0),R2	; sectors
+		BEQ	8$			; an overlay the disk has not got:
+					;   the build wrote no entry
+		SWAB	R2			; sectors * 256 = words
+		MOV	R2,OC_WDS
+		TST	OC_OFF
+		BNE	1$
+		TST	OC_PPU
+		BEQ	1$
+		CLR	OC_DIR			; the cache into the window
+		CALL	OC_COPY
+		BR	5$
+1$:		MOV	OVL_DIR(R0),R0		; lba
+		MOV	#OVL_BASE,R1
+		CALL	DATA_READ
+		BCC .+6
+		JMP RT_IOERROR
+		TST	OC_OFF			; and keep a copy, if there is
+		BNE	5$			;   room for one
+		TST	OC_BASE
+		BEQ	5$
+		MOV	(SP),R0
+		MOV	OC_BASE,R1		; the flight overlay at the head
+		CMP	R0,#OVL_FLY
+		BEQ	3$
+		MOV	#HBANK_ADDR,R1		; the outfitter and the carrier
+		CMP	R0,#OVL_EQUIP		;   market in plane 0 above the
+		BEQ	3$			;   screen, one after the other:
+		CMP	R0,#OVL_CARRIER		;   19 sectors, and so is the room
+		BNE	6$
+		MOV	OVL_DIR+<OVL_EQUIP*4>+2,R2
+		SWAB	R2			; two plane-0 bytes a word
+		ASL	R2
+		ADD	R2,R1
+		MOV	OC_WDS,R2
+		ASL	R2
+		ADD	R1,R2			; the end, at 200000 at the most
+		BCC	3$			;   (which wraps to nought)
+		TST	R2
+		BNE	5$
+		BR	3$
+6$:		CMP	R0,#OVL_TITLE		; not the title and the chooser,
+		BEQ	5$			;   which the boot reads and a
+		CMP	R0,#OVL_CMDR		;   death, and nothing else, and
+		BEQ	5$			;   the dashboard, drawn only for a
+		CMP	R0,#OVL_DASH		;   new cockpit
+		BEQ	5$
+		MOV	OC_NEXT,R1		; the rest after it, while they fit:
+		MOV	OC_WDS,R2		;   the СТОП round is a circle, and
+		ASL	R2			;   a circle wider than the cache
+		ADD	R1,R2			;   is served best by a fixed part
+		MOV	OC_BASE,R3		;   of it, so nothing is let go
+		ADD	#<OC_WORDS*2>,R3
+		CMP	R2,R3
+		BHI	5$
+		MOV	R2,OC_NEXT
+3$:		ASL	R0
+		MOV	R1,OC_TAB(R0)
+		MOV	R1,OC_PPU
+		MOV	#1,OC_DIR		; the window into the cache
+		CALL	OC_COPY
+5$:		MOV	(SP)+,OVL_CUR
+		MOV	CPU_VSYNC,R0
+		SUB	OVL_TK,R0
+		MOV	R0,OVL_TK
+9$:		RETURN
+7$:		MOV	#2,TX			; say so, and try again
+		MOV	#4,TY
+		MOV	#S_M_DISKERR,R1
+		CALL	PUTS
+		MOV	(SP)+,R0
+		BR	OVL_LOAD
+8$:		MOV	#2,TX			; a missing overlay is a build
+		MOV	#4,TY			;   fault, not a disk fault: it
+		MOV	#S_M_NOOVL,R1		;   stays on the screen
+		CALL	PUTS
+8$$:		BR	8$$

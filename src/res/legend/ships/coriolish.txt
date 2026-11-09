@@ -1,0 +1,80 @@
+# d_CoriolisH - extracted from orig/legend by tools/legend_ships.py;
+# object 0 of AdrDataShips, hull d_Coriolis.
+# `make extract` overwrites it.
+name CORIOLISH
+index 0
+class 0
+speed 0
+energy 240
+bounty 0
+laser 0
+collide 160
+cargo 0
+launch 6
+dot 120
+rating 0
+flags 0
+flags2 0
+laservert 0
+type 7
+objflags 4
+shipnum 0
+radius 160
+vertex   160     0   160
+vertex  -160     0   160
+vertex   160     0  -160
+vertex  -160     0  -160
+vertex     0   160   160
+vertex     0  -160   160
+vertex     0   160  -160
+vertex     0  -160  -160
+vertex   160  -160     0
+vertex   160   160     0
+vertex  -160   160     0
+vertex  -160  -160     0
+vertex    10   -30   160
+vertex    10    30   160
+vertex   -10    30   160
+vertex   -10   -30   160
+edge 0 5 31 0 1
+edge 0 4 31 0 2
+edge 4 1 31 0 3
+edge 1 5 31 0 4
+edge 5 8 31 1 5
+edge 0 8 31 1 6
+edge 0 9 31 2 6
+edge 9 4 31 2 8
+edge 4 10 31 3 8
+edge 1 10 31 3 7
+edge 1 11 31 4 7
+edge 5 11 31 4 5
+edge 2 7 31 10 13
+edge 2 6 31 11 13
+edge 6 3 31 12 13
+edge 3 7 31 9 13
+edge 8 7 31 5 10
+edge 8 2 31 6 10
+edge 9 2 31 6 11
+edge 9 6 31 8 11
+edge 10 6 31 8 12
+edge 10 3 31 7 12
+edge 11 3 31 7 9
+edge 11 7 31 5 9
+edge 12 13 30 0 0
+edge 13 14 30 0 0
+edge 14 15 30 0 0
+edge 15 12 30 0 0
+normal    0    0  160
+normal  107 -107  107
+normal  107  107  107
+normal -107  107  107
+normal -107 -107  107
+normal    0 -160    0
+normal  160    0    0
+normal -160    0    0
+normal    0  160    0
+normal -107 -107 -107
+normal  107 -107 -107
+normal  107  107 -107
+normal -107  107 -107
+normal    0    0 -160

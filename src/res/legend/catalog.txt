@@ -1,0 +1,28 @@
+# Extracted from orig/legend by tools/legend_tables.py; `make extract` overwrites it.
+
+# n name | date speed tonnage price obj cockpit base_tonnage fit0 fit1 fit2 fit3 fit4 fit5 ecotech chance mission
+# date: in-service year; obj: AdrDataShips number of its hull; cockpit 0..19;
+# fit0..5: which equipment fits (bit per item, priceEquip order);
+# ecotech: bits 7-5 minimum economy, 4-0 minimum tech level;
+# chance: of being for sale; mission: PilotMissionComplete gate.
+
+ 1 Adder                  | 2914 24 10 650000 52 1 20 135 251 255 243 203 253 227 64 0
+ 2 Anaconda               | 2856 14 750 6500000 36 12 20 255 251 255 255 255 255 39 24 2
+ 3 Asp MK-2               | 2878 40 10 3750000 29 6 20 223 251 255 255 255 255 9 12 1
+ 4 Boa                    | 3017 24 125 4500000 37 13 20 255 251 255 255 255 255 5 37 1
+ 5 Cobra MK-1             | 2855 26 10 1000000 38 4 20 255 255 255 251 235 255 163 56 0
+ 6 Cobra MK-3             | 3100 30 20 1500000 35 0 20 255 255 255 255 255 255 101 64 0
+ 7 Constrictor            | 0 37 90 5250000 31 18 20 255 255 255 255 255 255 108 32 16
+ 8 Cobra MK-4             | 3267 30 80 4500000 35 5 80 255 255 255 255 255 255 241 96 7
+ 9 FerdeLance             | 3100 30 12 4850000 30 19 20 223 251 255 255 255 255 73 24 7
+10 Gecko                  | 2852 30 6 1120000 54 11 20 151 251 255 51 203 253 197 28 0
+11 Krait                  | 3027 30 10 890000 51 9 20 63 251 255 251 239 253 196 40 0
+12 Mamba                  | 3110 32 4 1250000 55 7 20 23 251 255 187 203 253 198 48 0
+13 Moray                  | 3028 25 7 1250000 56 10 20 183 251 255 243 203 253 228 64 0
+14 Taipan (gecko из новисибирской версии) | 0 37 50 2400000 57 17 20 255 255 255 255 255 255 77 32 7
+15 Python                 | 2700 20 100 2360000 34 14 20 255 255 255 255 255 255 164 64 0
+16 Sidewinder             | 2982 37 5 300000 50 8 20 23 251 255 179 203 253 226 56 0
+17 Boomslang (mamba из новисибирской версии) | 0 32 15 500000 58 3 20 255 251 255 251 235 253 195 52 0
+18 Thargoid               | 0 20 1500 15000000 26 15 20 63 251 255 255 255 255 15 16 191
+19 Thargoid6              | 0 24 1700 20000000 27 16 20 63 251 255 255 255 255 16 16 191
+20 Worm                   | 3101 23 5 250000 53 2 20 7 251 255 51 203 253 224 80 0

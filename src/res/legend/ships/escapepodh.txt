@@ -1,0 +1,36 @@
+# d_EscapePodH - extracted from orig/legend by tools/legend_ships.py;
+# object 20 of AdrDataShips, hull d_EscapePod.
+# `make extract` overwrites it.
+name ESCAPEPODH
+index 20
+class 1
+speed 8
+energy 17
+bounty 0
+laser 255
+collide 16
+cargo 67
+launch 0
+dot 8
+rating 50
+flags 1
+flags2 4
+laservert 0
+type 7
+objflags 164
+shipnum 0
+radius 36
+vertex    -7     0    36
+vertex    -7   -14   -12
+vertex    -7    14   -12
+vertex    21     0     0
+edge 0 1 31 3 2
+edge 1 2 31 3 0
+edge 2 3 31 1 0
+edge 3 0 31 2 1
+edge 0 2 31 3 1
+edge 3 1 31 2 0
+normal   52    0 -122
+normal   39  103   30
+normal   39 -103   30
+normal -112    0    0

@@ -1,0 +1,214 @@
+; =========================================================================
+; ovl_dash.mac - the dashboard, drawn for the cockpit being flown.  AN
+; OVERLAY (src/ovl.list): DASH_DRAW (src/hud.mac) reads it in and calls
+; its first word when a commander comes aboard, and whenever the
+; cockpit is entered after the ship has changed.
+;
+; Phase 6, plan A4: Legend's twenty cockpits drawn from their cockpit
+; blocks in one style, not from twenty hand-drawn pictures.  What the
+; blocks say differs between them is the energy banks (drawn a bar
+; each by BANKS_DRAW), the missile rack (RACK: cocpMaxMiss cells) and the
+; scanner dish (cocpScanerNum) - every cockpit has the same seven
+; gauges and roll and pitch (cocpAdrInd, 2026-09-25).  The dish is
+; Legend's own picture for the cockpit (src/res/legend/scanners.txt,
+; tools/scanner_gen.py), doubled across through EXPTAB and made half as
+; tall again by drawing every other row twice: Legend's Base dish is
+; then 107 by 31 about its centre, which is the port's SCAN_RX by
+; SCAN_RY, so the blips land where they always did.
+;
+; Everything else here was HUD_FRAME and the gauges' labels, which the
+; resident drew every time a value changed: the rule under the view,
+; the compass ring, and the labels once, from this overlay's table.
+; =========================================================================
+
+		JMP	DASH_ENTRY		; the overlay's entry, at OVL_BASE
+
+SC_X0	= <SCAN_CX/8.>-15.		; the dish's first byte column: it is
+					;   SC_W (15) bytes doubled, centred on
+					;   SCAN_CX - a literal, because SC_W
+					;   comes after (checked at the end)
+SC_Y0	= SCAN_CY-34.			; its first line: row 22.5 of 46, half
+					;   as tall again, on SCAN_CY
+
+DASH_ENTRY:	MOV	#-1,HI_LAST
+		MOV	#DASH_Y,R0		; the band, black
+		MOV	#DASH_H,R1
+		CLR	R2
+		CALL	FILL_LINES
+		MOV	#HUD_LAST,R0		; nothing on it has been drawn
+		MOV	#NGAUGES,R1
+1$:		MOV	#-1,(R0)+
+		SOB	R1,1$
+		CALL	RING_WAIT		; the CPU draws the dish itself
+		CALL	DS_DISH
+		CALL	CLIP_ALL
+		MOV	#0,LX0			; the rule between view and panel,
+		MOV	#DASH_Y,LY0		;   on the band's first line: the
+		MOV	#SCRW-1,LX1		;   view's last one is inside the
+		MOV	#DASH_Y,LY1		;   view's clip box and is cleared
+		CALL	DRAW_LINE		;   with it
+		CALL	CLIP_DASH
+		CALL	DS_COMPASS
+		CALL	CLIP_VIEW
+		MOV	#DS_LABELS,R5		; and the labels
+2$:		MOV	(R5)+,R0
+		BEQ	3$
+		MOV	(R5)+,R1
+		CALL	TEXT_AT
+		MOV	(R5)+,R1
+		MOV	R5,-(SP)
+		CALL	PUTS
+		MOV	(SP)+,R5
+		BR	2$
+3$:		TST	CKV_MAXMISS		; a rack only where there is one
+		BEQ	9$
+		MOV	#LBAR_LX,R0
+		MOV	#RACK_Y,R1
+		CALL	TEXT_AT
+		MOV	#S_RACK,R1
+		CALL	PUTS
+9$:		RETURN
+
+DS_LABELS:	.WORD	26.,204.,S_H_ECM
+		.WORD	47.,204.,S_H_CLOAK
+		.WORD	52.,204.,S_H_DANGER
+		.WORD	LBAR_LX, LBAR_Y, S_SHIELD_F
+		.WORD	LBAR_LX, LBAR_Y+BAR_STEP, S_SHIELD_A
+		.WORD	LBAR_LX, LBAR_Y+<2*BAR_STEP>, S_FUEL
+		.WORD	LBAR_LX, LBAR_Y+<3*BAR_STEP>, S_CABIN_T
+		.WORD	LBAR_LX, LBAR_Y+<4*BAR_STEP>, S_LASER_T
+		.WORD	LBAR_LX, LBAR_Y+<5*BAR_STEP>, S_ALTITUDE
+		.WORD	RBAR_LX, RBAR_Y, S_SPEED
+		.WORD	RBAR_LX, RBAR_Y+BAR_STEP, S_ROLL
+		.WORD	RBAR_LX, RBAR_Y+<2*BAR_STEP>, S_PITCH
+		.WORD	RBAR_LX, RBAR_Y+<3*BAR_STEP>, S_ENERGY
+		.WORD	0
+
+; =========================================================================
+; DS_DISH - the cockpit's scanner dish (SC_OF by CKV_SCAN), out of its
+; run-length stream: SC_ROWS rows of SC_W bytes, each byte doubled into
+; two screen bytes through EXPTAB in plane 1, every other row drawn
+; twice.  Clobbers R0..R5.
+; =========================================================================
+DS_P:		.WORD	0		; the stream
+DS_N:		.WORD	0		; bytes left in this run
+DS_LIT:		.WORD	0		; nonzero: the run is of literals
+DS_ROW:		.WORD	0
+DS_A:		.WORD	0		; the next line's plane address
+DS_BUF:		.BLKB	16.		; a row, decoded: SC_W bytes, which
+		.EVEN			;   build/scanners.mac defines after
+					;   this (.BLKB wants its count in
+					;   pass one), and checked at the end
+
+DS_DISH:	MOV	CKV_SCAN,R0
+		CMP	R0,#6
+		BLOS	1$
+		CLR	R0
+1$:		MOVB	SC_OF(R0),R0
+		ASL	R0
+		MOV	SC_ART(R0),DS_P
+		CLR	DS_N
+		CLR	DS_ROW
+		MOV	#<<SC_Y0*SCRWB>+VRAM+SC_X0>,DS_A
+10$:		MOV	#DS_BUF,R4		; the row, out of the stream
+		MOV	#SC_W,R5
+11$:		CALL	DS_BYTE
+		MOVB	R0,(R4)+
+		SOB	R5,11$
+		CALL	DS_LINE
+		BIT	#1,DS_ROW		; an even row twice
+		BNE	12$
+		CALL	DS_LINE
+12$:		INC	DS_ROW
+		CMP	DS_ROW,#SC_ROWS
+		BLO	10$
+		RETURN
+
+; DS_LINE - DS_BUF onto the line at DS_A, and DS_A on a line.
+DS_LINE:	MOV	#DS_BUF,R4
+		MOV	DS_A,R3
+		MOV	#SC_W,R5
+1$:		MOVB	(R4)+,R0
+		BIC	#177400,R0
+		BEQ	2$
+		ASL	R0
+		MOV	EXPTAB(R0),R1		; doubled: the low byte is the left
+		MOV	R1,R2
+		BIC	#177400,R2		; plane 1 only: the low byte
+		MOV	R3,@#VADDR
+		MOV	R2,@#VDATA
+		SWAB	R1
+		BIC	#177400,R1
+		MOV	R3,R2
+		INC	R2
+		MOV	R2,@#VADDR
+		MOV	R1,@#VDATA
+2$:		ADD	#2,R3
+		SOB	R5,1$
+		ADD	#SCRWB,DS_A
+		RETURN
+
+; DS_BYTE - the next byte of the stream in R0.  Clobbers R0.
+DS_BYTE:	TST	DS_N
+		BNE	2$
+		MOVB	@DS_P,R0		; a new run: c < 128 is c+1
+		BIC	#177400,R0		;   literals, else c-127 empties
+		INC	DS_P
+		CLR	DS_LIT
+		CMP	R0,#128.
+		BHIS	1$
+		INC	R0
+		INC	DS_LIT
+		BR	3$
+1$:		SUB	#127.,R0
+3$:		MOV	R0,DS_N
+2$:		DEC	DS_N
+		CLR	R0
+		TST	DS_LIT
+		BEQ	9$
+		MOVB	@DS_P,R0
+		BIC	#177400,R0
+		INC	DS_P
+9$:		RETURN
+
+; =========================================================================
+; DS_COMPASS - the compass ring, out of every second entry of SCANTAB.
+; It starts on entry 14, which is where the eighth chord ends, so the
+; ring closes: seeding it at due east leaves a 22.5-degree notch, and at
+; fifteen pixels across that notch is most of one side.
+; =========================================================================
+DS_COMPASS:	MOV	#SCANTAB+56.,R5
+		MOV	(R5)+,R1
+		MUL	#COMP_RX,R1		; R1 odd: the low word
+		ASH	#-8.,R1
+		ADD	#COMP_CX,R1
+		MOV	R1,LX0
+		MOV	(R5)+,R1
+		MUL	#COMP_RY,R1
+		ASH	#-8.,R1
+		ADD	#COMP_CY,R1
+		MOV	R1,LY0
+		MOV	#SCANTAB,R5
+		MOV	#8.,R4
+20$:		MOV	(R5)+,R1
+		MUL	#COMP_RX,R1
+		ASH	#-8.,R1
+		ADD	#COMP_CX,R1
+		MOV	R1,LX1
+		MOV	(R5)+,R1
+		MUL	#COMP_RY,R1
+		ASH	#-8.,R1
+		ADD	#COMP_CY,R1
+		MOV	R1,LY1
+		MOV	R4,-(SP)
+		MOV	R5,-(SP)
+		CALL	DRAW_LINE
+		MOV	(SP)+,R5
+		MOV	(SP)+,R4
+		ADD	#4,R5			; over the entry between
+		MOV	LX1,LX0
+		MOV	LY1,LY0
+		SOB	R4,20$
+		RETURN
+		.IIF	GT, SC_W-16., .ERROR ; DS_BUF is too small for a dish row
+		.IIF	NE, SC_W-15., .ERROR ; SC_X0 assumes a dish 15 bytes wide

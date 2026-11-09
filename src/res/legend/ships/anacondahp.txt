@@ -1,0 +1,22 @@
+# d_AnacondaHp - extracted from orig/legend by tools/legend_ships.py;
+# object 48 of AdrDataShips, hull d_Anaconda.
+# `make extract` overwrites it.
+name ANACONDAHP
+index 48
+class 3
+speed 36
+energy 250
+bounty 250
+laser 150
+collide 80
+cargo 7
+launch 45
+dot 56
+rating 1152
+flags 12
+flags2 0
+laservert 14
+type 10
+objflags 240
+shipnum 2
+geometry ANACONDAHPL

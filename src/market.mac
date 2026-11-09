@@ -1,0 +1,215 @@
+; =========================================================================
+; market.mac - the purse and the hold, and what stays in the resident of
+; the market.
+;
+; The market itself - Legend's prices out of the commodity table crossed
+; with the economy and the record's random byte, the stock that moves
+; when the commander trades, the smaller market a hermit's rock keeps -
+; is in src/ovl_trade.mac since it only ever runs on the market screen.
+; What the resident keeps is the stock, because it outlives the screen:
+; the station's is the record's P_PRODUCT (Legend saves it) and the
+; rock's is AST_QTY below (Legend's AstGenProduct, which it does not).
+; Both are stocked on arrival in a system, by MKT_ARRIVE, which loads the
+; overlay for it - the first thing the overlay is asked, and the only
+; thing it is asked while the sky is not standing still.
+; =========================================================================
+
+; AST_QTY, the hermit's stock (a word a good), is laid over the PPU
+; program's dead copy by src/tail.mac: MKT_ARRIVE fills it before
+; anything reads it.
+
+; MKT_ARRIVE - a new system: the record's random byte is rolled and both
+; markets are stocked from it (the overlay's MKT_STOCK).  Called from a
+; hyperspace or galactic jump and for a new commander, never from
+; overlay code: it loads an overlay.  Clobbers everything.
+MKT_ARRIVE:	MOV	#OVL_TRADE,R0
+		CALL	OVL_LOAD
+		MOV	#2,R0
+		JMP	OVL_BASE
+
+; YARD_ARRIVE - the same for the yard: which of Legend's ships are for
+; sale here (the yard overlay's YD_STOCK, GenerateShipOnStation).
+YARD_ARRIVE:	MOV	#OVL_YARD,R0
+		CALL	OVL_LOAD
+		MOV	#2,R0
+		JMP	OVL_BASE
+
+; ST_PRICE - the station's prices as MKT_STOCK last worked them out, a
+; copy the resident keeps because the yard sells the whole hold at them
+; (Legend's SellAllProducts) from another overlay.  It is laid over the
+; PPU program's dead copy by src/tail.mac, like AST_QTY.
+
+; HOLD_SELL - everything in the hold sold to the station at ST_PRICE:
+; the goods go back on its shelf, the tonnes come back to the hold,
+; and the law notices what was sold (SellAllProducts, which is
+; SellProducts over every good).  Clobbers everything.
+HS_I:		.WORD	0
+HOLD_SELL:	CLR	HS_I
+1$:		MOV	HS_I,R2
+		ASL	R2
+		MOV	CARGO(R2),R3		; how many
+		BEQ	5$
+		CLR	CARGO(R2)
+		ADD	R3,P_PRODUCT(R2)	; back on the shelf, which holds
+		BCC	2$			;   65535 at most
+		MOV	#-1,P_PRODUCT(R2)
+2$:		MOV	ST_PRICE(R2),R0		; price times count, 32-bit:
+		MOV	R0,R4			;   MUL is signed, so a price
+		MUL	R3,R0			;   with bit 15 set is put right
+		TST	R4			;   by a count in the high word
+		BPL	21$
+		ADD	R3,R0
+21$:		CALL	CASH_ADD32
+		MOV	HS_I,R0
+		CALL	GOOD_UNIT		; tonnes give their room back
+		BNE	3$
+		ADD	R3,P_FREECARGO
+3$:		MOV	HS_I,R0			; and the law, a unit at a time
+		CALL	TRADE_LEGAL
+		SOB	R3,3$
+5$:		INC	HS_I
+		CMP	HS_I,#NGOODS
+		BLO	1$
+		RETURN
+
+; CAPACITY - CalcCapacity: R0 = the tonnes free in the hold of the
+; ship being flown - its cockpit block's hold (COCKPIT_SET first), the
+; larger bay's, less the cabins' and what is aboard; nought while the
+; first mission's cargo fills it.  Resident: the yard and the missions
+; both ask.  Clobbers R0..R4.
+CAPACITY:	CLR	R0
+		TSTB	P_M1+1
+		BNE	9$
+		CALL	HOLD_USED
+		MOVB	P_CABINS,R1
+		BIC	#177400,R1
+		MUL	#CABIN_TONS,R1		; R1 odd - low 16 bits
+		ADD	R1,R0
+		MOV	R0,-(SP)
+		MOV	CKV_TONS,R0
+		TSTB	P_LARGECARGO
+		BMI	1$
+		ADD	#HOLD_BAY,R0
+1$:		SUB	(SP)+,R0
+9$:		RETURN
+
+; =========================================================================
+; TRADE_LEGAL - BuySellLegalStat: a unit of good R0 bought or sold goes
+; on the record - one for firearms and nerve gas, two for slaves and
+; narcotics - and the record saturates.  Legend's units, so a tonne of
+; firearms is a twenty-fifth of what the 1985 rules call an offence.
+; Keeps R0, R2, R3.
+; =========================================================================
+TRADE_LEGAL:	MOV	#1,R1
+		CMP	R0,#10.			; firearms
+		BEQ	1$
+		CMP	R0,#34.			; nerve gas
+		BEQ	1$
+		MOV	#2,R1
+		CMP	R0,#3			; slaves
+		BEQ	1$
+		CMP	R0,#6			; narcotics
+		BNE	9$
+1$:		ADD	R1,P_LEGAL
+		BCC	9$
+		MOV	#-1,P_LEGAL
+9$:		RETURN
+
+; =========================================================================
+; CARGO_CLEAR - empty the hold.
+; =========================================================================
+CARGO_CLEAR:	MOV	#CARGO,R0
+		MOV	#NGOODS_L,R1
+1$:		CLR	(R0)+
+		SOB	R1,1$
+		RETURN
+
+; GOOD_UNIT - R0 = a good; returns R0 = its unit byte, 0 for tonnes,
+; which are the only unit that takes up room.  Clobbers R1.
+GOOD_UNIT:	MOV	R0,R1
+		MUL	#G.SIZE,R1		; R1 odd - low 16 bits
+		ADD	#GOODS,R1
+		MOVB	G.UNIT(R1),R0
+		BIC	#177400,R0
+		RETURN
+
+; =========================================================================
+; The purse and the hold.
+;
+; Money is kept in tenths of a credit as a 32-bit value (CASH_H:CASH_L),
+; because Elite lets a commander get rich enough that 16 bits would wrap
+; long before the game was over.  The hold is Legend's P_FREECARGO, the
+; tonnes still free - the outfitter's larger bay adds HOLD_BAY to it;
+; goods sold by weight take a tonne a unit, and the three sold in
+; kilogrammes or grammes take none, which is exactly why they are worth
+; carrying.  HOLD_USED still counts what is aboard, for the page that
+; shows it.
+; =========================================================================
+
+
+; CASH_ADD - add the tenths of a credit in R0 to the purse.
+CASH_ADD:	ADD	R0,CASH_L
+		ADC	CASH_H
+		RETURN
+
+; CASH_SUB - take R0 tenths out of the purse.
+CASH_SUB:	SUB	R0,CASH_L
+		SBC	CASH_H
+		RETURN
+
+; CASH_CAN - C clear if the purse holds at least R0 tenths.
+CASH_CAN:	TST	CASH_H
+		BNE	1$			; more than 65535 tenths: plenty
+		CMP	CASH_L,R0
+		BLO	2$
+1$:		CLC
+		RETURN
+2$:		SEC
+		RETURN
+
+; The same three for a 32-bit price in R0:R1 (high:low), the shape
+; Legend's equipment and ship prices come in - Legend's
+; DecCashPilot_HLDE and IncCashPilot_HLDE.  CASH_PAY32 is the pair of
+; the first two: C set and nothing taken when the purse is short.
+CASH_ADD32:	ADD	R1,CASH_L
+		ADC	CASH_H
+		ADD	R0,CASH_H
+		RETURN
+
+CASH_SUB32:	SUB	R1,CASH_L
+		SBC	CASH_H
+		SUB	R0,CASH_H
+		RETURN
+
+CASH_CAN32:	CMP	CASH_H,R0		; unsigned, high word first
+		BLO	2$
+		BHI	1$
+		CMP	CASH_L,R1
+		BLO	2$
+1$:		CLC
+		RETURN
+2$:		SEC
+		RETURN
+
+CASH_PAY32:	CALL	CASH_CAN32
+		BCS	1$
+		CALL	CASH_SUB32
+		CLC
+1$:		RETURN
+
+; HOLD_USED - tonnes in the hold, in R0.
+HOLD_USED:	CLR	R0
+		MOV	#GOODS,R1
+		MOV	#CARGO,R2
+		MOV	#NGOODS,R3
+1$:		MOVB	G.UNIT(R1),R4		; only tonnes take up room
+		BNE	2$
+		ADD	@R2,R0
+2$:		ADD	#G.SIZE,R1
+		TST	(R2)+
+		SOB	R3,1$
+		RETURN
+
+; Buying and selling - BUY_ONE, SELL_ONE and the price that moves - are
+; in src/ovl_trade.mac since 2026-09-10: they only ever run on the market
+; screen, which is an overlay.

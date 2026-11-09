@@ -1,0 +1,61 @@
+; Legend eObjSetRndShip goto788 / rndSetAsteroids.  Positions here are
+; signed 32-bit, while Legend stores sign/magnitude 24-bit coordinates.
+; Compare the sum of absolute high words: 128 is the original carry.
+AST_FIELD:	MOV	#UNIV+U.SIZE,R5		; the sun
+		CALL	AST_DISTANCE
+		CMP	R0,#8.			; too close to the sun
+		BLO	8$
+		MOV	#UNIV,R5		; the world
+		CALL	AST_DISTANCE
+		CMP	R0,#128.
+		BLO	8$
+		CALL	AI_RND
+		BIC	#^C3,R0
+		ASR	R0
+		ADC	R0
+		ADD	#2,R0			; 2, 3, 3, 4 rocks
+		MOV	R0,SP_N
+		MOV	#1,SP_C			; at most one large asteroid
+1$:		CALL	AI_RND
+		CMP	R0,#240.
+		BHIS	2$
+		CLR	R0
+2$:		BIC	#^C1,R0
+		BIT	R0,SP_C
+		BNE	3$
+		CLR	R0
+		BR	4$
+3$:		CLR	SP_C
+4$:		ADD	#SH_ASTEROIDHA,R0
+		CALL	SPAWN_FWD
+		BCS	9$
+		MOVB	#-64.,U.TLR(R5)
+		DEC	SP_N
+		BGT	1$
+9$:		SEC
+		RETURN
+8$:		CLC
+		RETURN
+
+; R5 = body. R0 = saturating sum floor(abs(coordinate)/65536).
+AST_DISTANCE:	CLR	R0
+		TST	U.TYPE(R5)
+		BEQ	9$
+		MOV	#3,R3
+		MOV	R5,R4
+		ADD	#U.X,R4
+1$:		MOV	U.XH-U.X(R4),R1
+		BPL	2$
+		NEG	R1
+		TST	(R4)
+		BEQ	2$
+		DEC	R1
+2$:		ADD	R1,R0
+		BCS	8$
+		CMP	R0,#255.
+		BHIS	8$
+		ADD	#2,R4
+		SOB	R3,1$
+9$:		RETURN
+8$:		MOV	#255.,R0
+		RETURN

@@ -1,0 +1,134 @@
+; Four ordinary RT-11 files. Replacement is tentative until CLOSE.
+; Stage in the first 1K of the two drained segment buffers. Missing,
+; truncated or invalid-header loads leave the live commander unchanged.
+NCMDRS = 4
+CMDR_SECTORS = 2
+SV_AREA: .BLKW 10
+SV_FILE: .RAD50 /DK ELSAV1DAT/
+SV_NAMES: .RAD50 /AV1AV2AV3AV4/
+SV_BUFFER: .WORD 0
+SV_WORDS: .WORD 0
+SV_TRIES: .WORD 0
+SAVE_STATUS: .WORD 0 ; last write failed; shown on the docked screen
+SAVE_BUFFER = SEGBUF
+ .IIF GT, 1024.-<MAXSEG*SEGREC*2>, .ERROR ; staging must fit the segment buffers
+
+SV_NAME:
+ ASL R0
+ MOV SV_NAMES(R0),SV_FILE+4
+ RETURN
+
+; R0 = slot; R1 = buffer; R2 = words. File length is always two blocks.
+SLOT_READ:
+ MOV R1,SV_BUFFER
+ MOV R2,SV_WORDS
+ CALL SV_NAME
+ CALL SEG_RESET
+ INC RT_IOBUSY
+ .LOOKU #SV_AREA,#1,#SV_FILE
+ BCS 8$
+ CMP R0,#CMDR_SECTORS
+ BNE 8$
+ MOV #3,SV_TRIES
+1$: .READW #SV_AREA,#1,SV_BUFFER,SV_WORDS,#0
+ BCC 2$
+ DEC SV_TRIES
+ BNE 1$
+ BR 8$
+2$:
+ .PURGE #1
+ CLR RT_IOBUSY
+ CLC
+ RETURN
+8$: .PURGE #1
+ CLR RT_IOBUSY
+ SEC
+ RETURN
+
+SAVE_CMDR:
+WRITE_CMDR:
+ CALL SEG_RESET
+ INC RT_IOBUSY
+ MOV CMDR_SLOT,R0
+ CALL SV_NAME
+ ; Save record first, then deterministic zero padding. The transfer
+ ; buffer is outside the active overlay and monitor swap window.
+ MOV #PILOT,R0
+ MOV #SAVE_BUFFER,R1
+ MOV #PILOT_LEN/2,R2
+1$: MOV (R0)+,(R1)+
+ SOB R2,1$
+ MOV #<1024.-PILOT_LEN>/2,R2
+2$: CLR (R1)+
+ SOB R2,2$
+ .ENTER #SV_AREA,#1,#SV_FILE,#CMDR_SECTORS
+ BCS 8$
+ .WRITW #SV_AREA,#1,#SAVE_BUFFER,#512.,#0
+ BCS 8$
+ .CLOSE #1
+ BCS 8$
+ CLR SAVE_STATUS
+ CLR RT_IOBUSY
+ CLC
+ RETURN
+8$: .PURGE #1
+ MOV #1,SAVE_STATUS
+ CLR RT_IOBUSY
+ SEC
+ RETURN
+
+LOAD_CMDR:
+ MOV CMDR_SLOT,R0
+ MOV #SAVE_BUFFER,R1
+ MOV #512.,R2
+ CALL SLOT_READ
+ BCS 9$
+ CMP SAVE_BUFFER,#PILOT_SIGN
+ BNE 9$
+ CMP SAVE_BUFFER+2,#PILOT_VERS
+ BNE 9$
+ MOV #SAVE_BUFFER,R0
+ MOV #PILOT,R1
+ MOV #PILOT_LEN/2,R2
+1$: MOV (R0)+,(R1)+
+ SOB R2,1$
+ CALL GAL_SEEDOF
+ CLC
+ RETURN
+9$: SEC
+ RETURN
+
+; SHIP_RESET - the ship as it sits in a bay: full banks, cold gun, no
+; way on, nothing locked, and not in witchspace.  Called wherever the
+; commander is put into a station - a dock, the capsule, the galactic
+; drive - and once on the way into the game, because the trip back
+; through the title after a death used to keep the dead ship's state:
+; energy under 24, no forward shield, WITCH still set so the next launch
+; from Lave was into witchspace, and a MISS_LOCK on a slot something
+; else now occupies.
+; =========================================================================
+SHIP_RESET:	CLR SAVE_STATUS
+		CLR	PSPEED
+		CLR	PROLL
+		CLR	PPITCH
+		MOV	GALNUM,CHART_GAL	; the chart shows where he is
+		MOV	#ENERGY_MAX,PSHIELD_F
+		MOV	#ENERGY_MAX,PSHIELD_A
+		MOV	#PBANKS,R0		; every bank full, whatever the
+		MOV	#NBANKS_MAX,R1		;   cockpit's count
+1$:		MOV	#ENERGY_MAX,(R0)+
+		SOB	R1,1$
+		MOV	#30.,PCABTEMP
+		CLR	PLASTEMP
+		CLR	ECM_TIME
+		CLR	CLOAK_ON
+		MOV	#255.,PALTITUDE
+		CLR	VIEW_DIR
+		CLR	WITCH
+		CLR	MISS_LOCK
+		CLR	DC_ON
+		CLR	HYP_SHOW
+		CLR	CO_MODE			; the compass back to standard
+		CLR	MISS_KIND		;   and the space bar to missiles
+		MOV	#LAS_NONE,LAST_WEAPON
+		RETURN

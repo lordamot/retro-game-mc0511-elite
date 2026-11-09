@@ -1,0 +1,664 @@
+; =========================================================================
+; ship.mac - drawing a wireframe model.
+;
+; A model (built by tools/ships_gen.py from src/res/ships/*.txt) is
+;
+;   +0  vertex count
+;   +2  edge count
+;   +4  bounding radius
+;   +6  vertices, three words each: x, y, z
+;   ..  edges, two bytes each: the vertex indices
+;
+; Drawing goes through the segment buffer.  Every line that survives
+; clipping is recorded there in its already-clipped screen coordinates,
+; so the whole frame can be erased by drawing the same segments again -
+; XOR twice is a no-op.  That is what keeps a 640x288 wireframe alive on
+; this machine: the view is never cleared, and only the pixels a ship
+; actually lit are ever touched twice.
+; =========================================================================
+
+; SVX, SVY, SVOK, SVNEED and SLIST - the projected vertices and the
+; edges kept - are laid over the dead copy of the PPU program in
+; src/tail.mac.
+MAXVERT	= 34.			; the largest model the pipeline handles:
+				; Legend's generation ship, 34 vertices
+MAXSEG	= 160.			; segments one frame may leave on screen
+MAXEDGE	= 48.			; the largest model has 46
+
+; A segment is recorded as the walk LINE_RUN needs - three words, see
+; the head of src/gfx.mac - rather than as the four coordinates LINE
+; would have to work it out from a second time.  Erasing a frame is
+; drawing every one of its segments again, so the setup would otherwise
+; be paid for twice on every segment on screen.
+SEGREC	= 6.			; bytes of recorded walk per segment
+
+; There are TWO of them, and they ping-pong: one holds the frame that is
+; ON SCREEN, the other is being filled.  That is what lets the renderer
+; leave alone anything that has not changed.  The frame used to be rubbed
+; out in one go at the top of the loop and not put back until the whole
+; 3D pipeline had run, so at ten frames a second the ships, the gunsight,
+; the scanner and the compass were absent or half-drawn for most of every
+; ninety-five milliseconds - which is what the flicker was.  Now each
+; segment is compared with the one that stood at the same index last
+; frame: identical, and it is simply left on the screen; different, and
+; the new one is drawn and the old one rubbed out immediately after it.
+;
+; A real back buffer was measured first and does not fit.  The window's
+; plane address is sixteen bits and the low half of the plane IS CPU
+; RAM, so there are 32768 bytes of display space, of which the screen
+; takes 23040 - 9728 spare against the 16000 a second copy of the space
+; view needs.  Copying rather than flipping is worse still: 8000 word
+; writes at ~19us is about 152ms against a whole frame of 95.
+SEGBUF:		.BLKW	<SEGREC/2>*MAXSEG
+SEGBUFB:	.BLKW	<SEGREC/2>*MAXSEG
+SEGNEW:		.WORD	SEGBUF		; the one being filled
+SEGOLD:		.WORD	SEGBUFB		; the one on the screen
+SEGWP:		.WORD	SEGBUF		; where the next one goes: a cursor
+					;   rather than a multiply per segment
+SEGOP:		.WORD	SEGBUFB		; and the record at the same index in
+					;   the frame on screen - kept in step
+					;   with SEGCNT for the same reason
+SEGOCNT:	.WORD	0		; how many the frame on screen has
+SF_I:		.WORD	0		; SEG_FLUSH's cursor
+SEGCNT:		.WORD	0
+SEGPREV:	.WORD	0		; what SEGCNT reached in the last COMPLETE
+					;   frame.  SEGCNT itself is only meaningful
+					;   at the end of one, and nothing outside
+					;   the loop can tell where in a frame it is
+					;   looking - `make verify` reads this.
+SEGFULL:	.WORD	0		; segments dropped because the buffer filled
+NOCLIP:		.WORD	0		; every projected vertex of the hull being
+				;   drawn is inside the clip box, so none of
+				;   its edges can leave it and SEG_LINE can
+				;   skip the clipper altogether.  Set by
+				;   SHIP_DRAW and cleared before it returns,
+				;   so nothing else ever sees it set.
+
+; ---- the arguments SHIP_DRAW takes -------------------------------------
+SD_MODEL:	.WORD	0		; model record
+SD_MAT:		.WORD	0		; 3x3 Q14 orientation
+SD_X:		.WORD	0		; position in camera space
+SD_Y:		.WORD	0
+SD_Z:		.WORD	0
+SD_SH:		.WORD	0		; how far the position was shifted down
+					;   to fit (POS_NARROW): 0 for anything
+					;   inside sixteen bits
+
+SD_NV:		.WORD	0
+SD_NE:		.WORD	0
+SD_VP:		.WORD	0		; cursor over the vertex list
+SD_EP:		.WORD	0		; ... and the edge list
+SD_I:		.WORD	0
+SD_DIST:	.WORD	0		; how far off the hull is, on the
+					;   original's own 0..31 scale
+SD_NF:		.WORD	0		; faces, and where their normals are
+SD_NP:		.WORD	0
+SD_FI:		.WORD	0
+SD_VIS:		.WORD	0		; bit n set: face n is turned towards
+					;   the eye (FACE_VIS); all set for a
+					;   shape with no normals to cull by
+SD_NL:		.WORD	0		; edges in SLIST (VERT_MARK)
+SD_NVL:		.WORD	0		; ... and vertices in SVLIST
+SD_VL:		.WORD	0		; the vertex pass's cursor over it
+SD_V2:		.WORD	0		; and the vertex it is on, as an offset
+SD_P:		.WORD	0,0,0		; the hull's centre, for the face test
+MAXFACE	= 16.			; a bit of SD_VIS each
+SD_TMP:		.WORD	0,0,0		; one vertex, rotated and translated
+
+
+; =========================================================================
+; SEG_RESET - forget the recorded frame without drawing anything.
+; =========================================================================
+SEG_RESET:	CALL	RING_WAIT	; whatever is handed over is drawn
+		CLR	SEGCNT		;   first, so a clear that follows
+		CLR	SEGOCNT			; nothing is on the screen either
+		MOV	SEGNEW,SEGWP
+		MOV	SEGOLD,SEGOP
+		CLR	SEGFULL
+		CALL	BODY_FORGET	; the view is blanked whenever this is
+		RETURN			; called, so the bodies are gone too
+
+; =========================================================================
+; SEG_FLUSH - close the frame.  Anything the frame on screen had beyond
+; what this one drew is rubbed out, and the two buffers change places.
+; Called once at the end of every drawing loop; called twice running, it
+; leaves the view empty.  Clobbers R0..R5.
+; =========================================================================
+SEG_FLUSH:	MOV	SEGCNT,SEGPREV		; the frame just finished
+		MOV	SEGCNT,SF_I
+1$:		CMP	SF_I,SEGOCNT		; the old frame's tail: segments
+		BGE	5$			;   nothing this frame replaced
+		MOV	SEGOP,R4		; SEGOP stands at index SEGCNT of
+		ADD	#SEGREC,SEGOP		;   the old frame, where SEG_LINE
+		CALL	RING_PUTR		;   left it: already clipped
+		INC	SF_I
+		BR	1$
+
+5$:		MOV	SEGOLD,R0		; what was drawn is now what is on
+		MOV	SEGNEW,SEGOLD		;   the screen
+		MOV	R0,SEGNEW
+		MOV	SEGCNT,SEGOCNT
+		CLR	SEGCNT
+		MOV	SEGNEW,SEGWP
+		MOV	SEGOLD,SEGOP
+		RETURN
+
+; =========================================================================
+; SEG_LINE - clip LX0..LY1, draw it, and record it for the erase pass.
+; Clobbers R0..R5.
+; =========================================================================
+SEG_LINE:	TST	NOCLIP			; the hull this belongs to is wholly
+		BNE	6$			;   inside the box, and the box is
+		CALL	CLIP_LINE		;   convex, so a segment between two
+		BCS	9$			;   of its vertices cannot leave it
+6$:		CMP	SEGCNT,#MAXSEG
+		BLT	1$
+		MOV	#LREC,R4		; buffer full: draw it anyway, but
+		MOV	R4,R5			;   it will not be erased cleanly
+		CALL	LINE_SETUP
+		INC	SEGFULL
+		JMP	RING_PUTR
+
+1$:		MOV	SEGWP,R4		; the walk is RECORDED as it is worked
+		MOV	R4,R5			;   out rather than copied afterwards
+		CALL	LINE_SETUP
+		MOV	R5,SEGWP		; LINE_SETUP leaves it past the record
+
+		CMP	SEGCNT,SEGOCNT		; did the frame on screen have a
+		BGE	4$			;   segment at this index?
+		MOV	SEGOP,R0
+		CMP	(R0)+,(R4)		; the same walk is the same pixels,
+		BNE	3$			;   so there is nothing to do at
+		CMP	(R0)+,2(R4)		;   all: it is already lit
+		BNE	3$
+		CMP	(R0)+,4(R4)
+		BEQ	8$
+
+3$:		MOV	SEGOP,R5		; the new one goes on FIRST. XOR
+		CALL	RING_PUT2		;   does not care about the order,
+						;   and this way the screen is never
+		BR	8$			;   missing the line, only briefly
+					;   carrying both
+
+4$:		CALL	RING_PUTR		; nothing stood here last frame
+8$:		INC	SEGCNT
+		ADD	#SEGREC,SEGOP		; the old frame's cursor keeps step
+9$:		RETURN
+
+; =========================================================================
+; The bodies - the planet and the sun - are kept in a buffer of their own,
+; because they are the most expensive thing in the sky and the least
+; likely to move.  A planet 40 pixels across is eight long chords; the
+; ships in front of it are short ones.  Redrawing it every frame cost
+; about 40% of the frame time, measured by taking it out.
+;
+; XOR is what makes leaving it there work: a ship drawn across the
+; outline and then rubbed out again restores exactly the pixels it
+; covered, so a body that has not moved is still correct several frames
+; later.  UNIV_DRAW measures every body first and only erases and redraws
+; them when one of them has actually shifted a pixel or changed size.
+; =========================================================================
+; A buffer each, because the two bodies do NOT move together on the
+; screen even though they are driven by the same flying: the world sits
+; on the axis and its projection barely stirs, while the sun is off to
+; one side and sweeps across the view several times faster.  With one
+; buffer and one flag between them, a sun that had moved a pixel
+; redrew the world as well - fifty segments to put back thirty-six -
+; and that was a third of a moving frame.
+MAXBODY	= 48.			; planet: 32 rim + two 8-chord ellipses;
+				; the filled sun has its own span cache
+NBODIES	= 2
+BODYREC	= SEGREC*MAXBODY	; bytes in one list
+
+; Each body keeps TWO lists, the same way the frame does: one is on the
+; screen and one is being drawn, and BODYSIDE says which half of the pair
+; is which.  Until this went in, a body that had moved was rubbed out
+; whole and then drawn again whole, which is thirty-odd segments off the
+; screen and back on - the one deep dip left in the flicker trace after
+; the frame buffer learnt to difference.  Now a chord that lands on the
+; same pixels as last time is left exactly where it is, and one that does
+; not is drawn before its predecessor is taken off.
+;
+; It pays twice over.  A world at cruising speed changes size by a pixel
+; about every forty frames, but its PROJECTION creeps every frame, and
+; most of the outline is unchanged when it does.
+BODYBUF:	.BLKW	<<SEGREC/2>*MAXBODY>*2
+BODYCNT:	.WORD	0,0		; segments the list being drawn holds
+BODYOCNT:	.WORD	0,0		; ... and the one on the screen
+BODYSIDE:	.WORD	0,0		; which half of the pair is being drawn
+BODY_CUR:	.WORD	0		; the body being drawn, 0 or 1
+BODY_BP:	.WORD	0		; BODY_CUR*2 - the offset into those
+BODY_NP:	.WORD	0		; the next record of the list being
+					;   drawn, and ...
+BODY_OP:	.WORD	0		; ... the record at the same index of
+					;   the list on the screen: cursors,
+					;   set by BODY_BEGIN once a body and
+					;   stepped a record at a time, where
+					;   three MULs a chord used to be
+BF_I:		.WORD	0		; BODY_FLUSH's cursor
+
+; BODY_HALF - R0 = the base of half R1 (0 or 1) of body BODY_CUR.
+BODY_HALF:	MOV	BODY_CUR,R0
+		ASL	R0
+		ADD	R1,R0
+		MUL	#BODYREC,R0		; R0 EVEN, so the low word of the
+		ADD	#BODYBUF,R1		;   product is the one in R1
+		MOV	R1,R0
+		RETURN
+
+; BODY_NEWP - R0 = the list being drawn.  BODY_BP must be set.
+BODY_NEWP:	MOV	BODY_BP,R1
+		MOV	BODYSIDE(R1),R1
+		BR	BODY_HALF
+
+; BODY_OLDP - R0 = the list that is on the screen.
+BODY_OLDP:	MOV	BODY_BP,R1
+		MOV	BODYSIDE(R1),R1
+		MOV	#1,R0			; the other half of the pair
+		XOR	R0,R1
+		BR	BODY_HALF
+
+; BODY_BEGIN - BODY_CUR is about to be drawn: point the two cursors at
+; the start of its two lists.  Clobbers R0,R1.
+BODY_BEGIN:	MOV	BODY_CUR,R1
+		ASL	R1
+		MOV	R1,BODY_BP
+		CALL	BODY_NEWP
+		MOV	R0,BODY_NP
+		CALL	BODY_OLDP
+		MOV	R0,BODY_OP
+		RETURN
+
+; BODY_FORGET - the bodies are no longer on screen.  Only for use when
+; something has blanked the view.
+BODY_FORGET:	CALL	SUN_FORGET
+		CLR	BODYCNT
+		CLR	BODYCNT+2
+		CLR	BODYOCNT
+		CLR	BODYOCNT+2
+		MOV	#UNIV,R0
+		MOV	#NUNIV,R1
+1$:		CLR	U.BR(R0)
+		ADD	#U.SIZE,R0
+		SOB	R1,1$
+		RETURN
+
+; BODY_FLUSH - close this body's frame: rub out whatever the list on the
+; screen had beyond what has just been drawn, and change the halves over.
+; Only ever called straight after the body HAS been redrawn - called on a
+; frame where it was left alone it would take it off the screen.
+BODY_FLUSH:	MOV	BODY_CUR,R1
+		ASL	R1
+		MOV	R1,BODY_BP
+		MOV	BODYCNT(R1),BF_I
+1$:		MOV	BODY_BP,R1
+		CMP	BF_I,BODYOCNT(R1)
+		BGE	5$
+		MOV	BODY_OP,R4		; BODY_LINE left the cursor at index
+		ADD	#SEGREC,BODY_OP		;   BODYCNT of the old list
+		CALL	RING_PUTR		; already clipped when recorded
+		INC	BF_I
+		BR	1$
+
+5$:		MOV	BODY_BP,R1		; what was drawn is what is on the
+		MOV	BODYCNT(R1),BODYOCNT(R1)	; screen now
+		CLR	BODYCNT(R1)
+		MOV	BODYSIDE(R1),R0		; and the two change places
+		INC	R0
+		BIC	#177776,R0
+		MOV	R0,BODYSIDE(R1)
+		RETURN
+
+; BODY_LINE - SEG_LINE for a body: clip, draw, and record it in the
+; buffer of whichever body is being drawn rather than the frame one.
+BODY_LINE:	TST	NOCLIP			; the whole body is inside the view,
+		BNE	5$			;   so no chord of it can leave it
+		CALL	CLIP_LINE
+		BCS	9$
+5$:		MOV	BODY_BP,R1		; the count of the body being drawn
+		CMP	BODYCNT(R1),#MAXBODY
+		BLT	1$
+		MOV	#LREC,R4		; the list is full: drawn, but it
+		MOV	R4,R5			; cannot be rubbed out
+		CALL	LINE_SETUP
+		JMP	RING_PUTR
+
+1$:		MOV	BODY_NP,R4		; the walk is written straight into
+		MOV	R4,R5			;   the list, and the cursor moves
+		CALL	LINE_SETUP		;   past it
+		MOV	R5,BODY_NP
+
+		MOV	BODY_BP,R1		; did the list on screen have a
+		MOV	BODYCNT(R1),R0		;   segment at this index?
+		CMP	R0,BODYOCNT(R1)
+		BGE	4$
+		MOV	BODY_OP,R0
+		CMP	(R0)+,(R4)		; the same walk is the same pixels,
+		BNE	3$			;   so there is nothing to do: it
+		CMP	(R0)+,2(R4)		;   is already lit
+		BNE	3$
+		CMP	(R0)+,4(R4)
+		BEQ	7$
+
+3$:		MOV	BODY_OP,R5		; the new chord goes on FIRST, and
+		CALL	RING_PUT2		;   last frame's comes off after it
+7$:		ADD	#SEGREC,BODY_OP		; the old list's cursor keeps step
+		BR	8$
+
+4$:		CALL	RING_PUTR		; nothing stood here last frame
+8$:		MOV	BODY_BP,R1
+		INC	BODYCNT(R1)
+9$:		RETURN
+
+; =========================================================================
+; FACE_VIS - set SD_VIS, a bit for each of the model's faces that is
+; turned towards the eye.
+;
+; The eye is the origin and the hull's centre is at P, so the vector
+; from a face out to the eye is -P, and an outward-pointing normal N
+; faces us when N . P < 0.  Elite tests it at the hull's centre rather
+; than at each face, which for something the size of a ship is the same
+; answer and a great deal less arithmetic.
+;
+; Rather than rotate every normal into camera space, P is rotated into
+; MODEL space once and the normals are used exactly as they are stored:
+; the matrix is orthonormal, so that is just its transpose.  Nine
+; products once, then three a face.
+;
+; Clobbers R0..R5.
+; =========================================================================
+FACE_VIS:	MOV	#177777,SD_VIS		; no normals: nothing is culled
+		TST	SD_NF
+		BEQ	9$
+		MOV	SD_X,SD_P
+		MOV	SD_Y,SD_P+2
+		MOV	SD_Z,SD_P+4
+		MOV	#SD_P,R4
+		MOV	SD_MAT,R5
+		CALL	MATVEC_T		; VOUT = the centre, in model space
+
+		CLR	SD_VIS
+		MOV	SD_NF,SD_FI		; faces left
+		MOV	SD_NP,R4
+		MOV	#1,R5			; this face's bit
+10$:		CLR	R0			; the total, in R0:R1 rather than
+		CLR	R1			; in memory - see MATVEC
+		MOV	(R4)+,R2		; nx * Px
+		MOV	VOUT,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+
+		MOV	(R4)+,R2		; ny * Py
+		MOV	VOUT+2,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+
+		MOV	(R4)+,R2		; nz * Pz
+		MOV	VOUT+4,R3
+		MUL	R3,R2
+		ADD	R3,R1
+		ADC	R0
+		ADD	R2,R0
+
+		TST	R0			; only the sign of the total
+		BGE	11$			;   decides it, and the branch has
+		BIS	R5,SD_VIS		;   to come straight off the TST
+11$:		ASL	R5
+		DEC	SD_FI
+		BGT	10$
+9$:		RETURN
+
+; =========================================================================
+; VERT_MARK - which edges are drawn, and which vertices that leaves worth
+; projecting.
+;
+; Whether an edge survives is decided without looking at its endpoints -
+; its own distance threshold and the two faces it lies on settle it - so
+; the cheapest way to skip a vertex is to walk the edges first and mark
+; the ones still wanted.  About 29% of them go, and it is the big hulls
+; that gain: a Cobra Mk III projects 17 of its 28 vertices on average, a
+; Krait 10 of 17.  The edges that survive go into SLIST as pairs of
+; vertex offsets, so the draw pass walks those and nothing else.
+;
+; The face test is one BIT: FPAIR turns an edge's faces byte - a face a
+; nibble - into the mask of its two faces, and SD_VIS has a bit for each
+; face turned towards the eye.  It used to be the nibbles pulled apart
+; with an ASH (a shift loop), two table reads and two tests, on every
+; edge, and then all of it again in the draw pass: the edges were 14% of
+; the frame between the two walks (2026-09-27).
+;
+; The original does this differently, storing up to four face indices in
+; every vertex and testing those.  Walking the edges needs none of that
+; and cannot disagree with the edge pass, which is worth more here than
+; the six bytes it would save.
+;
+; Clobbers R0..R5.
+; =========================================================================
+VERT_MARK:	MOV	#SVNEED,R0
+		MOV	SD_NV,R1
+1$:		CLR	(R0)+
+		SOB	R1,1$
+
+		MOV	#SLIST,R3		; the edges kept
+		MOV	#SVLIST,R2		; the vertices they use
+		MOV	SD_EP,R4
+		MOV	SD_NE,R5
+		BEQ	9$
+		MOV	SD_VIS,R1
+10$:		CMPB	(R4)+,SD_DIST		; how close you have to be
+		BLT	19$			; too far off to be drawn
+		MOVB	2(R4),R0		; the faces it lies on
+		BIC	#177400,R0		; MOVB sign-extends
+		ASL	R0
+		BIT	FPAIR(R0),R1
+		BEQ	19$			; both point away
+		MOVB	(R4)+,R0		; drawn, so both of its ends have to
+		MOVB	R0,(R3)+		;   be projected: listed the first
+		TST	SVNEED(R0)		;   time an edge wants them
+		BNE	11$
+		MOV	R4,SVNEED(R0)		; (anything nonzero)
+		MOVB	R0,(R2)+
+11$:		MOVB	(R4)+,R0
+		MOVB	R0,(R3)+
+		TST	SVNEED(R0)
+		BNE	12$
+		MOV	R4,SVNEED(R0)
+		MOVB	R0,(R2)+
+12$:		INC	R4			; past the faces
+		SOB	R5,10$
+		BR	9$
+19$:		ADD	#3,R4
+		SOB	R5,10$
+9$:		SUB	#SLIST,R3
+		ASR	R3
+		MOV	R3,SD_NL
+		SUB	#SVLIST,R2
+		MOV	R2,SD_NVL
+		RETURN
+
+; FPAIR_INIT - FPAIR[f] = the bits of the two faces in the nibbles of f.
+; Once, at start.  Clobbers R0..R3.
+FPAIR_INIT:	MOV	#FPAIR,R0
+		CLR	R1			; f
+1$:		MOV	R1,R2			; the low nibble's bit
+		BIC	#177760,R2
+		MOV	#1,R3
+		ASH	R2,R3
+		MOV	R3,(R0)
+		MOV	R1,R2			; and the high nibble's
+		ASH	#-4,R2
+		MOV	#1,R3
+		ASH	R2,R3
+		BIS	R3,(R0)+
+		INC	R1
+		CMP	R1,#256.
+		BLO	1$
+		RETURN
+
+; FPAIR is initialized over the dead PPU copy (src/tail.mac).
+
+; =========================================================================
+; SHIP_CONE - can any of this hull be on screen at all?
+;
+; The view's edges are planes through the eye: x = +-z/2, because the
+; focal length for x is 640 and the screen is 640 wide, and y = +-0.26z
+; for the same reason at 384 and 200.  A sphere is compared with all
+; four, which settles every vertex at once whatever its own z: the
+; planes are cones from the eye, so what is inside them projects inside
+; the view however near it comes.
+;
+; Two slacks, both towards drawing rather than skipping.  The margin is
+; 2r where the exact plane distance wants r*sqrt(5)/2 = 1.12r, because
+; the blueprints' own bounding radius is not always a true bound - the
+; Coriolis says 160 and reaches 226, the Krait 96 and reaches 125.  And
+; the y planes are taken at z/4+z/32 = 0.281z against the 0.260z the
+; view really reaches, so the test can never cut a hull that is still
+; showing.
+;
+; SD_Z must be positive, which UNIV_DRAW has already established.
+; Returns C set when nothing of the hull can be seen.  Clobbers R0..R4.
+; =========================================================================
+SHIP_CONE:	MOV	SD_MODEL,R0
+		CALL	HULL_RADIUS
+		MOV	R3,R0		; the bounding radius
+		ASL	R0			; 2r, the margin both edges use
+		BLT	9$			; an absurd radius: draw it
+		MOV	SD_X,R2			; |x|
+		BGE	1$
+		NEG	R2
+1$:		BLT	9$			; -32768 has no absolute value
+		MOV	SD_Y,R3			; |y|
+		BGE	2$
+		NEG	R3
+2$:		BLT	9$
+		MOV	SD_Z,R1
+		ASR	R1			; z/2 - the left and right edges
+		SUB	R0,R2			; |x| - 2r > z/2: off to one side
+		CMP	R2,R1
+		BGT	8$
+		MOV	SD_Z,R1
+		ASR	R1
+		ASR	R1			; z/4 ...
+		MOV	R1,R4
+		ASR	R4
+		ASR	R4
+		ASR	R4			; ... plus z/32: the top and bottom
+		ADD	R4,R1
+		SUB	R0,R3			; |y| - 2r > that: above or below
+		CMP	R3,R1
+		BGT	8$
+9$:		CLC
+		RETURN
+8$:		SEC
+		RETURN
+
+; =========================================================================
+; SHIP_DRAW - project and draw the model in SD_MODEL, oriented by SD_MAT
+; and placed at SD_X/SD_Y/SD_Z in camera space.  Clobbers everything.
+; =========================================================================
+SHIP_DRAW:	MOV	SD_MODEL,R0
+		CALL	HULL_FETCH
+		MOV	(R0)+,SD_NV
+		MOV	(R0)+,SD_NE
+		TST	(R0)+			; skip the bounding radius
+		MOV	(R0)+,SD_NF
+		MOV	R0,SD_VP
+		MOV	SD_NV,R1		; the edges follow the vertices,
+		MUL	#6,R1			; six bytes each - R1 is ODD, so
+		ADD	R0,R1			; the low word is the whole answer
+		MOV	R1,SD_EP
+		MOV	SD_NE,R3		; and the normals follow those,
+		ASL	R3			; four bytes an edge
+		ASL	R3
+		ADD	R1,R3
+		MOV	R3,SD_NP
+
+		; How far away it is, on the scale the blueprints use for
+		; their per-edge cull thresholds: 0 is right here and 31 is
+		; as far as the scale goes, so an edge marked 31 is always
+		; drawn.  Panel lines and detail have lower numbers and drop
+		; out as the hull recedes, which is what stops a Cobra Mk III
+		; costing 38 edges at every distance.
+		MOV	SD_Z,R0
+		ASH	#EDGE_DSHIFT,R0
+		CMP	R0,#31.
+		BLE	1$
+		MOV	#31.,R0
+1$:		MOV	R0,SD_DIST
+
+		CALL	FACE_VIS		; which faces are turned towards us
+		CALL	VERT_MARK		; and which vertices that leaves
+
+; ---- project every vertex that something is going to use ---------------
+; The projected vertices are tested against the clip box as they are
+; stored: if every one of them is inside it, no edge between any two of
+; them can leave it, and the whole edge pass runs without the clipper -
+; which is worth far more than the six instructions a vertex it costs.
+; The test is exact, not a bounding box, so it cannot be wrong; an
+; unsigned compare settles x in one instruction, a negative value being
+; a very large unsigned one.
+; Only the vertices VERT_MARK listed are visited - the edges kept use
+; those and no others, so nothing reads SVOK for the rest - and each is
+; transformed and projected by VERT_PROJECT from the bank's 4x coordinates.
+		MOV	#1,NOCLIP
+		MOV	SD_NVL,SD_I
+		BEQ	19$
+		MOV	#SVLIST,SD_VL
+10$:		MOV	SD_VL,R0
+		MOVB	(R0)+,R3		; the vertex, as a word offset
+		MOV	R0,SD_VL
+		MOV	R3,SD_V2
+		MOV	R3,R4			; and its six bytes in the model:
+		ADD	R3,R4			;   three times the offset
+		ADD	R3,R4
+		ADD	SD_VP,R4
+		MOV	SD_MAT,R5
+		CALL	VERT_PROJECT		; exact transform + projection, x/y in R0/R1
+		BCS	13$			; behind the eye - mark it unusable
+		MOV	SD_V2,R3		; (the test has to come straight off
+		MOV	R0,SVX(R3)		;  VERT_PROJECT: no flag-setting work before the branch)
+		MOV	R1,SVY(R3)
+		MOV	#1,SVOK(R3)
+		TST	NOCLIP			; still all of it on screen?
+		BEQ	14$
+		CMP	R0,CLIPX1
+		BHI	15$
+		SUB	CLIPY0,R1
+		CMP	R1,CLIPYD
+		BLOS	14$
+15$:		CLR	NOCLIP
+		BR	14$
+13$:		MOV	SD_V2,R3
+		CLR	SVOK(R3)
+14$:		DEC	SD_I
+		BGT	10$
+19$:
+
+; ---- and now the edges --------------------------------------------------
+; Only the ones VERT_MARK kept, as pairs of vertex offsets.  The cursor
+; is kept in memory because SEG_LINE spends every register.
+		MOV	SD_NL,SD_I
+		BEQ	29$
+		MOV	#SLIST,SD_EP
+20$:		MOV	SD_EP,R0
+		MOVB	(R0)+,R1		; the two ends, word offsets
+		MOVB	(R0)+,R2
+		MOV	R0,SD_EP
+		TST	SVOK(R1)
+		BEQ	28$
+		TST	SVOK(R2)
+		BEQ	28$
+		MOV	SVX(R1),LX0
+		MOV	SVY(R1),LY0
+		MOV	SVX(R2),LX1
+		MOV	SVY(R2),LY1
+		CALL	SEG_LINE
+28$:		DEC	SD_I
+		BGT	20$
+29$:
+		CLR	NOCLIP			; nothing outside this routine may
+		RETURN				;   ever find it set

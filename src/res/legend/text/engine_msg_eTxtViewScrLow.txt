@@ -1,0 +1,11 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Engine/Messages/eTxtViewScrLow.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+txtBonus+0|Вознаграждение{nFlgPrn_2xx}{nFlgPrn_xx1}6553.5{nFlgPrn_2xx}{nFlgPrn_xx1}Кр
+txtFoundProd+0|{nPrnGalNum}
+txtFoundProd+1|{nFlgPrn_2xx}{nFlgPrn_xx1}(nкг)
+txtWarInvasion+0|{nFlgPrn_2xx}{nFlgPrn_xx1}MAYDAY!{nFlgPrn_2xx}{nFlgPrn_xx1}Атакована{nFlgPrn_2xx}{nFlgPrn_xx1}Галактика{nFlgPrn_2xx}{nFlgPrn_xx1}?
+txtAnomaly+0|Обнаружена{nFlgPrn_2xx}{nFlgPrn_xx1}Аномалия
+txtDenied+0|В доступе отказано
+plNameMission3+0|nameplan

@@ -1,0 +1,50 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/PilotInfoMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_FrontPilot+0|СПЕРЕДИ
+Msg_FrontPilot+1|СЗАДИ
+Msg_FrontPilot+2|СЛЕВА
+Msg_FrontPilot+3|СПРАВА
+Msg_Commander+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,17,4}ПИЛОТ {nPrnPilotName}
+Msg_DateTime+0|ДАТА/ВРЕМЯ
+Msg_PresSystem+0|ТЕКУЩАЯ СИСТЕМА
+Msg_DestSystem+0|ЦЕЛЕВАЯ СИСТЕМА
+Msg_Location+0|МЕСТОПОЛОЖЕНИЕ
+Msg_StatusPilot+0|ПРАВОВОЙ СТАТУС
+Msg_RatingPilot+0|РЕЙТИНГ
+Msg_RankPilot+0|РАНГ
+Msg_EquipPilot+0|ОБОРУДОВАНИЕ
+Msg_FreeSpace+0|ГЛУБОКИЙ КОСМОС
+Msg_LocName+0|КОСМОС
+Msg_LocName+1|СТАНЦИЯ
+Msg_LocName+2|ВОЕННАЯ СТАНЦИЯ
+Msg_LocName+3|СТАНЦИЯ ТЕХОБСЛУЖИВАНИЯ
+Msg_LocName+4|АСТЕРОИД ВОЛЬНЫХ ТОРГОВЦЕВ
+Msg_LocName+5|КОРАБЛЬ ПОКОЛЕНИЙ
+Msg_StatusName1+0|ЗАКОНОПОСЛУШНЫЙ
+Msg_StatusName1+1|ПРАВОНАРУШИТЕЛЬ
+Msg_StatusName1+2|БЕГЛЕЦ
+Msg_StatusName2+0|ВНЕ ЗАКОНА
+Msg_StatusName2+1|ИЗГОЙ
+Msg_Retired+0|В ОТСТАВКЕ
+Msg_Rank+0|СЕРЖАНТ
+Msg_Rank+1|ЛЕЙТЕНАНТ
+Msg_Rank+2|КАПИТАН
+Msg_Rank+3|МАЙОР
+Msg_Rank+4|ПОДПОЛКОВНИК
+Msg_Rank+5|ПОЛКОВНИК
+Msg_Rank+6|ГЕНЕРАЛ
+Msg_Rank+7|МАРШАЛ
+Msg_CommPlus+0|(+
+Msg_NumMissile+0|(0)
+Msg_Rating+0|HARMLESS
+Msg_Rating+1|MOSTLY HARMLESS
+Msg_Rating+2|POOR
+Msg_Rating+3|AVERAGE
+Msg_Rating+4|ABOVE AVERAGE
+Msg_Rating+5|COMPETENT
+Msg_Rating+6|DANGEROUS
+Msg_Rating+7|DEADLY
+Msg_Rating+8|---- E L I T E ----
+Msg_Rating+9|--= A R C H A N G E L =--

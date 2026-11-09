@@ -1,0 +1,22 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/EquipShipMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_EquipShip+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,17,4}ОСНАЩЕНИЕ КОРАБЛЯ
+Msg_RepairShip+0|{nSetPixCrdY,8}{nFlgPrn_xx1}{nSetCrdXY,15,4}ОБСЛУЖИВАНИЕ КОРАБЛЯ
+Msg_NoCash+0|{nFlgPrn0xx}{nFlgPrn_xx1}НЕХВАТАЕТ ДЕНЕГ
+Msg_Refueled+0|{nFlgPrn0xx}{nFlgPrn_xx1}КОРАБЛЬ ЗАПРАВЛЕН
+Msg_MaxMissile+0|{nFlgPrn0xx}{nFlgPrn_xx1}УСТАНОВЛЕНО МАКСИМАЛЬНОЕ КОЛИЧЕСТВО РАКЕТ
+Msg_Installed+0|{nFlgPrn0xx}{nFlgPrn_xx1}УСТАНОВЛЕНО: 
+Msg_UnAvailable+0|{nFlgPrn0xx}{nFlgPrn_xx1}НЕДОСТУПНО ДЛЯ ЭТОГО КОРАБЛЯ
+Msg_Available+0|{nFlgPrn0xx}{nFlgPrn_xx1}УЖЕ УСТАНОВЛЕНО НА КОРАБЛЕ
+Msg_NoFreeCargo+0|{nFlgPrn0xx}{nFlgPrn_xx1}В ГРУЗОВОМ ОТСЕКЕ НЕТ СВОБОДНОГО МЕСТА
+Msg_Front+0|{nFlgPrn0xx}{nFlgPrn_xx1}ПЕРЕДНИЙ:
+Msg_Rear+0|{nFlgPrn0xx}{nFlgPrn_xx1}ЗАДНИЙ  :
+Msg_Left+0|{nFlgPrn0xx}{nFlgPrn_xx1}ЛЕВЫЙ   :
+Msg_Right+0|{nFlgPrn0xx}{nFlgPrn_xx1}ПРАВЫЙ  :
+Msg_NotInstall+0|{nFlgPrn0xx}{nFlgPrn_xx1}НЕ УСТАНОВЛЕН
+Msg_RemPassCab+0|{nFlgPrn0xx}{nFlgPrn_xx1}ПАССАЖИРСКАЯ КАБИНА ДЕМОНТИРОВАНА
+Msg_NoRepair+0|{nFlgPrn0xx}{nFlgPrn_xx1}РЕМОНТ НЕ ТРЕБУЕТСЯ
+Msg_Repaired+0|{nFlgPrn0xx}{nFlgPrn_xx1}ОТРЕМОНТИРОВАНО: 
+Msg_ShipRepair+0|{nFlgPrn0xx}{nFlgPrn_xx1}КОРАБЛЬ ОТРЕМОНТИРОВАН

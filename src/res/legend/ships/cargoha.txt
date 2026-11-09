@@ -1,0 +1,22 @@
+# d_CargoHa - extracted from orig/legend by tools/legend_ships.py;
+# object 17 of AdrDataShips, hull d_Cargo.
+# `make extract` overwrites it.
+name CARGOHA
+index 17
+class 1
+speed 86
+energy 17
+bounty 20
+laser 0
+collide 20
+cargo 241
+launch 0
+dot 12
+rating 31
+flags 0
+flags2 2
+laservert 0
+type 7
+objflags 128
+shipnum 0
+geometry CARGOHR

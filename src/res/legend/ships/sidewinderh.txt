@@ -1,0 +1,54 @@
+# d_SidewinderH - extracted from orig/legend by tools/legend_ships.py;
+# object 50 of AdrDataShips, hull d_Sidewinder.
+# `make extract` overwrites it.
+name SIDEWINDERH
+index 50
+class 4
+speed 37
+energy 70
+bounty 50
+laser 130
+collide 65
+cargo 2
+launch 1
+dot 20
+rating 256
+flags 2
+flags2 2
+laservert 0
+type 10
+objflags 192
+shipnum 16
+radius 64
+vertex   -32     0    36
+vertex    32     0    36
+vertex    64     0   -28
+vertex   -64     0   -28
+vertex     0    16   -28
+vertex     0   -16   -28
+vertex   -12     6   -28
+vertex    12     6   -28
+vertex    12    -6   -28
+vertex   -12    -6   -28
+edge 0 1 31 0 5
+edge 1 2 31 2 6
+edge 1 4 31 0 2
+edge 0 4 31 0 1
+edge 0 3 31 1 4
+edge 3 4 31 1 3
+edge 2 4 31 2 3
+edge 3 5 31 3 4
+edge 2 5 31 3 6
+edge 1 5 31 5 6
+edge 0 5 31 4 5
+edge 6 7 15 3 3
+edge 7 8 12 3 3
+edge 6 9 12 3 3
+edge 8 9 12 3 3
+normal    0   32    8
+normal  -12   47    6
+normal   12   47    6
+normal    0    0 -112
+normal  -12  -47    6
+normal    0  -32    8
+normal   12  -47    6

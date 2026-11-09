@@ -1,0 +1,796 @@
+; =========================================================================
+; main.mac - entry point.
+;
+; RT_ENTRY validates memory and ELITE.DAT before entering here.
+; CPU vectors stay installed by RT-11; the PPU publishes timing and input.
+; =========================================================================
+
+LOOP:		JMP	MAIN_START
+
+MAIN_START:	MOV	#STACK_TOP,SP
+		MOV	SP,SP_RESTART
+		CALL	PP_MAIN_LOAD		; reversible firmware takeover
+		BCC .+6
+		JMP RT_PPU_ERROR
+		CALL	OVL_INIT		; where the overlays are on the disk
+		CALL	KEY_INIT		; the key file: keys and options
+		CALL	SFX_BOOT		; the effects engine, to the PPU
+		CALL	HULL_BANK_INIT		; and the hulls, into the planes
+; The window benchmark runs only on PPB_GO, never during boot.
+		CALL	CLS_SCREEN		; ... which this wipes: 640x288 black
+		CALL	TEXT_INIT
+		MOV	#OVL_CMDR,R0		; startup-only welcome and UKNC controls
+		CALL	OVL_LOAD
+		MOV	#2,R0
+		CALL	OVL_BASE		; two separate presses of ВВОД
+		CALL	FLY			; never returns
+
+; MAIN_RESTART - the game again from the title: a death, a commander
+; loaded from the access menu. The PPU is left as it is,
+; running: its program is pushed ONCE, at MAIN_START, because the CPU's
+; copy of it is dead from then on - src/tail.mac lays the slots and the
+; vertex buffers over it - and pushing that a second time hung the
+; machine in PP_MAIN_LOAD's wait (2026-09-19: every death since the
+; buffers moved there).  The hull bank is still in the planes and the
+; overlay directory still in memory, so neither is read again.
+MAIN_RESTART:	MOV	#STACK_TOP,SP
+		MOV	SP,SP_RESTART
+		CALL	CLS_SCREEN
+		CALL	FLY
+
+; =========================================================================
+; BENCH - how expensive is the video window compared with plain RAM?
+;
+; The renderer reaches the screen through @#176640/@#176642, and the
+; profile says line drawing dominates the frame.  If those window
+; accesses cost far more than ordinary memory, it is worth moving the
+; framebuffer into the part of the plane that IS CPU address space; if
+; they do not, the loop overhead is the thing to attack.  Both loops do
+; the same 20000 read-modify-writes; the answer is in vsync ticks.
+; =========================================================================
+BENCH_WIN:	.WORD	0		; ticks for the window loop
+BENCH_RAM:	.WORD	0		; ... and for the RAM loop
+; BENCH_BUF, 16 words, is over the dead PPU copy (src/tail.mac)
+
+BENCH:		MOV	CPU_VSYNC,-(SP)
+		MOV	#20000.,R3
+		MOV	#VRAM,R0
+		MOV	#1,R1
+1$:		MOV	R0,@#VADDR
+		XOR	R1,@#VDATA
+		SOB	R3,1$
+		MOV	CPU_VSYNC,R2
+		SUB	(SP)+,R2
+		MOV	R2,BENCH_WIN
+
+		MOV	CPU_VSYNC,-(SP)
+		MOV	#20000.,R3
+		MOV	#BENCH_BUF,R0
+		MOV	#1,R1
+2$:		MOV	R0,R4
+		XOR	R1,@R4
+		SOB	R3,2$
+		MOV	CPU_VSYNC,R2
+		SUB	(SP)+,R2
+		MOV	R2,BENCH_RAM
+		RETURN
+
+
+; =========================================================================
+; FLY - the space view: fly the commander's ship, with the universe
+; moving around it. Arrows roll and pitch, ФИКС fires, numeric-block
+; ВВОД cycles throttle and СТОП cycles screens; the dashboard follows.
+; =========================================================================
+FLY_TICK:	.WORD	0
+
+FLY:		CALL	GFX_INIT		; the row table the renderer reads
+		CALL	FPAIR_INIT		; and the face pairs' masks
+		CALL	TEXT_INIT
+		MOV	#PMAT,R5
+		CALL	MAT_IDENT
+		CALL	SEG_RESET
+		CALL	UNIV_CLEAR
+		MOV	#OVL_TITLE,R0		; a Cobra turning over the name,
+		CALL	OVL_LOAD		;   from the disk: the first
+		CALL	OVL_BASE		;   overlay, src/title.mac -
+					; until ФИКС says go
+
+		MOV	#OVL_CMDR,R0		; which of the disk's commanders
+		CALL	OVL_LOAD		;   (src/ovl_cmdr.mac), and load
+		CLR	R0			;   him; otherwise a new one, at
+		CALL	OVL_BASE		;   Lave with 100 Cr, an empty hold
+		BCC	FLY_DOCK		;   and a name of his own
+		CALL	PILOT_NEW
+		MOV	#1,R0
+		CALL	OVL_BASE
+		MOV	SYS_INDEX,R0		; and Lave's market and yard
+		CALL	SYS_SELECT		;   stocked for him - the record
+		CALL	PILOT_ARRIVE		;   must know the tech level first,
+		CALL	MKT_ARRIVE		;   the yard rolls on it; a loaded
+		CALL	YARD_ARRIVE		;   commander brings his in the record
+		BR	FLY_DOCK
+
+; FLY_LOADED - the access menu has read another commander off the disk
+; (src/ovl_save.mac): the game starts again as him, docked, without
+; the title - Legend's NewLoad.  Jumped to from an overlay's key
+; handler, deep in the flight loop, so the stack is put back first.
+FLY_LOADED:	MOV	#STACK_TOP,SP
+		CALL	SEG_RESET
+		CALL	UNIV_CLEAR
+		CLR	SCREEN
+
+; FLY_DOCK - a commander in the record, new or read: into the station.
+FLY_DOCK:	CALL	SHIP_RESET		; either way a whole ship, not the
+					;   one that just died
+		CALL	COCKPIT_SET		; and its limits are that ship's
+		MOV	SYS_INDEX,R0
+		CALL	SYS_SELECT
+		CALL	PILOT_ARRIVE
+		MOV	SYS_X,HOME_X
+		MOV	SYS_Y,HOME_Y
+		CALL	CT_ARRIVE		; the carrier market's offers, from
+					;   the record as it stands
+		CALL	MS_WARPOS		; and the war's leftmost world
+		MOV	#-1,DASH_CK		; the dashboard, for this cockpit
+		CALL	DASH_DRAW
+		CLR	DOCKED_AT		; at the station itself
+		MOV	#1,DOCKED		; every commander starts in the
+		CALL	DRAW_DOCKED		;   station at Lave
+
+1$:		CALL	VSYNC_PACE		; not VSYNC: a frame that has already
+
+		CALL	INPUT_POLL		;   outrun a tick does not wait for
+					;   the next one
+		CALL	CLOCK_STEP		; the commander's clock
+		CALL	SCREEN_KEYS
+		TST	SCREEN			; a text screen is up: it stays
+		BNE	2$			;   drawn until the key changes
+		TST	DASH_CK			; only a full-height page invalidates it here
+		BPL	14$
+		CALL	DASH_DRAW		; safe here, before loading the flight overlay
+14$:		TST	DOCKED			; in the station nothing moves;
+		BEQ	15$			;   ФИКС is the launch key
+		MOV	KEYS_EDGE,R0
+		BIT	#K_FIRE,R0
+		BEQ	2$
+		CALL	LAUNCH_ASK		; the pause menu's U: asked first
+		BCS	2$
+		CALL	DO_LAUNCH
+		BR	2$
+15$:		CALL	FLY_OVL			; the frame's code, if a screen
+		CALL	FV_JDRIVE		;   had the window; the J-drive and
+					;   the injectors,
+		CALL	FLY_CONTROLS		;   before the stick they may block
+		CALL	UNIV_STEP
+		CALL	FV_AI			; the ships' minds (src/ai_fly.mac)
+		CALL	MISSILE_STEP
+		CALL	MISSILE_KEY
+		CALL	LOCK_SHOW
+		CALL	COLLIDE_STEP
+		CALL	TAKE_STEP		; the auto-take brings its drop in
+		CALL	SCOOP_STEP
+		CALL	SUN_SCOOP
+		CALL	MS_FLY			; the missions in flight
+		CALL	FV_SPAWN		; who turns up (src/ai_fly.mac)
+		CALL	UNIV_DRAW
+		CALL	STARS
+		CALL	NPC_BEAMS
+		CALL	LASER_STEP
+		CALL	EXPL_DRAW
+		CALL	SCANNER
+		CALL	COMPASS
+		CALL	SEG_FLUSH		; everything is drawn: close the
+					; frame, rubbing out whatever the
+					; last one had and this one did
+					; not replace
+		CALL	DOCKCOMP_STEP
+		CALL	DOCK_CHECK
+		CALL	BODY_CHECK
+		CALL	ALIGN_TICK
+		TST	HYP_SHOW		; clear the arrival message
+		BEQ	2$
+		DEC	HYP_SHOW
+		BNE	2$
+		MOV	#2,R0
+		MOV	#4,R1
+		MOV	#40.,R2
+		CALL	TEXT_CLEAR
+2$:		INC	FLY_TICK
+		TST	HARN_GO
+		BEQ	21$
+		CALL	DRAW_HARNESS
+21$:
+		TST	PPB_GO			; poked from outside: time the PPU
+		BEQ	3$
+		CLR	PPB_GO
+		CALL	BENCH
+		CALL	PP_BENCH
+3$:		BIT	#3,FLY_TICK		; the gauges do not need 50 Hz
+		BNE	1$
+		CALL	RECHARGE
+		CALL	HUD_UPDATE
+		BR	1$
+
+; FLY_OVL - the flight overlay (src/ovl_fly.mac) into the window, unless
+; it is there.  Only from the loop: overlay code may not be running when
+; the window is read into.  Clobbers R0..R3.
+FLY_OVL:	MOV	#OVL_FLY,R0
+		JMP	OVL_LOAD
+
+; SCREEN_KEYS - СТОП cycles cockpit -> chart -> data -> market and round;
+; АР2 (K_PAUSE) brings up the pause menu over whichever it is.  On the
+; chart the arrows walk the cursor from system to system and the page is
+; redrawn.  (The keys are the key file's: src/res/setup.txt.)
+;
+; SCR_SHOW is a separate routine on purpose: a global label between two
+; local ones would end their scope, and the branch to the second would
+; not resolve.
+NSCREENS = 10.			; cockpit, the two charts, data, market,
+				; the outfitter, the yard, the record, the
+				; access menu and the carrier market
+
+SCR_COOL:	.WORD	0		; frames before СТОП may act again
+
+SCREEN_KEYS:	BIT	#K_PAUSE,KEYS_EDGE	; АР2: the pause menu, from any
+		BEQ	0$			;   screen, docked or flying
+		JMP	PAUSE
+0$:		TST	SCR_COOL
+		BEQ	1$
+		DEC	SCR_COOL
+1$:		MOV	KEYS_EDGE,R0
+		MOV	KEYS,R1		; the screen key is read as a LEVEL with
+		BIT	#K_STOP,R1	; a lockout, not as an edge: redrawing a
+		BEQ	2$		; page takes long enough that the key's
+		TST	SCR_COOL	; release can arrive while the PPU is
+		BNE	2$		; busy and be lost, which would latch the
+		MOV	#25.,SCR_COOL	; bit down for ever
+		INC	SCREEN
+		CMP	SCREEN,#NSCREENS
+		BLT	11$
+		CLR	SCREEN
+11$:		MOV	#FX_OPTION,R0		; Legend's PressOption, for every
+		CALL	SFX_PLAY		;   screen's keys alike
+		JMP	SCR_SHOW
+
+2$:		TST	SCREEN			; a screen is up: its overlay reads
+		BEQ	9$			;   the keys - the chart cursor, the
+		BIT	#K_LEFT!K_RIGHT!K_UP!K_DOWN!K_FIRE!K_ENTER,R0
+		BEQ	21$			;   market rows, the outfitter
+		MOV	#FX_OPTION,R0
+		CALL	SFX_PLAY
+21$:		CALL	SCR_OVL
+		MOV	#1,R0
+		JMP	OVL_BASE
+9$:		RETURN
+
+; SCR_OVL - the overlay the screen in SCREEN lives in, loaded.  The
+; charts share one; the data screen, the market, the outfitter, the
+; yard, the commander's record and the access menu have one each.
+SCR_OVLS:	.BYTE	0, OVL_CHARTS, OVL_CHARTS, OVL_INFO
+		.BYTE	OVL_TRADE, OVL_EQUIP, OVL_YARD, OVL_PILOT, OVL_SAVE
+		.BYTE	OVL_CARRIER
+		.EVEN
+SCR_OVL:	MOV	SCREEN,R0
+		MOVB	SCR_OVLS(R0),R0
+		JMP	OVL_LOAD
+
+; SCR_SHOW - draw whichever screen SCREEN now names: the cockpit itself,
+; or a screen out of its overlay.
+SCR_SHOW:	TST	SCREEN
+		BNE	1$
+		CMP	CKV_NUM,DASH_CK		; back to the cockpit - another
+		BEQ	3$			;   ship's, if the yard sold one
+		CALL	DASH_DRAW
+3$:		CALL	VIEW_CLEAR
+		CALL	SEG_RESET
+		CALL	VIEW_LABEL
+		BR	8$
+1$:		CALL	CT_MAKE			; the carrier market's offers, when
+					;   it is that screen and they are due
+		CMP	SCREEN,#4		; the market entered, docked: the
+		BNE	2$			;   missions' people come aboard or
+		TST	DOCKED			;   go ashore first (GoMission1)
+		BEQ	2$
+		CALL	MS_MARKET
+2$:		CALL	SCR_OVL
+		CLR	R0
+		CALL	OVL_BASE
+8$:		JMP	INPUT_FLUSH		; a redraw takes long enough that
+						; the key that asked for it may
+						; have come and gone unseen
+
+; =========================================================================
+; PAUSE - the pause menu (Cmd_PauseInGame, src/ovl_pause.mac): the game
+; stands still while it is up - the loop is not running - and the clock
+; with it, since the frames it missed are forgotten.  Then whatever was
+; on the screen, again.  Q in the menu does not come back: it starts the
+; game again from the title.
+; =========================================================================
+PAUSE:		CALL	SFX_STOP		; Legend's SoundOff
+		MOV	#OVL_PAUSE,R0
+		CALL	OVL_LOAD
+		CLR	R0
+		CALL	OVL_BASE
+		MOV	FRAMES,CLK_LAST		; the time paused never happened
+		TST	SCREEN			; the docked cockpit is the bay's
+		BNE	1$			;   page, not the view
+		TST	DOCKED
+		BEQ	1$
+		JMP	DRAW_DOCKED
+1$:		JMP	SCR_SHOW
+
+; LAUNCH_ASK - C clear to launch.  With the pause menu's U the overlay
+; asks first (BeginLaunch): yes, no, or always, which turns U off.
+LAUNCH_ASK:	BIT	#OPT_LAUNCH,OPTIONS
+		BNE	1$
+		CLC
+		RETURN
+1$:		MOV	#OVL_PAUSE,R0
+		CALL	OVL_LOAD
+		MOV	#1,R0
+		JMP	OVL_BASE
+
+; =========================================================================
+; HYPER_JUMP - go to the system the chart cursor is on, if there is fuel
+; enough to reach it.  Elite charges a tenth of a light year per tenth
+; travelled, so the distance IS the fuel bill.  HYP_GO is the jump
+; itself, with CURSYS chosen and HYP_MSG saying what kind, which the
+; galactic drive shares (GAL_HOP); HYP_SAY the message alone.
+; =========================================================================
+HYPER_JUMP:	MOV	CURSYS,R0
+		CALL	SYS_SELECT
+		CALL	SYS_DISTANCE
+		MOV	R0,HYP_COST
+		BEQ	9$			; already there
+		CMP	R0,PFUEL
+		BLE	1$
+		MOV	#S_M_NOFUEL,HYP_MSG	; not enough in the tanks
+		MOV	#FX_KEY,R0
+		CALL	SFX_PLAY
+		JMP	HYP_SAY
+9$:		RETURN
+1$:		SUB	HYP_COST,PFUEL
+		MOV	HYP_COST,R1		; and the trip takes its time: the
+		MUL	HYP_COST,R1		;   fuel squared over ten, tenths of
+		CLR	R0			;   an hour (CalcTravelTime, within
+		DIV	#10.,R0			;   a jump; R1 is odd, 4900 fits)
+		CALL	CT_SUBTIME		;   and comes off every contract's
+		CALL	CLOCK_ADD		;   time (SubTimeContracts)
+		MOV	#S_M_HYPER,HYP_MSG
+		TSTB	P_M1			; the nova's system: the jump goes
+		BEQ	HYP_GO			;   to a galaxy at random, to the
+		MOV	SYS_X,HOME_X		;   system nearest where it was
+		MOV	SYS_Y,HOME_Y		;   aimed (JumpToRndGalaxy)
+		CALL	RND_BYTE
+		BIC	#^C7,R0
+		MOV	GALNUM,R1
+		XOR	R1,R0
+		CALL	GAL_LAND
+		MOV	#S_M_GALJUMP,HYP_MSG
+HYP_GO:		MOV	CURSYS,R0
+		CALL	SYS_SELECT
+		CLR	VIEW_DIR		; a new system is met head on
+		MOV	#FX_HYPER,R0		; the jump itself: the same tunnel
+		CALL	SFX_BIG			; the docking bay uses, which is
+		CALL	DOCK_TUNNEL		; what a jump has always looked like
+		CLR	WITCH			; the Targons' interception
+		TST	HYP_NOROLL		;   - never through a portal or
+		BEQ	24$			;   to another galaxy (HyperspaceJump)
+		CLR	HYP_NOROLL
+		BR	17$
+24$:		MOV	R0,-(SP)		;   (JumpToPlanet): every jump
+		BIT	#OPT_WITCH,OPTIONS	;   with the pause menu's F, else
+		BNE	11$			;   a roll under
+		CMPB	P_M5,#3			;   #C0 while the plans are
+		BHIS	15$			;   carried or from a world the
+		CALL	MS_HELDHERE		;   Targons hold, then one under
+		BCC	12$
+15$:		CALL	RND_BYTE		;   WI_ODDS of 256; in the
+		CMP	R0,WI_PLANS		;   war's rear zone, one in two
+		BLO	11$
+12$:		MOV	#170,R0
+		MOVB	HOME_X,R1		; (where the ship stands: the
+		MOVB	HOME_Y,R2		;   system just left)
+		BIC	#177400,R1
+		BIC	#177400,R2
+		CALL	MS_ZONE
+		BCC	10$
+		CALL	RND_BYTE
+		ROR	R0
+		BCS	11$
+10$:		CALL	RND_BYTE
+		CMP	R0,WI_ODDS
+		BHIS	13$
+11$:		MOV	#1,WITCH
+13$:		MOV	(SP)+,R0
+		TST	WITCH
+		BEQ	17$
+		ADD	SYS_X,HOME_X		; deep space: halfway between the
+		ASR	HOME_X			;   system left and the one aimed
+		ADD	SYS_Y,HOME_Y		;   at, and nothing of the latter
+		ASR	HOME_Y			;   is generated
+		BR	18$
+17$:		MOV	SYS_X,HOME_X		; the new home
+		MOV	SYS_Y,HOME_Y
+18$:		MOV	CURSYS,SYS_INDEX
+		MOV	GALNUM,CHART_GAL	; the chart shows where you are
+		INC	P_JUMPS			; Legend's jump counter, and its
+		CALL	PILOT_JUMP		; cargo life support, wear and repairs
+		CALL	PILOT_ARRIVE		;   idea of where the pilot is
+		TST	WITCH			; the missions, unless the Targons
+		BNE	19$			;   took the ship into deep space
+		CALL	MS_ARRIVE		;   (HypEnd), before the market and
+					;   the yard are stocked
+		CALL	MKT_ARRIVE		; a fresh market, freshly stocked
+		CALL	MS_WARMKT		;   - bare at the war's front
+		CALL	YARD_ARRIVE		; and a fresh yard
+		MOV	#-1,P_CONTRACTS		; and fresh offers on the carrier
+		CALL	CT_ARRIVE		;   market (JumpToPlanet)
+19$:		CALL	UNIV_CLEAR
+		CLR	MISS_LOCK		; it named a slot of the system
+					;   just left, which the station now
+					;   takes
+		CALL	SEG_RESET
+		CALL	SPAWN_LOCALS
+		CLR	SCREEN
+		CALL	VIEW_CLEAR
+		CALL	VIEW_LABEL		; the sight, and which way you face
+		TST	DOCKED			; a jump from the dock arrives in
+		BEQ	16$			;   the dock, and the page says so
+		CALL	DRAW_DOCKED
+16$:		TST	WITCH
+		BEQ	14$
+		MOV	#S_M_WITCH,HYP_MSG	; the drive threw you short
+14$:
+HYP_SAY:	MOV	#2,TX			; say what happened, briefly
+		MOV	#4,TY
+		MOV	HYP_MSG,R1
+		CALL	PUTS2
+		CALL	INPUT_FLUSH
+		MOV	#40.,HYP_SHOW
+		RETURN
+
+; =========================================================================
+; GAL_HOP - the galactic drive, from the chart (JumpToGalaxy): to the
+; galaxy the chart shows if the drive reaches it, else the next one,
+; arriving at the system nearest where the cursor was - a hyperspace
+; jump that costs no fuel, and one from the dock arrives in the dock.
+; =========================================================================
+GAL_HOP:	BITB	#DEV_OFF,P_GALDRIVE	; fitted and working, or nothing
+		BEQ	1$			;   happens
+		MOV	#S_M_NODRIVE,HYP_MSG
+		MOV	#FX_KEY,R0
+		CALL	SFX_PLAY
+		JMP	HYP_SAY
+1$:		MOV	CHART_GAL,R0		; where the cursor is, in the
+		CALL	GAL_SEEDN		;   galaxy the chart shows, is
+		MOV	CURSYS,R0		;   what the arrival is measured
+		CALL	SYS_SELECT		;   from
+		MOV	SYS_X,HOME_X
+		MOV	SYS_Y,HOME_Y
+		CALL	GAL_JUMP
+		MOV	#S_M_GALJUMP,HYP_MSG
+		JMP	HYP_GO
+
+; RAX_JUMP - JumpToRaxxla by the drive (JumpDocking 5): "9" on a chart,
+; Legend's R held on the jump, with the experimental galactic drive
+; fitted and whole, goes to #FF's system nearest #EA,#BA - Raxxla
+; itself - with no fuel, no interception and the drive kept.
+RAX_JUMP:	MOVB	P_GALDRIVE,R0
+		BIC	#^C<DEV_OFF!3>,R0
+		CMP	R0,#2
+		BNE	1$
+		MOV	#352,HOME_X
+		MOV	#272,HOME_Y
+		MOV	#255.,R0
+		CALL	GAL_LAND
+		MOV	#S_M_GALJUMP,HYP_MSG
+		JMP	HYP_GO
+1$:		MOV	#S_M_NODRIVE,HYP_MSG
+		MOV	#FX_KEY,R0
+		CALL	SFX_PLAY
+		JMP	HYP_SAY
+
+HYP_COST:	.WORD	0
+HYP_NOROLL:	.WORD	0		; a portal's or a galactic jump: no roll
+HYP_MSG:	.WORD	0
+HYP_SHOW:	.WORD	0		; frames the arrival message stays up
+
+; SPAWN_LOCALS - lay the new system out: the world, the sun, the station
+; (slots 0, 1 and 2, which the checks count on), then a drop adrift and
+; one ship of the system's own - Legend arrives to an empty sky and
+; rolls its first ship 127 frames later; the port keeps a little
+; company on arrival - and the bases last, so the slots above keep
+; their numbers.  What arrives after is SPAWN_TICK's (src/ai.mac).
+SPAWN_LOCALS:	CALL	HULL_SYSTEM		; the hulls this sky can show, out
+					;   of the bank; the sky is empty here
+		CLR	NOVA_R			; a star at its own size
+		CLR	AGGRESSOR		; a record the law minds arrives
+		CMP	LEGAL,#8192.		;   as an aggressor (EndJump: the
+		BLO	3$			;   high byte from #20)
+		MOV	#1,AGGRESSOR
+3$:		TST	WITCH			; witchspace has no world, no sun
+		BEQ	4$			; and no station - only company
+		JMP	SPAWN_WITCH
+4$:		MOV	#SH_MISSILE,R0		; the world, drawn as a disc: any
+		CLR	R1			; blueprint will do as long as its
+		CLR	R2			; hull is loaded - the missile's
+					; always is - and UF_PLANET means
+					; it is never drawn as a hull anyway
+		MOV	#PLANET_Z,R3
+		CLR	R4
+		CALL	UNIV_ADD
+		BCS	5$
+		BIS	#UF_PLANET,U.FLAGS(R5)
+5$:		MOV	#SH_MISSILE,R0		; and the sun, off to one side
+		MOV	#SUN_X,R1
+		CLR	R2
+		MOV	#SUN_Z,R3
+		CLR	R4
+		CALL	UNIV_ADD
+		BCS	6$
+		BIS	#UF_SUN,U.FLAGS(R5)
+6$:		CALL	SPAWN_STATION
+		CALL	AI_SCAN			; so a ship born now knows the
+					;   station is here (SLOT_MIND)
+		CALL	RND_BYTE		; something adrift: a plate or a
+		BIC	#^C7,R0			;   canister
+		ADD	#SH_ALLOYS1H,R0
+		CALL	SPAWN_FWD
+		CALL	SPAWN_ONE		; and one of the system's own
+		JMP	BASES_SPAWN
+
+; SPAWN_ONE - one ship the way SetRndShip's trader roll sends one (goto618
+; with the government's say already given): a trader mostly, else a
+; hermit's rock, a Viper or a Targon.  ONE object, so the bases after it
+; land in the slots the checks count on.  Clobbers everything.
+SPAWN_ONE:	JMP	SPAWN_TRADE
+
+; SPAWN_WITCH - Set3_5Targons: what is waiting in deep space when the
+; Targons intercept a jump - three or four of them, one more for a
+; commander rated Elite (RATING_H at 26), each a Targon or a Targon 6,
+; hostile, with an ECM and no way out by hyperspace, four or five of
+; Legend's high units ahead, some a unit to the side.  Legend puts
+; them four to fifteen units out; past AI_GONE the port's AI drops a
+; ship, so the far ones stay near.
+WI_PLANS:	.WORD	192.		; plans/held-world interception, out of 256
+WI_ODDS:	.WORD	1		; the interception's odds in 256: Legend's
+				;   RndWord = #F9.  Its 64 with the fifth
+				;   mission on and 128 in the war zone are
+				;   phase 5's, its "always" switch phase 6's
+SPAWN_WITCH:	CALL	MS_BASE			; the war's command base, maybe
+		CALL	RND_BYTE
+		BIC	#^C1,R0
+		ADD	#3,R0
+		CMP	RATING_H,#26.
+		BLO	1$
+		INC	R0
+1$:		MOV	R0,WI_N
+2$:		CALL	RND_BYTE
+		MOV	R0,R3			; four or five units ahead ...
+		BIC	#^C1,R3
+		ADD	#4,R3
+		MUL	#BASE_U,R3
+		MOV	R3,WI_Z
+		ASR	R0
+		BIC	#^C1,R0
+		ADD	#SH_TARGONH,R0		; a Targon, or a Targon 6 - or the
+		CALL	TYPE_AVAIL		;   Targon hull this sky has (it
+		BEQ	3$			;   clobbers R1..R3)
+		MOV	WI_N,R1			; ... and spread sideways, 2000
+		SUB	#3,R1			;   apart: the port's ships collide,
+		MUL	#2000.,R1		;   and Legend's pass through
+		CLR	R2
+		MOV	WI_Z,R3
+		MOV	#-1,R4
+		CALL	UNIV_ADD
+		BCS	3$
+		BIS	#UF_HOSTILE,U.FLAGS(R5)
+		BISB	#F3_ECM,U.FL3(R5)
+		BICB	#AI_HYPER,U.AIF(R5)
+3$:		DEC	WI_N
+		BGT	2$
+		RETURN
+
+WI_N:		.WORD	0
+WI_Z:		.WORD	0
+
+; FLY_CONTROLS - turn the key state into roll, pitch and speed.  Roll and
+; pitch spring back to centre when nothing is held, the way a joystick
+; would, so the ship settles instead of drifting - unless the pause
+; menu says otherwise (STICK, and the inversions here).
+FLY_CONTROLS:	MOV	KEYS,R0
+		TST	JD_SPEED		; on the injectors the stick is dead
+		BEQ	11$			;   (BlockControl = 2): it springs
+		CLR	R0			;   back to centre as if let go
+11$:		MOV	OPTIONS,R1		; the pause menu's inversions
+		BIT	#OPT_INV,R1		;   (ScanKeys): B swaps both axes,
+		BEQ	12$			;   Y up and down, and the two
+		MOV	#K_LEFT!K_RIGHT,R2	;   together only the roll
+		CALL	KEY_SWAP
+		MOV	#OPT_INVUD,R2
+		XOR	R2,R1
+12$:		BIT	#OPT_INVUD,R1
+		BEQ	13$
+		MOV	#K_UP!K_DOWN,R2
+		CALL	KEY_SWAP
+13$:		MOV	#PROLL,R1
+		MOV	#K_LEFT,R2
+		MOV	#K_RIGHT,R3
+		CALL	STICK
+		MOV	#PPITCH,R1
+		MOV	#K_UP,R2
+		MOV	#K_DOWN,R3
+		CALL	STICK
+6$:		CALL	CLAMP8			; keep both inside -8..8
+
+		MOV	KEYS_EDGE,R0		; the kit, one key each: 2 fires the
+		BIT	#K_ECM,R0		; ECM, 3 the energy bomb, 6 the
+		BEQ	61$			; capsule
+		CALL	ECM_FIRE
+61$:		MOV	KEYS_EDGE,R0
+		BIT	#K_BOMB,R0
+		BEQ	62$
+		CALL	BOMB_FIRE
+62$:		MOV	KEYS_EDGE,R0
+		BIT	#K_POD,R0
+		BEQ	64$
+		JMP	ESCAPE_POD		; nothing else happens this frame:
+					; the ship it was flying is gone
+64$:		MOV	KEYS_EDGE,R0		; "8" picks the missile kind
+		BIT	#K_MISSKIND,R0
+		BEQ	65$
+		CALL	MISS_KINDKEY
+65$:		MOV	KEYS_EDGE,R0		; "9" the cloak
+		BIT	#K_CLOAK,R0
+		BEQ	66$
+		CALL	CLOAK_KEY
+66$:		TST	POD_NOW			; the auto-eject asked for the
+		BEQ	67$			;   capsule last frame
+		CLR	POD_NOW
+		JMP	ESCAPE_POD
+67$:		BIT	#KB_COMPASS,KEYS2_EDGE	; М: the compass's next mode
+		BEQ	68$
+		CALL	COMPASS_KEY
+68$:		BIT	#KB_SCANNER,KEYS2_EDGE	; Ы: the scanner's next mode
+		BEQ	69$
+		CALL	SCANNER_KEY
+69$:		BIT	#KB_TURRET,KEYS2_EDGE	; А: the laser turrets turn
+		BEQ	63$
+		CALL	TURRET_KEY
+63$:		MOV	KEYS_EDGE,R0		; "1" looks front, back, left and
+		BIT	#K_VIEW,R0		; right, and round again
+		BEQ	7$
+		INC	VIEW_DIR
+		CMP	VIEW_DIR,#NVIEWS
+		BLT	71$
+		CLR	VIEW_DIR
+71$:		CALL	VIEW_SWITCH
+7$:		MOV	KEYS_EDGE,R0		; the numpad ВВОД steps the
+		BIT	#K_THR,R0		; throttle up, and back round to a
+		BEQ	8$			; stop past full ahead.  ФИКС is
+		CMP	PSPEED,CKV_MAXSPEED	; LASER_STEP.  The top speed and
+		BEQ	72$			; the step are the ship's
+		ADD	CKV_STEP,PSPEED		; (src/cockpit.mac)
+		CMP	PSPEED,CKV_MAXSPEED
+		BLE	8$
+		MOV	CKV_MAXSPEED,PSPEED
+		BR	8$
+72$:		CLR	PSPEED			; full ahead: round to a stop
+8$:		RETURN
+
+; STICK - one axis of the stick (KeyCtrl_Move): R1 the axis word, R2 the
+; key that turns it down, R3 the one that turns it up, R0 the keys.  A key
+; held turns it a step a frame; an opposite key stops a turn dead, or
+; with OPT_INERT slows it through zero; let go, it springs back a step
+; a frame, or with OPT_STEADY keeps its rate.  R0 is left alone.
+STICK:		BIT	R2,R0
+		BEQ	2$
+		TST	@R1			; turning up: the down key
+		BLE	1$
+		BIT	#OPT_INERT,OPTIONS
+		BNE	1$
+		CLR	@R1
+		BR	2$
+1$:		DEC	@R1
+2$:		BIT	R3,R0
+		BEQ	4$
+		TST	@R1
+		BGE	3$
+		BIT	#OPT_INERT,OPTIONS
+		BNE	3$
+		CLR	@R1
+		BR	4$
+3$:		INC	@R1
+4$:		BIS	R3,R2
+		BIT	R2,R0
+		BNE	9$			; held: no spring
+		BIT	#OPT_STEADY,OPTIONS
+		BNE	9$
+		TST	@R1			; centre it again
+		BEQ	9$
+		BGT	5$
+		INC	@R1
+		RETURN
+5$:		DEC	@R1
+9$:		RETURN
+
+; KEY_SWAP - the two keys of the mask in R2 change places in R0, unless
+; both or neither are down.  Clobbers R3.
+KEY_SWAP:	MOV	R0,R3
+		COM	R3
+		BIT	R2,R3			; both down
+		BEQ	9$
+		BIT	R2,R0			; neither
+		BEQ	9$
+		XOR	R2,R0
+9$:		RETURN
+
+; VIEW_SWITCH - the sky is a different sky now: wipe it and label it.
+;
+; VIEW_LABEL is separate because everything else that blanks the view -
+; coming back from a screen, arriving in a new system - has to put the
+; label back too.  Looking forward is the ordinary state of affairs and
+; is left unlabelled; the other three say so in the top right corner,
+; clear of the message line and of the gunsight.
+VIEW_SWITCH:	CALL	VIEW_CLEAR
+VIEW_LABEL:	CLR	LOCK_SHOWN		; whatever was on the view has just
+		CALL	GUNSIGHT		; gone with it
+		TST	VIEW_DIR
+		BEQ	9$
+		MOV	#72.,TX
+		MOV	#2,TY
+		CALL	VIEW_NAME
+		JMP	PUTS
+9$:		RETURN
+
+; =========================================================================
+; GUNSIGHT - the sight in the middle of the view.
+;
+; Four ticks with a hole in the middle, at the corners of the box a ship
+; has to project inside to be under the guns - so what the sight shows is
+; exactly what the trigger tests, rather than a decoration near it.  It
+; is drawn straight onto the screen and not through the segment buffer:
+; the renderer draws by XOR, so a hull crossing the sight rubs it out and
+; puts it back again when the frame is erased, and the sight costs
+; nothing at all per frame.  Anything that blanks the view draws it
+; again, which is why this hangs off VIEW_LABEL.
+; =========================================================================
+GS_GAP	= 10.			; the hole in the middle, in pixels
+GS_ARM	= 20.			; and how far each tick reaches
+
+GUNSIGHT:	CALL	CLIP_VIEW
+		MOV	#VIEW_YC,LY0		; left tick
+		MOV	#VIEW_YC,LY1
+		MOV	#VIEW_XC-GS_ARM,LX0
+		MOV	#VIEW_XC-GS_GAP,LX1
+		CALL	DRAW_LINE
+		MOV	#VIEW_YC,LY0		; right
+		MOV	#VIEW_YC,LY1
+		MOV	#VIEW_XC+GS_GAP,LX0
+		MOV	#VIEW_XC+GS_ARM,LX1
+		CALL	DRAW_LINE
+		MOV	#VIEW_XC,LX0		; above
+		MOV	#VIEW_XC,LX1
+		MOV	#VIEW_YC-GS_ARM,LY0
+		MOV	#VIEW_YC-GS_GAP,LY1
+		CALL	DRAW_LINE
+		MOV	#VIEW_XC,LX0		; and below
+		MOV	#VIEW_XC,LX1
+		MOV	#VIEW_YC+GS_GAP,LY0
+		MOV	#VIEW_YC+GS_ARM,LY1
+		JMP	DRAW_LINE
+
+CLAMP8:		MOV	#PROLL,R1
+		CALL	CLAMP1
+		MOV	#PPITCH,R1
+CLAMP1:		CMP	@R1,#8.
+		BLE	1$
+		MOV	#8.,@R1
+		RETURN
+1$:		CMP	@R1,#-8.
+		BGE	2$
+		MOV	#-8.,@R1
+2$:		RETURN
+
+SP_RESTART:	.WORD	0

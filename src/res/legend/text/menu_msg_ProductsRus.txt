@@ -1,0 +1,42 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/Messages/ProductsRus.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+crProd_00+0|ПРОДОВОЛЬСТВИЕ
+crProd_01+0|ТЕКСТИЛЬ
+crProd_02+0|РАДИОИЗОТОПЫ
+crProd_03+0|РАБЫ
+crProd_04+0|АЛКОГОЛЬ
+crProd_05+0|ПРЕДМЕТЫ РОСКОШИ
+crProd_06+0|НАРКОТИКИ
+crProd_07+0|КОМПЬЮТЕРЫ
+crProd_08+0|СТАНКИ И МАШИНЫ
+crProd_09+0|СПЛАВЫ
+crProd_0A+0|РУЧНОЕ ОРУЖИЕ
+crProd_0B+0|МЕХА
+crProd_0C+0|МИНЕРАЛЫ
+crProd_0D+0|ЗОЛОТО
+crProd_0E+0|ПЛАТИНА
+crProd_0F+0|БРИЛЛИАНТЫ
+crProd_10+0|АРТЕФАКТЫ ЧУЖИХ
+crProd_11+0|ЧЕРНЫЕ МЕТАЛЛЫ
+crProd_12+0|ДРЕВЕСИНА
+crProd_13+0|ПРОЦЕССОРЫ
+crProd_14+0|МЯСО ЖИВОТНЫХ
+crProd_15+0|ШКУРЫ ЖИВОТНЫХ
+crProd_16+0|ВОЕННОЕ ОРУЖИЕ
+crProd_17+0|ФЕРМЕРСКИЕ МАШИНЫ
+crProd_18+0|УДОБРЕНИЯ
+crProd_19+0|ЗЕРНО
+crProd_1A+0|БЕСПИЛОТНИК
+crProd_1B+0|ТЯЖЕЛЫЕ ПЛАСТМАССЫ
+crProd_1C+0|ВОДОРОДНОЕ ТОПЛИВО
+crProd_1D+0|ЗАПЧАСТИ ДЛЯ МАШИН
+crProd_1E+0|ЖИДКИЙ КИСЛОРОД
+crProd_1F+0|ЖИВЫЕ ЖИВОТНЫЕ
+crProd_20+0|МЕДИКАМЕНТЫ
+crProd_21+0|ВОЕННОЕ ТОПЛИВО
+crProd_22+0|ПАРАЛИЗУЮЩИЙ ГАЗ
+crProd_23+0|РОБОТЫ
+crProd_24+0|СИНТЕТИЧЕСКОЕ МЯСО
+crProd_25+0|ВОДА

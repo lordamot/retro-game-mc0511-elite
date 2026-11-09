@@ -1,0 +1,10 @@
+# orig/legend/EliteLegend_v1_09_source/INCLUDE/Menu/BuySellMsg.a80 - extracted by tools/legend_text.py;
+# `make extract` overwrites it.  LABEL+n|text; {code args} are
+# Legend's control bytes (PrintTxt.a80).
+
+Msg_BuySell+0|{nSetCrdXY,19,4}{nSetPixCrdY,8}{nFlgPrn_xx1}ТОВАРНЫЙ РЫНОК
+Msg_BuySell2+0|{nSetCrdXY,2,2}{nFlgPrn_xx1}ТОВАРЫ:{nSetCrdXY,24,2}ЦЕНА:  В ПРОДАЖЕ: В ТРЮМЕ:
+Msg_Cash+0|{nFlgPrn_xx1}ДЕНЬГИ
+Msg_Cr+0|КР 
+Msg_InHold+0|В ТРЮМЕ:
+Msg_Of+0|ИЗ
