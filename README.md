@@ -1,5 +1,16 @@
 # Elite Legend for Электроника МС-0511 (УКНЦ)
 
+"Весьма альфа" версия продвинутой версии Elite на новую платформу.
+К игре прилагаются инструкции - в файлах релиза. Пока статус "вроде играбельно 
+но есть проблемы" - обратная связь всячески приветствуется.
+
+Репозиторий содержит полный toolchain для сборки проекта (Ubuntu Linux).
+
+![Лого](readme/00.png)
+![Старт](readme/01.png)
+![Маркет](readme/02.png)
+![Карта](readme/03.png)
+
 A Russian-language Elite Legend port for the УКНЦ, written in MACRO-11
 with hardware MUL/DIV and a 640×288 display. Version **0.8.0** builds as a
 bootable RT-11 disk containing `ELITE.SAV`, `ELITE.DAT` and normal commander
