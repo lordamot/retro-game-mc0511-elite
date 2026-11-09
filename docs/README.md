@@ -1,0 +1,60 @@
+# Project documentation
+
+These references describe the v0.8.0 source tree. The game code and
+generated listings are authoritative for behavior and addresses. Documents
+record current decisions and constraints; they are not a development log.
+
+## Start here
+
+| Task | Reference |
+|---|---|
+| Prepare dependencies and optional reference inputs | [Checkout setup](setup.md) |
+| Build, play or locate player PDFs | [Project README](../README.md) |
+| Work in this repository | [AGENTS.md](../AGENTS.md) |
+| Understand module boundaries and data flow | [Architecture](architecture.md) |
+| Change graphics, input, timing or PPU ownership | [Platform](platform.md) |
+| Allocate code, data or overlays | [Memory map](memory-map.md) |
+| Change loading, saving, disk refresh or exit | [RT-11 lifecycle](rt11.md) |
+| Change or measure the renderer | [Rendering and performance](rendering.md) |
+| Avoid assembly, concurrency and fixture errors | [Caveats](caveats.md) |
+| Select checks and interpret evidence | [Testing](testing.md) |
+| Find a CLI or resource generator | [Tools](tools.md) |
+| Check what differs from Elite Legend | [Compatibility and limits](compatibility.md) |
+| Trace original data and third-party inputs | [Reference sources](reference-sources.md) |
+| Check the MIT scope and third-party rights | [Licensing assessment](licensing.md) |
+| Read keys and keyboard protocol | [KEYBOARD.md](../KEYBOARD.md) |
+| Edit or regenerate the Russian PDFs | [Manual sources](manual/README.md) |
+
+## Current scope
+
+The port has 69 object headers on 55 hulls, sixteen universe slots,
+nineteen purchasable ships, 38 commodities, 49 equipment rows, four saved
+commanders, a carrier market, 48 galaxies and Legend's mission systems.
+Combat includes eight lasers on four mounts, missiles, ECM, bombs,
+cloaking, boarding and player Targlets. Jumps apply wear, repairs and cargo
+life support. Screens use the full 640×288 display and the 8×11 УКНЦ font.
+
+A native RT-11 launch shows welcome and controls pages, each advanced by
+ВВОД, then the Legend logo waiting for ФИКС. Restarts return to the logo.
+The game uses `ELITE.SAV`, paired `ELITE.DAT` and normal commander files.
+Player disks live under `saves/`; tests use `tmp/`.
+
+The attract demo is deferred. Cargo discard, ore processing and target-lock
+enhancement are catalogue/record items without their own gameplay effect.
+Platform-specific differences and capsule behavior are documented in
+[compatibility](compatibility.md). General PPU geometry offload is not
+implemented. These limitations must remain visible in player documentation.
+
+## Evidence limits
+
+The latest runtime evidence covers native RT-11 lifecycle, startup,
+presentation, sound, save handling, rules and resource checks. There is
+**no complete clean all-groups run recorded for the current v0.8.0 tree**.
+Do not reuse an older full-suite pass or check count as current certification.
+[Testing](testing.md) specifies how to establish a new result.
+
+The latest applicable whole-game benchmark measures the RT-11 renderer at
+9.40 fps still, 7.40 moving and 6.42 turning with the sixteen-slot fixture.
+It predates the startup-only splash addition; see [rendering](rendering.md)
+for the exact workload, date and limits. Memory figures are a build snapshot,
+not a promise that later edits fit unchanged.

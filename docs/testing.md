@@ -1,0 +1,128 @@
+# Verification
+
+## Commands and coverage
+
+Prepare the local inputs in [checkout setup](setup.md). Full and host-only
+runs require the ignored Legend sources for resource round trips; a fresh
+checkout alone cannot perform those comparisons. Missing Legend sources
+fail explicitly. Runtime-focused groups use the built port and emulator.
+
+```sh
+make verify
+```
+
+This builds the game and runs host resource/model checks plus every entry
+in `GROUPS` in `tools/verify_build.py`. The source dispatch list and `--help`
+are authoritative; do not maintain a second group list or a fixed assertion
+count in documentation.
+
+For a narrower development loop, build first and run the relevant group:
+
+```sh
+make build
+python3 -u tools/verify_build.py --only rt11
+python3 -u tools/verify_build.py --only splash
+python3 -u tools/verify_build.py --only rules
+python3 -u tools/verify_build.py --skip-emu
+```
+
+| Group or family | Main coverage |
+|---|---|
+| `rt11` | Real save/overwrite/load, invalid and full-disk failures, SAV/DAT pairing and relocation, legacy migration, cold reboot, exit/relaunch, stack and vector ownership |
+| `splash`, `title`, `presentation` | Enter boundaries, logo/audio, font and screen rendering |
+| `saving`, `access`, `commanders` | Commander persistence, chooser and access menu behavior |
+| `keyfile`, `pause`, `sound`, `ppu` | Bindings/options, sound, cache and PPU integration |
+| `completion` | Save preservation and input-driven completion features |
+| `rules` | Controlled rule boundaries and exact renderer proofs |
+| Other `GROUPS` entries | Combat, markets, travel, hulls, bases, contracts and missions |
+| `--skip-emu` | Resource round trips and host-side models only |
+
+The rules group calls `verify_render.py` for exact matrix cases, fused
+projection (including signed overflow and near-plane rejection), filled-sun
+pixels, font/layout and queue wraparound/full-ring stress. Those proofs
+complement screenshots; none alone establishes all rendering behavior.
+
+## Isolation and sequencing
+
+Run emulator suites sequentially: some groups share a disposable disk.
+Do not build while a suite is running. Symbols, native SAV/DAT and the disk
+under test must belong to the same build. `syms.check_fresh()` rejects stale
+inputs; parsed listings are cached by file version.
+
+`keep_pristine()` reconstructs images from the manifest; `fresh_disk()`
+provides a private test disk. Never copy a potentially played build image
+and call it pristine. No test should save into `saves/elite.dsk`. Disk
+refresh tests use independent fixtures, including distinct records in all
+four slots and backup checks.
+
+The native lifecycle probes use real monitor file calls, not simulated
+writes. They check failure preservation, keyboard edges during I/O, cache
+read avoidance, physical relocation of DAT, cold boots after swap writes,
+and repeated clean exit/relaunch with reused allocation addresses.
+
+## Driving startup and screens
+
+Reuse the boundaries in `verify_build.py`:
+
+| Sequence | End state |
+|---|---|
+| `POWER_ON` | First welcome page |
+| `SPLASH_KEYS` after power-on | Logo after two separate Enter presses |
+| `TITLE_BOOT` | Complete boot to logo |
+| `CHOOSE_KEYS` after logo | Commander chooser |
+| `COMMANDER_KEYS` after chooser | Default commander ready |
+| `BOOT` | Combined launch sequence |
+
+`uknc_control.py boot` ends at the logo; it does not select a commander.
+Do not duplicate old fixed boot waits in new tests. Nonmodal navigation
+uses `ui_ready(t)` to wait for main-loop progress after I/O and the
+25-frame screen-switch lockout. Name and mission prompts are modal and
+need their own timing/observation. When a key appears lost, inspect CPU
+registers and current page before attributing the problem to a crash.
+
+Flight edges survive I/O in acknowledged packets. Raw scancode prompts
+are not a queue of arbitrary typed characters; allow each prompt to draw,
+and send separate press/release events.
+
+## Controlled probes
+
+Use the current helper routines to initialize complete ship state, both
+position words and deterministic random inputs. A fixture's scene must be
+proved by reads rather than inferred from a screenshot or a slot number.
+Sample transient events across their active interval. Read completed frame
+counters and correct byte halves; [caveats](caveats.md) lists common errors.
+
+Rule probes patch only disposable emulator RAM. Renderer probes use the
+flight-overlay window through the harness hook while docked, so they do
+not overwrite live executing code. Drain the PPU before pixel inspection
+and preserve final results until read. They do not modify gameplay source
+or player disks.
+
+A nonzero emulator exit, missing reply or zero-assertion group is a failure,
+not a skip. Never weaken an assertion just because a speed or I/O change
+moved the observation window; establish the event and correct the fixture.
+
+## Reporting results
+
+Record the build identity, command, exit status, actual assertion count,
+failures and any skipped comparisons. Distinguish a full suite from focused
+reruns and host-only checks. Do not combine earlier passing groups into a
+claim that one complete run passed. Disposable logs in `tmp/` are evidence
+for a local session, not enduring dependencies of the project documentation.
+
+The current v0.8.0 runtime has focused evidence but no recorded clean
+all-groups pass. A documentation-only change does not require another long
+gameplay run; validate its paths, commands and generated outputs. A runtime
+release should establish a clean full result for its own build.
+
+## Visual and performance checks
+
+Use [rendering](rendering.md) for fixed/sparse benchmarks and segment
+comparisons. Check memory bounds from the assembled listing and manifest.
+A timing improvement must retain the intended scene and visual features.
+
+For PDFs, `make docs` builds all three from maintained sources;
+`make docs-capture` first builds the game and captures real screens on a
+private disk. Render affected pages with Poppler, inspect layout and glyphs,
+and check searchable Russian text, section coverage and page bounds.
+See [manual sources](manual/README.md).
