@@ -1,6 +1,6 @@
 # Project documentation
 
-These references describe the v0.8.0 source tree. The game code and
+These references describe the v0.8.2 source tree. The game code and
 generated listings are authoritative for behavior and addresses. Documents
 record current decisions and constraints; they are not a development log.
 
@@ -35,7 +35,9 @@ cloaking, boarding and player Targlets. Jumps apply wear, repairs and cargo
 life support. Screens use the full 640×288 display and the 8×11 УКНЦ font.
 
 A native RT-11 launch shows welcome and controls pages, each advanced by
-ВВОД, then the Legend logo waiting for ФИКС. Restarts return to the logo.
+ВВОД, then the Legend logo waiting for ФИКС. The logo offers 1 — GRB
+(default) and 2 — RGB; the palette choice lasts until exit. Restarts return
+to the logo.
 The game uses `ELITE.SAV`, paired `ELITE.DAT` and normal commander files.
 Player disks live under `saves/`; tests use `tmp/`.
 
@@ -47,11 +49,11 @@ implemented. These limitations must remain visible in player documentation.
 
 ## Evidence limits
 
-The latest runtime evidence covers native RT-11 lifecycle, startup,
-presentation, sound, save handling, rules and resource checks. There is
-**no complete clean all-groups run recorded for the current v0.8.0 tree**.
-Do not reuse an older full-suite pass or check count as current certification.
-[Testing](testing.md) specifies how to establish a new result.
+The v0.8.2 version-text update passed its build and all 87 palette/title
+assertions. The preceding v0.8.1 build passed all 713 assertions in one complete `make verify`
+run on 2026-11-11, including palette, native RT-11, gameplay, presentation
+and exact renderer checks. [Testing](testing.md) records the build identity,
+coverage and the retired resource-comparison exclusion.
 
 The latest applicable whole-game benchmark measures the RT-11 renderer at
 9.40 fps still, 7.40 moving and 6.42 turning with the sixteen-slot fixture.

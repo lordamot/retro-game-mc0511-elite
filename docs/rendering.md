@@ -72,9 +72,11 @@ python3 tools/bench.py --sparse --ticks 1200 --turning --shot tmp/sparse.png
 python3 tools/harness.py --turning
 ```
 
-An emulator `run` tick is **1/25 second**. A 1200-tick game benchmark spans
-48 seconds. Count completed game frames, not interrupts. `PPB_BUSY` counts
-50 Hz drawing activity; its denominator is twice the emulator tick count.
+An emulator `run` tick follows the installed core's frame rate, reported
+by `timing` and used by `bench.py`. The current 50 Hz core takes 24 emulated
+seconds for 1200 ticks; older 25 Hz cores took 48 seconds. Count completed
+game frames, not interrupts. `PPB_BUSY` counts 50 Hz drawing activity;
+its denominator is elapsed emulated seconds times 50.
 Native I/O can defer published CPU clocks, so do not use those clocks to
 infer disk latency.
 
@@ -94,6 +96,8 @@ not the shipped scene. The harness does not run at boot.
 The latest measured RT-11 runtime baseline is from 2026-11-08, before the
 startup-only splash addition. It is retained as a workload reference,
 not a claim that the current tree was rebenchmarked during documentation.
+The recorded rates below used the older 25 Hz tick conversion; do not
+apply them to the updated core or reinterpret them as new measurements.
 
 | Sixteen-slot workload | Completed frames in 1200 ticks | FPS |
 |---|---:|---:|

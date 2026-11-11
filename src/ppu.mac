@@ -246,17 +246,34 @@ SET_MODE_PP:	MOV	#177010,R0
 ; CPU_MODE (see src/gamevars.mac).
 COMMAND_4:	MOV	#177010,R0
 		MOV	#177014,R1
+		MOV	#PALETTE_MODE/2,@R0
+		MOV	@R1,R4
 		MOV	#COLORWORD1/2,@R0
-		MOV	@R1,@#2400	; space view, palette word 1
-		INC	@R0
-		MOV	@R1,@#2402	; space view, palette word 2
-		INC	@R0
-		MOV	@R1,@DASH_PAL1	; dashboard, palette word 1 - written
-		INC	@R0		;   through the element address NEW_TABLE
-		MOV	@R1,@DASH_PAL2	;   recorded when it built the table
-		INC	@R0
-		MOV	@R1,@#2372	; screen mode
+		CALL	PP_PALETTE_WORD
+		MOV	R2,@#2400	; space view, entries 0..3
+		CALL	PP_PALETTE_WORD
+		MOV	R2,@#2402	; space view, entries 4..7
+		CALL	PP_PALETTE_WORD
+		MOV	R2,@DASH_PAL1
+		CALL	PP_PALETTE_WORD
+		MOV	R2,@DASH_PAL2
+		MOV	@R1,@#2372	; screen mode is not a palette word
 		RETURN
+
+; Canonical words stay YRGB. Exchange bits 1/2 of every nibble for GRB.
+; R0/R1 = window registers, R4 = layout. Clobbers R2/R3, advances window.
+PP_PALETTE_WORD:	MOV	@R1,R2
+		INC	@R0
+		TST	R4
+		BNE	1$
+		MOV	R2,R3
+		ASR	R3
+		XOR	R2,R3
+		BIC	#56797.,R3	; retain 0x2222, differing red/green bits
+		XOR	R3,R2
+		ASL	R3
+		XOR	R3,R2
+1$:		RETURN
 
 ; ---- COMMAND_6: fill whole lines with one colour in all planes ---------
 ; CPU RAM: FILL_Y = first line, FILL_CNT = count, FILL_COLOR = 0..7.

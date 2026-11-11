@@ -56,7 +56,7 @@ under `src/res/`; generated `.mac` and binary output goes under `build/`.
 | `cockpit_gen.py` | Cockpit blocks/catalogue → missile, energy, fuel, turret, scanner and tonnage limits |
 | `text_gen.py` | Russian strings/pairs → resident strings and `@overlay`-selected sections |
 | `planet_gen.py` | Extracted world vocabulary → description pointer tables |
-| `font_gen.py` | Readable 8×11 UKNC ROM glyphs → KOI-7 font; `--prefix SPLAT` builds the startup Latin bank |
+| `font_gen.py` | Readable 8×11 UKNC ROM glyphs → KOI-7 font; `--prefix SPLAT` builds the startup/title Latin bank |
 | `mission_text.py` | Legend mission messages → `mistext.bin` and label/offset tables |
 | `logo_gen.py`, `scanner_gen.py` | Editable pixel text → title/scanner run-length streams |
 | `music_gen.py` | `NOTE FRAMES` score → period/volume/duration table for the second AY |
@@ -81,8 +81,9 @@ ROM extraction without modifying the maintained source:
 python3 tools/font_gen.py bin/ukncbtl/uknc_rom.bin --uknc-rom --out tmp/uknc11.txt
 ```
 
-The splash Latin bank is `src/res/font/latin11.txt`, assembled separately.
-`<ASCII>` spans in splash strings use that bank; other pages retain KOI-7.
+The Latin bank is `src/res/font/latin11.txt`, assembled separately in the
+startup and title overlays. Their `<ASCII>` spans use `src/latin.mac`;
+ordinary game text retains KOI-7.
 
 A score uses `R` for rest; `#` begins a comment only at line start or after
 whitespace so `F#4` remains a note. Periods target the AY module's 1.77 MHz
@@ -148,11 +149,21 @@ python3 tools/uknc_control.py script tmp/check.script --disk tmp/test.dsk
 adds named keys after that; `script` executes a supplied raw script.
 `make shot` builds and captures a logo proof of life. The headless emulator
 is `bin/ukncbtl/uknc-headless`; the interactive one is `uknc-play`.
+The player uses the core's `FRAMERATE` (currently 50 Hz) and `SAMPLERATE`
+(22050 Hz) together. It queues zero-valued silence without a fixed offset,
+primes three frames before playback, and re-primes after an underrun.
+`python3 tools/build_toolchain.py --only headless` rebuilds both runners
+and checks the real player loop against a deterministic audio sink before
+installing them. No audio hardware or player disk is used by that check.
 
 The raw command parser is in `tools/uknc-headless/main.cpp`. Common commands:
 
 ```text
+timing
 run N
+runrel OCTAL_ADDRESS DECIMAL_COUNT [DECIMAL_LIMIT]
+waitcpu OCTAL_ADDRESS OCTAL_VALUE DECIMAL_LIMIT
+runpc OCTAL_ADDRESS DECIMAL_LIMIT
 press CODE [HOLD]
 keydown CODE
 keyup CODE
@@ -167,9 +178,16 @@ quit
 ```
 
 Scancodes and CPU addresses are octal; dump lengths are decimal. `run N`
-uses 1/25-second emulator ticks. Prefer `verify_build` startup constants and
+uses core frames: `timing` reports frames per second. The current core uses
+1/50-second ticks; older builds used 1/25 second. Prefer `verify_build` startup constants and
 `ui_ready` over hard-coded old delays. Screenshots are native 640×288 BMPs;
 the wrapper converts to PNG through Pillow.
+
+`runrel` waits for a CPU word counter to advance by at least the requested
+count; `waitcpu` waits for a word value; `runpc` stops at a CPU instruction
+address. All three fail with a nonzero exit on timeout. Limits are emulator
+ticks. For overlay breakpoints, establish the loaded overlay first because
+different overlays share instruction addresses.
 
 `keymap.py` sweeps actual make/release codes. `syms.py` resolves labels and
 assignments from the matching listing and supplies `check_fresh()`. A

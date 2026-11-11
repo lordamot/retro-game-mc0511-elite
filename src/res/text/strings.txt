@@ -530,7 +530,6 @@ SP_TORUS|ВЕРСИЯ ДЛЯ <ZX SPECTRUM>: <TORUS> (1985)
 SP_LEGEND|<ELITE LEGEND>: <PLM>
 SP_DATE|ПЕНЗА, 9 НОЯБРЯ 2026
 SP_NEXT|ВВОД: К СПРАВОЧНОМУ ЭКРАНУ
-SP_VERSION|0.8.0
 SP_KEYS|УПРАВЛЕНИЕ ИГРОЙ - УКНЦ
 SP_FLIGHT|ПОЛЕТ: КЛАВИША - ДЕЙСТВИЕ
 SP_MENUS|МЕНЮ, СТАНЦИЯ И КАРТЫ
@@ -565,3 +564,9 @@ SP_M13|КАРТА: 3       - СПИСОК СИСТЕМ
 SP_M14|КАРТЫ: 9       - ПРЫЖОК К РАККСЛЕ
 SP_M15|ДОП. ВВОД - НА ЦИФРОВОЙ КЛАВИАТУРЕ
 SP_PLAY|ВВОД: К ИГРЕ
+
+@overlay cmdr title
+SP_VERSION|0.8.2
+
+@overlay title
+T_PALETTE|ПАЛИТРА  1: <GRB>   2: <RGB>

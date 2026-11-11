@@ -1,0 +1,44 @@
+; Overlay-local Latin support shared by the title and startup pages.
+LATIN_MODE:	.WORD	0
+
+; Body strings use <ASCII> for Latin names inside KOI-7 Russian text.
+; Those glyphs come from the same UKNC ROM, in an overlay-local bank.
+LATIN_PUTS:	CALL	RING_WAIT
+		CLR	LATIN_MODE
+1$:		MOVB	(R1)+,R0
+		BEQ	9$
+		CMP	R0,#74			; < opens Latin text
+		BNE	2$
+		INC	LATIN_MODE
+		BR	1$
+2$:		CMP	R0,#76			; > returns to Russian
+		BNE	3$
+		CLR	LATIN_MODE
+		BR	1$
+3$:		MOV	R1,-(SP)
+		TST	LATIN_MODE
+		BEQ	4$
+		CMP	R0,#SPLAT_FIRST
+		BLO	4$
+		CMP	R0,#SPLAT_LAST
+		BHI	4$
+		SUB	#SPLAT_FIRST,R0
+		MUL	#FONT_H,R0
+		MOV	R1,R0
+		ADD	#SPLAT8,R0
+		MOV	TY,R1
+		MUL	#SCRWB,R1
+		ADD	TX,R1
+		ADD	#VRAM,R1
+		MOV	#FONT_H,R2
+5$:		MOV	R1,@#VADDR
+		MOVB	(R0)+,@#VDATA
+		ADD	#SCRWB,R1
+		SOB	R2,5$
+		INC	TX
+		BR	6$
+4$:		CALL	PUTC
+6$:		MOV	(SP)+,R1
+		BR	1$
+9$:		RETURN
+

@@ -15,11 +15,9 @@ can be compared.
 
     python3 tools/bench.py [--ticks 400]
 
-A tick is one emulator SystemFrame, which is 1/25 s - two 50 Hz
-interrupts land in each one (`CPU_VSYNC` advances by 800 over a run of
-400).  Every figure this printed before 2026-09-10 used 50 and was
-twice the truth; the ratios between builds were right, the rates were
-not.
+A tick is one emulator SystemFrame. The runner's timing command reports
+its core's frame rate: current emubase uses 50 Hz, older builds used 25.
+Do not compare tick counts across core revisions without this conversion.
 """
 
 import argparse
@@ -63,8 +61,8 @@ def main(argv=None):
                     help="time this many rendering-only frames (50 Hz interrupts)")
     ap.add_argument("--no-stars", action="store_true", help="disable stars for an ablation run")
     ap.add_argument("--ticks", type=int, default=400,
-                    help="a tick is one emulator SystemFrame, 1/25 s: 25 "
-                         "ticks is one second of emulated time")
+                    help="a tick is one emulator SystemFrame; duration is "
+                         "reported by the installed runner")
     ap.add_argument("--sparse", action="store_true",
                     help="use only the five scene objects; leave spare slots empty and disable traffic")
     ap.add_argument("--no-bodies", action="store_true",
@@ -117,7 +115,7 @@ def main(argv=None):
         return poke(univ + slot * usize + int(t[name], 8), val)
 
     from verify_build import BOOT, fresh_disk
-    script = list(BOOT) + ["press 107", "run 60"]
+    script = ["timing"] + list(BOOT) + ["press 107", "run 60"]
     for slot in range(nuniv):                       # a clean sky first
         script.append(field(slot, "U.TYPE", 0))
     scene = [row for row in SCENE
@@ -286,6 +284,10 @@ def main(argv=None):
                        capture_output=True, text=True, timeout=900)
     if r.returncode:
         sys.exit(f"error: emulator exited {r.returncode}: {r.stderr[-1000:]}")
+    timing = re.search(r"timing: (\d+) frames/sec", r.stdout)
+    if not timing or int(timing[1]) <= 0:
+        sys.exit("error: emulator did not report timing; rebuild the headless toolchain")
+    tick_rate = int(timing[1])
     if args.shot:
         from PIL import Image
         bmp = Path(args.shot).with_suffix(".bmp").resolve()
@@ -309,7 +311,7 @@ def main(argv=None):
     n = 1 + len(args.peek)                          # words read each time
     frames = vals[n] - vals[0]
     print(f"{frames} frames in {args.ticks} ticks "
-          f"= {frames * 25.0 / args.ticks:.2f} fps")
+          f"at {tick_rate} Hz = {frames * tick_rate / args.ticks:.2f} fps")
     for i, name in enumerate(args.peek):            # each as a delta over
         before, after = vals[1 + i], vals[n + 1 + i]  # the same window
         print(f"{name}: {(after - before) & 0xFFFF} over the run "

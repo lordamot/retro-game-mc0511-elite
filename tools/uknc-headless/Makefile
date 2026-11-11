@@ -13,7 +13,7 @@ SDL2RT ?= -l:libSDL2-2.0.so.0
 .DEFAULT_GOAL := all
 all: uknc-headless uknc-play
 
-uknc-headless: $(SRCS) stdafx.h
+uknc-headless: $(SRCS) stdafx.h palette.h
 	$(CXX) $(CXXFLAGS) -o $@ $(SRCS)
 
 # The interactive player links against the host's SDL2 *runtime*
@@ -22,8 +22,15 @@ PLAY_SRCS := uknc-play.cpp $(EMUBASE)/Board.cpp $(EMUBASE)/Processor.cpp \
         $(EMUBASE)/Memory.cpp $(EMUBASE)/Floppy.cpp $(EMUBASE)/Hard.cpp \
         $(EMUBASE)/Disasm.cpp $(EMUBASE)/SoundAY.cpp
 
-uknc-play: $(PLAY_SRCS) stdafx.h sdl2_min.h
+uknc-play: $(PLAY_SRCS) stdafx.h sdl2_min.h palette.h
 	$(CXX) $(CXXFLAGS) -o $@ $(PLAY_SRCS) $(SDL2RT)
 
+.PHONY: check-audio
+check-audio: audio-test
+	./audio-test $(EMUBASE)/../uknc_rom.bin
+
+audio-test: audio-test.cpp $(PLAY_SRCS) stdafx.h sdl2_min.h palette.h
+	$(CXX) $(CXXFLAGS) -o $@ audio-test.cpp $(filter-out uknc-play.cpp,$(PLAY_SRCS))
+
 clean:
-	rm -f uknc-headless uknc-play
+	rm -f uknc-headless uknc-play audio-test

@@ -24,8 +24,9 @@ are reproducible from these inputs, not patched game binaries.
 3. The commander overlay's startup entry displays the welcome and control
    pages. Each requires a distinct ВВОД press; holding the key cannot skip
    both. Latin credits use an overlay-local ROM glyph bank.
-4. The title overlay displays the logo, rotating Cobra and music. ФИКС
-   opens the four-slot commander chooser; an empty slot prompts for a name.
+4. The title overlay displays the logo, music and version. Fixed keys 1/2
+   select GRB/RGB physical palette wiring; an underline marks the choice.
+   ФИКС opens the four-slot commander chooser; an empty slot prompts for a name.
 5. Flight and docked screens use the resident main loop and screen overlays.
 
 `MAIN_RESTART` reuses the running PPU and loaded banks, resets the stack and

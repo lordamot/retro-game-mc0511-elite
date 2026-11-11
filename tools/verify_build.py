@@ -238,21 +238,11 @@ BUILT = ROOT / "build" / "elite.raw"           # written by the build, never by 
 
 
 def keep_pristine():
-    """Lay the disk out again from the build's own pieces, both the shared
-    copy the checks boot and the pristine one fresh_disk copies.
+    """Reconstruct disposable RT-11 volumes from the built manifest.
 
-    Docking writes the commander to LBA 100 of whatever disk is in the
-    drive, so any check that gets the ship into a station leaves a saved
-    commander behind - and the next check to boot that disk picks him up.
-    That is how a run of the escape capsule, which strips the ship bare,
-    turned up later as a missing missile in the saving check.  And the
-    emulator's writes do not move the file's time, so a run that follows
-    another without a rebuild (nothing in src/ changed) started on the
-    disk the last run had docked on, copied THAT as pristine, and every
-    "fresh" disk carried a commander with the docking computer fitted:
-    parked with the throttle shut, the computer flew him at the station
-    under the ships the check was watching (2026-09-24).  tools/dsk_build.py
-    from build/manifest.json is the build's last step and is cheap.
+    Native docking saves and monitor swapping write to the mounted disk.
+    Rebuilding from manifest inputs prevents prior test commanders or
+    swap state from leaking into later fixtures.
     """
     PRISTINE.parent.mkdir(exist_ok=True)
     for out in (DSK, PRISTINE):
@@ -264,21 +254,8 @@ def keep_pristine():
 
 
 def fresh_disk(name):
-    """A private copy of the pristine disk, for a check that will write.
-
-    The copy is refreshed whenever the build is newer than it: running an
-    old image against a new symbol table reads whatever happens to live
-    at each address and reports it as game state, which looks exactly
-    like memory corruption and is not.
-    """
+    """A fresh private copy; pass the returned path explicitly across reboots."""
     import shutil
-    # Against the BUILD's time, not the disk's: forty-odd checks boot the
-    # shared disk and a docking writes the commander to it, so the disk is
-    # newer than the pristine copy after the first of them - and the copy
-    # was then taken again from the written disk.  A commander saved with
-    # the docking computer fitted reached every "fresh" disk after him,
-    # and every check that parked with the throttle shut had the computer
-    # fly the ship at the station under its ships (2026-09-24).
     if not PRISTINE.exists() or PRISTINE.stat().st_mtime < BUILT.stat().st_mtime:
         keep_pristine()
     out = ROOT / "tmp" / f"verify-{name}.dsk"
@@ -317,7 +294,7 @@ def widen_positions(script):
     return out
 
 
-def ui_ready(t, frames=28):
+def ui_ready(t=None, frames=28):
     """Wait for main-loop passes after a nonmodal screen/file operation.
 
     RT-11 directory calls may swap the USR. A fixed old raw-disk delay can
@@ -325,13 +302,23 @@ def ui_ready(t, frames=28):
     The default also clears SCREEN_KEYS' 25-frame STOP lockout. Modal
     name/mission prompts use their explicit waits instead.
     """
+    t = t or syms.table()
     return f"runrel {t['FLY_TICK']} {frames} 1200"
 
 
-def run_emu(script, disk=None):
+def mission_ready(t):
+    """Stop at the mission overlay's key loop after its text has been drawn."""
+    return [f"waitcpu {t['OVL_CUR']} {t['OVL_MISSION']} 1200",
+            f"runpc {t['MO_KEY']} 1200"]
+
+
+def run_emu(script, disk=None, *, palette=None):
     script = widen_positions(script)
+    if disk is None:
+        disk = fresh_disk("shared")
     r = subprocess.run([str(EMU), "--rom", str(ROM),
-                        "--disk", str(disk or DSK)],
+                        "--disk", str(disk)] +
+                       (["--palette", palette] if palette else []),
                        input="\n".join(script) + "\n",
                        capture_output=True, text=True, timeout=600)
     if r.returncode:
@@ -496,12 +483,11 @@ def check_hyperspace():
         check("hyperspace symbols found", False)
         return
     script = BOOT + [
-              "press 004", "run 90",
-              "press 154", "run 30", "press 154", "run 30",
-              "press 154", "run 30",
-              # the jump runs its tunnel before it arrives, which is
-              # forty frames the old fifty ticks did not allow for
-              "press 107", "run 160",
+              "press 004", ui_ready(),
+              "press 154", ui_ready(frames=1), "press 154", ui_ready(frames=1),
+              "press 154", ui_ready(frames=1),
+              # Arrival reads several overlays; observe the next main-loop pass.
+              "press 107", ui_ready(frames=1),
               f"peekcpu {table['PFUEL']}",
               f"peekcpu {table['SYS_INDEX']}",
               f"peekcpu {table['SCREEN']}",
@@ -525,7 +511,7 @@ def check_hyperspace():
     def minutes(w):                   # Legend's clock: 50-minute hours, 30-hour days
         d, h, m = (byte_of(t, k, x) for k, x in zip(("P_DAY", "P_HOUR", "P_MIN"), w))
         return (d * 30 + h) * 50 + m
-    jump = ["press 004", "run 90"] + ["press 154", "run 30"] * 3 + ["press 107", "run 160"]
+    jump = ["press 004", ui_ready()] + ["press 154", ui_ready(frames=1)] * 3 + ["press 107", ui_ready(frames=1)]
     v = [int(x, 8) for x in PEEK.findall(run_emu(BOOT + clock + jump + clock + [
         f"peekcpu {t['PFUEL']}", "quit"], fresh_disk("hyperspace")))]
     if len(v) == 7:
@@ -567,7 +553,7 @@ def check_station_and_trade():
 
     # the outfitter sells a missile: the top row with the tanks full,
     # and ФИКС buys it (Legend's list; check_equip goes through the rest)
-    script = boot + ["press 004", "run 90"] * 5 + \
+    script = boot + ["press 004", ui_ready(t)] * 5 + \
         [f"peekcpu {t['SCREEN']}",
          "press 107", "run 35",
          f"peekcpu {t['PMISSILES']}", f"peekcpu {t['CASH_L']}", "quit"]
@@ -578,7 +564,7 @@ def check_station_and_trade():
         check("and paid for", v[2] == 700, f"{v[2]} tenths left")
 
     # the galactic drive, poked in because 500 Cr is a long grind
-    script = boot + [poke_dev(t, "P_GALDRIVE"), "press 004", "run 90",
+    script = boot + [poke_dev(t, "P_GALDRIVE"), "press 004", ui_ready(t),
                      "press 107", "run 90",
                      f"peekcpu {t['GALNUM']}", f"peekcpu {t['SYS_INDEX']}",
                      peek_dev(t, "P_GALDRIVE"), "quit"]
@@ -818,7 +804,7 @@ def check_worlds():
         v = val & 0xFFFF
         return f"pokecpu {univ + off:o} {v & 0xFF:o} {(v >> 8) & 0xFF:o}"
 
-    def dead_at(x, y, z):
+    def dead_at(x, y, z, expect_dead=False):
         # slot 0 is the planet; move it onto the commander and see.  The
         # commander is HELD STILL: he launches at speed 16, and at that
         # speed the diagonal trial below flew him from 3394 away to
@@ -828,9 +814,12 @@ def check_worlds():
         # below were pressed, and a build a second faster in that scene
         # (a world filling the view, its rim now drawn whole) failed it.
         script = BOOT + [
-                  "press 107", "run 60",
+                  "press 107", ui_ready(t, frames=2),
                   poke_at(int(t["PSPEED"], 8), 0),
-                  poke(2, x), poke(4, y), poke(6, z), "run 200",
+                  poke(2, x), poke(4, y), poke(6, z)]
+        script += ([f"waitcpu {t['OVL_CUR']} {t['OVL_TITLE']} 1200",
+                    f"runrel {t['TI_TICK']} 2 1200"] if expect_dead else [ui_ready(t, frames=40)])
+        script += [
                   # Dying holds the message, then starts the title. Observe
                   # that directly: this collision test does not also need
                   # to drive the RT-11 commander lookup/name dialog.
@@ -838,12 +827,12 @@ def check_worlds():
         vals = [int(v, 8) for v in PEEK.findall(run_emu(script))]
         return len(vals) == 2 and vals[0] == int(t['OVL_TITLE'],8) and vals[1] > 0
 
-    check("inside the surface is fatal", dead_at(0, 0, 2600),
+    check("inside the surface is fatal", dead_at(0, 0, 2600, expect_dead=True),
           "planet 2600 away, radius 3000")
 
     # and so is a ship that flies into one: the planet is parked at a
     # known distance and a Sidewinder put inside it
-    script = BOOT + ["press 107", "run 60",
+    script = BOOT + ["press 107", ui_ready(t, frames=2),
                      poke(2, 0), poke(4, 0), poke(6, 9000),
                      poke_at(int(slot_field(t, 5, "U.TYPE"), 8),
                              int(t["SH_SIDEWINDER"], 8)),
@@ -854,7 +843,7 @@ def check_worlds():
                      poke_at(int(slot_field(t, 5, "U.Z"), 8), 9000)] + mind(t, 5, "SIDEWINDERH", still=True) + [
                      "run 30",
                      f"peekcpu {slot_field(t, 5, 'U.EXPL')}",
-                     f"peekcpu {slot_field(t, 7, 'U.TYPE')}", "quit"]
+                     f"peekcpu {slot_field(t, 5, 'U.TYPE')}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("worlds")))]
     if len(v) >= 2:
         check("and a ship that flies into a world stops being one",
@@ -881,7 +870,7 @@ def check_witchspace():
     uflags = int(t["U.FLAGS"], 8)
     nuniv = int(t["NUNIV"], 8)
     script = BOOT + [
-              f"pokecpu {t['WITCH']} 1 0", "press 107", "run 70",
+              f"pokecpu {t['WITCH']} 1 0", "press 107", ui_ready(t, frames=2),
               f"dumpcpu {t['UNIV']} {usize * nuniv} {dump}", "quit"]
     run_emu(script)
     if not dump.exists():
@@ -915,7 +904,7 @@ def check_witchspace():
         return
     a = {n: int(t[n], 8) for n in need}
     clock = [f"peekcpu {a['P_TIME'] + 2:o}", f"peekcpu {a['P_TIME'] + 4:o}"]
-    jump = ["press 004", "run 90"] + ["press 154", "run 30"] * 3 + ["press 107", "run 160"]
+    jump = ["press 004", ui_ready(t)] + ["press 154", ui_ready(t, frames=1)] * 3 + ["press 107", ui_ready(t, frames=1)]
     lave, there = galaxy_model(7), galaxy_model(55)
     d = sys_distance(there, lave)
     minutes = (d * d // 10) * 5
@@ -1353,7 +1342,7 @@ def check_docking():
           len(v) == 4 and v[0] == a["OVL_TITLE"] and v[1] == 0 and v[3] > v[2],
           f"overlay {v[:1]}, docked {v[1:2]}, title frames {v[2:]}")
 
-    v = run(fly + park(speed=20) + ["run 3"] + shoved)
+    v = run(fly + park(speed=20) + [ui_ready(t, frames=2)] + shoved)
     check("too fast: shoved back out, and the bump taken on the front shield",
           len(v) == 3 and v[0] == 0 and v[1] > a["STATION_Z"] - 200 and v[2] <= 160 - (2 * 20 + a["BUMP_HIT"]),
           f"docked {v[:1]}, station at {v[1:2]}, shield {v[2:3]}")
@@ -1361,7 +1350,7 @@ def check_docking():
     # the injectors run only while something locks the J-drive: the
     # station held just outside the slot's box first, then brought in
     v = run(fly + [poke_dev(t, "P_INJECTORS")] + park(z=2000) + ["run 2", "keydown 075", "run 3"] +
-            park() + ["run 4"] + shoved + ["keyup 075"])
+            park() + [ui_ready(t, frames=2)] + shoved + ["keyup 075"])
     # (once shoved out the station no longer locks the drive, which may
     # then carry the ship back toward it: "far" is all that is asked)
     check("on the injectors: too fast as well, and the bump taken",
@@ -1627,18 +1616,17 @@ def check_missions():
         check("mission symbols found", False, f"missing {[n for n in need if n not in t][:4]}")
         return
     a = {n: int(t[n], 8) for n in need}
-    chart = ["press 004", "run 60"]
-    market = ["press 004", "run 60"] * 4 + ["run 100"]   # СТОП to screen 4, and the
-                                                         #   mission's text read
+    chart = ["press 004", ui_ready(t)]
+    market = ["press 004", ui_ready(t)] * 3 + ["press 004"] + mission_ready(t)
     # 1. issued on arrival in galaxy 1 (the standard drive from Lave)
-    script = list(BOOT) + [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", "run 160",
+    script = list(BOOT) + [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", ui_ready(t, frames=1),
         f"peekcpu {t['GALNUM']}", peek_byte(t, "P_M1"), peek_byte(t, "P_MCOMPLETE"),
         f"peekcpu {t['P_FUEL']}", peek_byte(t, "P_COLOUR"), peek_byte(t, "P_MSTAT")]
     # 2. the market asks; Д takes them aboard
-    script += market + ["press 057", "run 60", peek_byte(t, "P_M1", 1), peek_dev(t, "P_LIFESUPPORT"),
+    script += market + ["press 057", ui_ready(t), peek_byte(t, "P_M1", 1), peek_dev(t, "P_LIFESUPPORT"),
         f"peekcpu {t['P_FREECARGO']}", f"peekcpu {t['SCREEN']}"]
     # 3. back to the cockpit (СТОП round to 0) and out: the fuse, the swelling
-    script += ["press 004", "run 100"] * 6 + [f"peekcpu {t['SCREEN']}", "press 107", "run 150", peek_byte(t, "P_M1"),
+    script += ["press 004", ui_ready(t)] * 6 + [f"peekcpu {t['SCREEN']}", "press 107", ui_ready(t, frames=3), peek_byte(t, "P_M1"),
         f"peekcpu {t['NOVA_R']}", "run 60", f"peekcpu {t['NOVA_R']}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("nova")))]
     if len(v) < 14:
@@ -1661,7 +1649,7 @@ def check_missions():
     #    random, and the nova is behind; the refugees are still aboard
     script = list(BOOT) + [poke_byte(t, "P_M1", 2), poke_byte(t, "P_M1", 1, 1),
         poke_byte(t, "P_MSTAT", 0)] + chart + [
-        "press 154", "run 30", "press 154", "run 30"] + steady_drive(t) + ["press 107", "run 200",
+        "press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1)] + steady_drive(t) + ["press 107", ui_ready(t, frames=1),
         f"peekcpu {t['GALNUM']}", peek_byte(t, "P_M1"), peek_byte(t, "P_M1", 1), "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("nova")))]
     if len(v) >= 3:
@@ -1671,7 +1659,7 @@ def check_missions():
 
     # 5. set down at a main station with no nova: a hundred gem-stones
     script = list(BOOT) + [poke_byte(t, "P_M1", 0), poke_byte(t, "P_M1", 1, 1),
-        poke_byte(t, "P_MCOMPLETE", 0)] + market + ["press 107", "run 40",
+        poke_byte(t, "P_MCOMPLETE", 0)] + market + ["press 107", ui_ready(t, frames=1),
         peek_byte(t, "P_M1", 1), f"peekcpu {a['CARGO'] + 30:o}", peek_byte(t, "P_MCOMPLETE"),
         f"peekcpu {t['P_FREECARGO']}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("nova")))]
@@ -1682,8 +1670,8 @@ def check_missions():
               f"complete {byte_of(t, 'P_MCOMPLETE', v[2]):o}, free {v[3]}")
 
     # 6. a jump in the first galaxy issues nothing, and the leave is kept
-    script = list(BOOT) + chart + ["press 154", "run 30", "press 154", "run 30"] + \
-        steady_drive(t) + ["press 107", "run 200", f"peekcpu {t['GALNUM']}",
+    script = list(BOOT) + chart + ["press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1)] + \
+        steady_drive(t) + ["press 107", ui_ready(t, frames=1), f"peekcpu {t['GALNUM']}",
         peek_byte(t, "P_M1"), peek_byte(t, "P_MSTAT"), "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("nova")))]
     if len(v) >= 3:
@@ -1711,7 +1699,7 @@ def check_missions2():
         return
     a = {n: int(t[n], 8) for n in need}
     nuniv = a["NUNIV"]
-    fly = list(BOOT) + ["press 107", "run 40"] + clear_traffic(t)
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t)
     types = [f"peekcpu {slot_field(t, k, 'U.TYPE')}" for k in range(nuniv)]
 
     def run(script, name="missions2"):
@@ -1769,8 +1757,8 @@ def check_missions2():
 
     # 6. issued on arrival in galaxy 1, by the rating's third byte against
     #    what is complete: bit 1 open - the Asp may come; bit 2 - the station
-    chart = ["press 004", "run 60"]
-    gal = [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", "run 160"]
+    chart = ["press 004", ui_ready(t)]
+    gal = [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", ui_ready(t, frames=1)]
     v = run(list(BOOT) + [poke_byte(t, "P_RATING", 1, 2), poke_byte(t, "P_MCOMPLETE", 1)] + gal +
             [peek_byte(t, "P_MSTAT"), peek_byte(t, "P_M1")])
     w = run(list(BOOT) + [poke_byte(t, "P_RATING", 3, 2), poke_byte(t, "P_MCOMPLETE", 3)] + gal +
@@ -1795,7 +1783,7 @@ def check_missions2():
 
     # 8. arriving at the target: 4, and the station there is angry.  The
     #    jump is the nova check's; where it lands is read off a first run
-    jump = chart + ["press 154", "run 30", "press 154", "run 30"] + steady_drive(t) + ["press 107", "run 200"]
+    jump = chart + ["press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1)] + steady_drive(t) + ["press 107", ui_ready(t, frames=1)]
     v = run(list(BOOT) + jump + [f"peekcpu {t['SYS_INDEX']}"])
     if not v:
         check("the jump run answered", False)
@@ -1854,9 +1842,9 @@ def check_missions3():
     def m4(w, off=0):
         return byte_of(t, "P_M4", w, off)
 
-    chart = ["press 004", "run 60"]
-    gal = [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", "run 160"]
-    jump = chart + ["press 154", "run 30", "press 154", "run 30"] + steady_drive(t) + ["press 107", "run 200"]
+    chart = ["press 004", ui_ready(t)]
+    gal = [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", ui_ready(t, frames=1)]
+    jump = chart + ["press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1)] + steady_drive(t) + ["press 107", ui_ready(t, frames=1)]
     dock = [poke_dev(t, "P_DOCKCOMP"), "press 107", "run 50"] + ["press 166", "run 20"] * 4 + ["run 700"]
     kills = lambda n: poke_at(a["P_DESTR"], n)
 
@@ -1958,11 +1946,11 @@ def check_missions3():
               f"system {m4(v[1], 2)} at {far}")
     intercept = [poke_at(int(t["WI_PLANS"],8),256), poke_at(int(t["HYP_NOROLL"],8),0)]
     v = run(list(BOOT) + [poke_byte(t, "P_M5", 4)] + jump[:-2] + intercept +
-            ["press 107", "run 200", f"peekcpu {t['WITCH']}"])
+            ["press 107", ui_ready(t, frames=1), f"peekcpu {t['WITCH']}"])
     w = run(list(BOOT) + [poke_byte(t, "P_M5", 4), poke_byte(t, "P_M4", 0, 1),
                           poke_byte(t, "P_M4", there, 2)] + [poke_at(int(t["WI_ODDS"], 8), 0)] +
-            chart + ["press 154", "run 30", "press 154", "run 30", poke_at(int(t["HYP_NOROLL"], 8), 1),
-                     "press 107", "run 200", peek_byte(t, "P_M5"), f"peekcpu {t['WITCH']}"])
+            chart + ["press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1), poke_at(int(t["HYP_NOROLL"], 8), 1),
+                     "press 107", ui_ready(t, frames=1), peek_byte(t, "P_M5"), f"peekcpu {t['WITCH']}"])
     x = run(list(BOOT) + [poke_byte(t, "P_M5", 3), poke_byte(t, "P_MCOMPLETE", 0),
                           poke_byte(t, "P_ENERGYUNIT", 0x80)] + dock +
             ["press 107", "run 60", peek_byte(t, "P_M5"), peek_byte(t, "P_MCOMPLETE"),
@@ -2005,10 +1993,10 @@ def check_missions4():
     def m6(w, off=0):
         return byte_of(t, "P_M6", w, off)
 
-    chart = ["press 004", "run 60"]
-    gal = [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", "run 160"]
-    jump = chart + ["press 154", "run 30", "press 154", "run 30", "press 154", "run 30"] + \
-        steady_drive(t) + ["press 107", "run 200"]
+    chart = ["press 004", ui_ready(t)]
+    gal = [poke_dev(t, "P_GALDRIVE")] + chart + ["press 107", ui_ready(t, frames=1)]
+    jump = chart + ["press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1)] + \
+        steady_drive(t) + ["press 107", ui_ready(t, frames=1)]
 
     # 1. issued: the war over, 1792 kills, 0, 1, 2, 4, 5 complete
     v = run(list(BOOT) + [poke_byte(t, "P_RATING", 3, 2), poke_byte(t, "P_MCOMPLETE", 0x37),
@@ -2026,7 +2014,7 @@ def check_missions4():
     dump.parent.mkdir(exist_ok=True)
     if dump.exists():
         dump.unlink()
-    run(list(BOOT) + jump + ["press 107", "run 40", f"dumpcpu {t['UNIV']} {usize * nuniv} {dump}"])
+    run(list(BOOT) + jump + ["press 107", ui_ready(t, frames=2), f"dumpcpu {t['UNIV']} {usize * nuniv} {dump}"])
     if not dump.exists():
         check("the base run answered", False)
         return
@@ -2043,11 +2031,11 @@ def check_missions4():
         [poke_at(int(slot_field(t, mil, "U.MAT"), 8) + 2 * k, 16384 if k in (0, 4, 8) else 0) for k in range(9)]
 
     def at_base(setup, keys):
-        return list(BOOT) + setup + jump + ["press 107", "run 40"] + ahead + ["run 300",
+        return list(BOOT) + setup + jump + ["press 107", ui_ready(t, frames=2)] + ahead + ["run 300",
                 f"peekcpu {t['DOCKED_AT']}"] + keys
 
     # 2. the first part: yes, three to six spies, the capture system, drones
-    v = run(at_base([poke_byte(t, "P_M6", 1)], ["press 057", "run 120", "press 107", "run 60",
+    v = run(at_base([poke_byte(t, "P_M6", 1)], ["press 057", "run 120", "press 107", ui_ready(t, frames=2),
             peek_byte(t, "P_M6"), peek_byte(t, "P_M6", 1), peek_dev(t, "P_DRONE"),
             f"peekcpu {a['CARGO'] + 2 * a['G_DRONE']:o}"]))
     if len(v) >= 5:
@@ -2058,7 +2046,7 @@ def check_missions4():
               f"drone {dr:o}, drones {v[4]}")
     # 3. the second: the leftmost world of the galaxy PilotRnd names, and
     #    the Targoid energy unit
-    v = run(at_base([poke_byte(t, "P_M6", 3)], ["press 107", "run 60", peek_byte(t, "P_M6"),
+    v = run(at_base([poke_byte(t, "P_M6", 3)], ["press 107", ui_ready(t, frames=2), peek_byte(t, "P_M6"),
             peek_byte(t, "P_M6", 1), peek_byte(t, "P_M4", 2), peek_byte(t, "P_RND"),
             peek_dev(t, "P_ENERGYUNIT")]))
     if len(v) >= 6:
@@ -2072,7 +2060,7 @@ def check_missions4():
               f"of {best}, unit {byte_of(t, 'P_ENERGYUNIT', v[5]):o}")
     # 4. the end: the Targoid laser in the first mount without one
     v = run(at_base([poke_byte(t, "P_M6", 7), poke_byte(t, "P_MCOMPLETE", 0)],
-                    ["press 107", "run 60", peek_byte(t, "P_M6"), peek_byte(t, "P_MCOMPLETE"),
+                    ["press 107", ui_ready(t, frames=2), peek_byte(t, "P_M6"), peek_byte(t, "P_MCOMPLETE"),
                      f"peekcpu {t['P_LASERS']}"]))
     if len(v) >= 4:
         check("and at the end the Targoid laser, the mission complete",
@@ -2093,7 +2081,7 @@ def check_missions4():
               f"M3 {byte_of(t, 'P_M3', v[0])}; M6 {m6(w[0])}, M3 {byte_of(t, 'P_M3', w[1])}")
 
     # 6. next to that world the unfinished cruiser comes, with its escort
-    fly = list(BOOT) + [poke_byte(t, "P_M6", 4), "press 107", "run 40"] + clear_traffic(t)
+    fly = list(BOOT) + [poke_byte(t, "P_M6", 4), "press 107", ui_ready(t, frames=2)] + clear_traffic(t)
     near = [poke_byte(t, "P_M3", 4)] + [poke_at(int(slot_field(t, 0, f), 8), v_) for f, v_ in
                                          (("U.X", 0), ("U.Y", 0), ("U.Z", 4000), ("U.XH", 0),
                                           ("U.YH", 0), ("U.ZH", 0))]
@@ -2120,10 +2108,10 @@ def check_missions4():
     cru = ship_pokes(t, 3, "TARGONINTH", z=3000, hostile=False, hyper=False, still=True,
                      **{"U.FLAGS": a["UF_MISSION"]})
     cru += [poke_at(int(slot_field(t, 3, "U.KIND"), 8), ((st["flags"] & 0xFF) << 8) | (st["type"] | 8))]
-    v = run(list(BOOT) + [poke_byte(t, "P_M6", 2), "press 107", "run 60"] + clear_traffic(t) +
+    v = run(list(BOOT) + [poke_byte(t, "P_M6", 2), "press 107", ui_ready(t, frames=2)] + clear_traffic(t) +
             [poke_at(a["PSPEED"], 0), poke_byte(t, "P_M6", 2), poke_byte(t, "P_M6", 1, 1)] + armed + spy +
             lock + ["run 200", peek_byte(t, "P_M6")])
-    w = run(list(BOOT) + [poke_byte(t, "P_M6", 4), "press 107", "run 60"] + clear_traffic(t) +
+    w = run(list(BOOT) + [poke_byte(t, "P_M6", 4), "press 107", ui_ready(t, frames=2)] + clear_traffic(t) +
             [poke_at(a["PSPEED"], 0)] + armed + cru + lock + ["run 200", peek_byte(t, "P_M6")])
     if v and w:
         check("the drone takes the last spy, and the cruiser",
@@ -2163,12 +2151,14 @@ def check_missions5():
     rank = lambda w: byte_of(t, "P_RANK", w)
     war = lambda w, o=0: byte_of(t, "P_WAR", w, o)
     dock = [poke_dev(t, "P_DOCKCOMP"), "press 107", "run 50"] + ["press 166", "run 20"] * 4 + ["run 700"]
-    market = ["press 004", "run 60"] * 4 + ["run 100"]
+    market = ["press 004", ui_ready(t)] * 3 + ["press 004"]
+    market_modal = market + mission_ready(t)
+    market = market + [ui_ready(t)]
 
     # 1. the outbreak: a kill carries the rating into its third byte, and
     #    the war is tested on the byte as it then stands (#21, odd, against
     #    the jumps' high byte 1)
-    fly = list(BOOT) + ["press 107", "run 40"] + clear_traffic(t)
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t)
     krait = ship_pokes(t, 3, "KRAITH", z=1000, energy=5, hyper=False, facing=True, still=True)
     v = run(fly + krait + [poke_byte(t, "P_MCOMPLETE", 8), poke_at(a["P_RATING"], 0xFFFF),
                            poke_at(a["P_RATING"] + 2, 0x20), poke_at(a["P_JUMPS"], 0x100),
@@ -2184,9 +2174,9 @@ def check_missions5():
               f"serving, rank {rank(w[0]):o}")
 
     # 2. the war's clock: a level up while it spreads, down as it recedes
-    v = run(fly + [poke_byte(t, "P_WAR", 0o201), poke_at(a["WAR_T"], 0xFFF0), "run 10",
+    v = run(fly + [poke_byte(t, "P_WAR", 0o201), poke_at(a["WAR_T"], 0xFFF0), ui_ready(t, frames=2),
                    peek_byte(t, "P_WAR")])
-    w = run(fly + [poke_byte(t, "P_WAR", 5), poke_at(a["WAR_T"], 0xFFF0), "run 10",
+    w = run(fly + [poke_byte(t, "P_WAR", 5), poke_at(a["WAR_T"], 0xFFF0), ui_ready(t, frames=2),
                    peek_byte(t, "P_WAR")])
     if v and w:
         check("the war grows a level on its clock while rising, and shrinks falling",
@@ -2210,7 +2200,7 @@ def check_missions5():
     #    market then asks to take refugees
     v = run(list(BOOT) + at(front[0]) + [poke_byte(t, "P_RANK", 0o201)] + dock +
             ["press 057", "run 120", "press 107", ui_ready(t), f"peekcpu {t['DOCKED']}",
-             peek_byte(t, "P_RANK")] + market + ["press 057", "run 60", peek_byte(t, "P_M1", 1)])
+             peek_byte(t, "P_RANK")] + market_modal + ["press 057", ui_ready(t), peek_byte(t, "P_M1", 1)])
     if len(v) >= 3:
         check("at the front: a rank offered and taken, then refugees to take aboard",
               v[0] == 1 and rank(v[1]) == 0o202 and byte_of(t, "P_M1", v[2], 1) == 2,
@@ -2227,7 +2217,7 @@ def check_missions5():
     #    done past two to four
     v = run(list(BOOT) + at(calm[0]) + [poke_byte(t, "P_RANK", 0o202), poke_byte(t, "P_M1", 2, 1),
                                          poke_byte(t, "P_WAR", 5, 3), poke_byte(t, "P_WAR", 0, 2)] +
-            market + ["press 107", "run 60", peek_byte(t, "P_M1", 1), peek_byte(t, "P_WAR", 2)])
+            market_modal + ["press 107", ui_ready(t), peek_byte(t, "P_M1", 1), peek_byte(t, "P_WAR", 2)])
     if len(v) >= 2:
         check("refugees set down away from the front: the sergeant's task done",
               byte_of(t, "P_M1", v[0], 1) == 0 and war(v[1], 2) & 1,
@@ -2246,8 +2236,8 @@ def check_missions5():
     v = []
     for k in range(6):
         v = run(list(BOOT) + at(taken[0]) + [poke_byte(t, "P_M3", 0), poke_at(int(t["WI_ODDS"], 8), 0)] +
-                ["press 004", "run 60"] + ["press 154", "run 30"] * 2 +
-                [poke_at(int(t["RNDSEED"], 8), 1000 + 77 * k), "press 107", "run 200",
+                ["press 004", ui_ready(t)] + ["press 154", ui_ready(t, frames=1)] * 2 +
+                [poke_at(int(t["RNDSEED"], 8), 1000 + 77 * k), "press 107", ui_ready(t, frames=1),
                  f"peekcpu {t['SYS_INDEX']}", peek_byte(t, "P_M3"), f"peekcpu {t['WITCH']}"])
         if len(v) >= 3 and v[2] == 0:
             break
@@ -2293,7 +2283,7 @@ def check_missions6():
     at = lambda L: [poke_byte(t, "P_WAR", 0x80 | L), poke_byte(t, "P_WAR", 0, 1)]
     ahead = [poke_at(int(slot_field(t, 2, f), 8), v_) for f, v_ in
              (("U.X", 0), ("U.Y", 0), ("U.Z", 3000), ("U.XH", 0), ("U.YH", 0), ("U.ZH", 0))]
-    fly = list(BOOT) + ["press 107", "run 40"] + clear_traffic(t)
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t)
 
     # 1. the lock: the Targons' station, and not a station of ours
     v = run(fly + ahead + [poke_byte(t, "P_M3", 4), "run 10", "press 113", "run 10",
@@ -2343,9 +2333,9 @@ def check_missions6():
         check("a jump that lands beside the war's first world", False, f"from ({hx},{hy})")
         return
     v = run(list(BOOT) + at(front[0]) + [poke_byte(t, "P_RANK", 0o214), poke_byte(t, "P_M3", 0),
-            poke_at(a["WI_ODDS"], 256), "press 004", "run 60", poke_at(int(t["CURSYS"], 8), left),
+            poke_at(a["WI_ODDS"], 256), "press 004", ui_ready(t), poke_at(int(t["CURSYS"], 8), left),
             poke_at(a["HOME_X"], hx), poke_at(a["HOME_Y"], hy), poke_at(a["PFUEL"], 2000),
-            "press 107", "run 200", f"peekcpu {t['WITCH']}", f"peekcpu {t['HOME_X']}",
+            "press 107", ui_ready(t, frames=1), f"peekcpu {t['WITCH']}", f"peekcpu {t['HOME_X']}",
             f"peekcpu {t['HOME_Y']}", peek_byte(t, "P_M3")] +
             [f"peekcpu {slot_field(t, k, 'U.FLAGS')}" for k in range(nuniv)] +
             [f"peekcpu {slot_field(t, k, 'U.TYPE')}" for k in range(nuniv)])
@@ -2384,15 +2374,16 @@ def check_missions7():
 
     m7 = lambda w, o=0: byte_of(t, "P_M7", w, o)
     dock = [poke_dev(t, "P_DOCKCOMP"), "press 107", "run 50"] + ["press 166", "run 20"] * 4 + ["run 700"]
-    fly = list(BOOT) + ["press 107", "run 40"] + clear_traffic(t)
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t)
 
     # 1. the portal: a system on the main diagonal, PilotRnd #D0 up, the
     #    star close - set before the launch, when the sky's hulls are chosen
     diag = [poke_byte(t, "P_PLANETDATA", 90, 1), poke_byte(t, "P_PLANETDATA", 92, 3),
             poke_byte(t, "P_RND", 0xE0)]
+    # Keep the spawned portal beyond docking range while observing it.
     sun = [poke_at(int(slot_field(t, 1, f), 8), v_) for f, v_ in
-           (("U.X", 0), ("U.Y", 0), ("U.Z", 5000), ("U.XH", 0), ("U.YH", 0), ("U.ZH", 0))]
-    v = run(list(BOOT) + diag + ["press 107", "run 40"] + clear_traffic(t) + sun + ["run 10",
+           (("U.X", 0), ("U.Y", 0), ("U.Z", 8000), ("U.XH", 0), ("U.YH", 0), ("U.ZH", 0))]
+    v = run(list(BOOT) + diag + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t) + sun + [ui_ready(t, frames=3),
             f"peekcpu {t['NEAR_PORTAL']}"] + [f"peekcpu {slot_field(t, k, 'U.TYPE')}" for k in range(nuniv)])
     if len(v) >= 1 + nuniv:
         check("beside the star of a system on the diagonal, a portal", v[0] == 1 and a["SH_PORTALH"] in v[1:],
@@ -2403,12 +2394,15 @@ def check_missions7():
     #    Retribution, to #FE
     ident = [poke_at(int(slot_field(t, 3, "U.MAT"), 8) + 2 * k, 16384 if k in (0, 4, 8) else 0)
              for k in range(9)]
+    # Fix the random destination at entry, after all flight/AI draws.
+    # Zero state supplies (0, 0), which has a known nearest-system result.
     def portal(flags, pre=()):
         pk = [poke_at(int(slot_field(t, 3, f), 8), v_) for f, v_ in
               (("U.TYPE", a["SH_PORTALH"]), ("U.FLAGS", flags), ("U.EXPL", 0), ("U.SPEED", 0),
                ("U.X", 0), ("U.Y", 0), ("U.Z", 650), ("U.XH", 0), ("U.YH", 0), ("U.ZH", 0))] + ident
-        return run(list(BOOT) + list(pre) + ["press 107", "run 40"] + clear_traffic(t) +
-                   [poke_at(int(t["PSPEED"], 8), 0)] + pk + ["run 300", f"peekcpu {t['GALNUM']}",
+        return run(list(BOOT) + list(pre) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t) +
+                   [poke_at(int(t["PSPEED"], 8), 0)] + pk + [f"runpc {t['PORTAL_JUMP']} 1200",
+                   poke_at(int(t["RNDSEED"], 8), 0), poke_at(int(t["RNDSEED"], 8) + 2, 0), f"waitcpu {t['P_JUMPS']} 1 1200", ui_ready(t, frames=1), f"peekcpu {t['GALNUM']}",
                    f"peekcpu {t['SYS_INDEX']}", f"peekcpu {t['PFUEL']}", f"peekcpu {t['WITCH']}"])
     v = portal(a["UF_BASE"])
     w = portal(a["UF_BASE"] | a["UF_MISSION"])
@@ -2416,7 +2410,7 @@ def check_missions7():
     if len(v) >= 4 and len(w) >= 4 and len(x) >= 4:
         box = set(nearest_system(255, px, py) for px in range(0x60, 0x80, 3) for py in range(0x60, 0x70, 3))
         check("an ordinary portal: this galaxy, no fuel, no interception",
-              v[0] == 0 and v[1] != 7 and v[2] == 70 and v[3] == 0,
+              v[0] == 0 and v[1] == nearest_system(0, 0, 0) and v[2] == 70 and v[3] == 0,
               f"galaxy {v[0]}, system {v[1]}, fuel {v[2]}, witch {v[3]}")
         check("Raxxla's portal: galaxy #FF, a system about #70,#68",
               w[0] == 255 and w[1] in box and w[3] == 0, f"galaxy {w[0]}, system {w[1]} of {sorted(box)}")
@@ -2429,9 +2423,9 @@ def check_missions7():
           (("U.TYPE", a["SH_PORTALH"]), ("U.FLAGS", a["UF_BASE"] | a["UF_MISSION"]), ("U.EXPL", 0),
            ("U.SPEED", 0), ("U.X", 0), ("U.Y", 0), ("U.Z", 650), ("U.XH", 0), ("U.YH", 0),
            ("U.ZH", 0))] + ident
-    v = run(list(BOOT) + ["press 107", "run 40"] + clear_traffic(t) + [poke_at(int(t["PSPEED"], 8), 0)] +
-            pk + ["run 300", f"peekcpu {t['GALNUM']}", poke_at(int(t["CURSYS"], 8), 0)] +
-            ["press 004", "run 80"] * 3 + [f"peekcpu {a['SYS_NAME']:o}", f"peekcpu {a['SYS_NAME'] + 2:o}",
+    v = run(list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t) + [poke_at(int(t["PSPEED"], 8), 0)] +
+            pk + [f"waitcpu {t['P_JUMPS']} 1 1200", ui_ready(t, frames=1), f"peekcpu {t['GALNUM']}", poke_at(int(t["CURSYS"], 8), 0)] +
+            ["press 004", ui_ready(t)] * 3 + [f"peekcpu {a['SYS_NAME']:o}", f"peekcpu {a['SYS_NAME'] + 2:o}",
                                           f"peekcpu {a['SYS_NAME'] + 4:o}"])
     if len(v) >= 4:
         name = b"".join(struct.pack("<H", x_) for x_ in v[-3:])
@@ -2440,7 +2434,7 @@ def check_missions7():
 
     # 6. Retribution issued: 0..6 complete, the rating's third byte #40,
     #    3000 kills
-    gal = [poke_dev(t, "P_GALDRIVE"), "press 004", "run 60", "press 107", "run 160"]
+    gal = [poke_dev(t, "P_GALDRIVE"), "press 004", ui_ready(t), "press 107", ui_ready(t, frames=1)]
     v = run(list(BOOT) + [poke_byte(t, "P_RATING", 0x40, 2), poke_byte(t, "P_MCOMPLETE", 0x7F),
                           poke_at(a["P_DESTR"], 3000)] + gal + [peek_byte(t, "P_M7")])
     if v:
@@ -2459,7 +2453,7 @@ def check_missions7():
     for k in range(4):
         v = run(list(BOOT) + held + [poke_byte(t, "P_M1", 5, 1),
                                      poke_at(int(t["RNDSEED"], 8), 1000 + 77 * k)] + dock +
-                ["press 107", "run 60", f"peekcpu {t['DOCKED']}", peek_byte(t, "P_M7"),
+                ["press 107", ui_ready(t, frames=2), f"peekcpu {t['DOCKED']}", peek_byte(t, "P_M7"),
                  peek_byte(t, "P_M7", 1), peek_byte(t, "P_M1", 1)])
         if len(v) >= 4 and m7(v[1]) == 3:
             break
@@ -2471,7 +2465,7 @@ def check_missions7():
 
     # 8. Raxxla's station, the first time: the welcome and the bit
     v = run(list(BOOT) + [poke_at(a["P_GALAXY"], 255), poke_byte(t, "P_MCOMPLETE", 0)] +
-            [poke_at(a["P_PLANET"], 0)] + dock + ["press 107", "run 60", peek_byte(t, "P_MCOMPLETE")])
+            [poke_at(a["P_PLANET"], 0)] + dock + ["press 107", ui_ready(t, frames=2), peek_byte(t, "P_MCOMPLETE")])
     if v:
         check("at Raxxla's station the League's welcome, and the legend's bit",
               byte_of(t, "P_MCOMPLETE", v[0]) & 0x80, f"complete {byte_of(t, 'P_MCOMPLETE', v[0]):o}")
@@ -2499,8 +2493,8 @@ def check_missions8():
         return [int(x, 8) for x in PEEK.findall(run_emu(script + ["quit"], fresh_disk("missions8")))]
 
     dock = [poke_dev(t, "P_DOCKCOMP"), "press 107", "run 50"] + ["press 166", "run 20"] * 4 + ["run 700"]
-    market = ["press 004", "run 60"] * 4 + ["run 100"]
-    fly = list(BOOT) + ["press 107", "run 40"] + clear_traffic(t)
+    market = ["press 004", ui_ready(t)] * 3 + ["press 004"] + mission_ready(t)
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t)
 
     # 1. a pirate shot down near the pirates' station: one fewer
     krait = ship_pokes(t, 3, "KRAITH", z=1000, energy=5, hyper=False, facing=True, still=True)
@@ -2524,8 +2518,8 @@ def check_missions8():
 
     # 3. deep space: a generation ship dead ahead, docked at; the market
     #    screen, and its people ask to be carried
-    witch = list(BOOT) + [poke_at(a["WI_ODDS"], 256), "press 004", "run 60", "press 154", "run 30",
-                          "press 154", "run 30", "press 107", "run 200", "press 107", "run 60"]
+    witch = list(BOOT) + [poke_at(a["WI_ODDS"], 256), "press 004", ui_ready(t), "press 154", ui_ready(t, frames=1),
+                          "press 154", ui_ready(t, frames=1), "press 107", ui_ready(t, frames=1), "press 107", ui_ready(t, frames=2)]
     ident = [poke_at(int(slot_field(t, 3, "U.MAT"), 8) + 2 * k, 16384 if k in (0, 4, 8) else 0)
              for k in range(9)]
     def ahead(kind):
@@ -2534,7 +2528,7 @@ def check_missions8():
                  ("U.ENERGY", 240), ("U.X", 0), ("U.Y", 0), ("U.Z", 600), ("U.XH", 0), ("U.YH", 0),
                  ("U.ZH", 0))] + ident + [poke_at(a["PSPEED"], 0)]
     v = run(witch + [f"peekcpu {t['WITCH']}", poke_byte(t, "P_LIFESUPPORT", 0)] + clear_traffic(t) +
-            ahead(a["SH_SHIPGENH"]) + ["run 300", f"peekcpu {t['DOCKED']}", f"peekcpu {t['DOCKED_AT']}"] +
+            ahead(a["SH_SHIPGENH"]) + [f"waitcpu {t['DOCKED']} 1 1200", ui_ready(t), f"peekcpu {t['DOCKED']}", f"peekcpu {t['DOCKED_AT']}"] +
             market + ["press 057", "run 60", peek_byte(t, "P_M1", 1)])
     if len(v) >= 4:
         check("in deep space a generation ship is docked at, and its people ask to come",
@@ -2607,7 +2601,7 @@ def check_missions9():
         dump.unlink()
     v = run(list(BOOT) + [f"peekcpu {a['P_RND'] & ~1:o}", poke_at(a["DOCKED_AT"], a["BK_GENSHIP"])]
             + [poke_at(a["AST_QTY"] + 2 * i, 0) for i in range(ng)]
-            + ["press 004", "run 90"] * 4
+            + ["press 004", ui_ready(t)] * 4
             + [f"dumpcpu {a['MKT_PRICE']:o} {ng * 2} {dump}", f"peekcpu {t['MKT_OPEN']}"])
     if len(v) >= 2 and dump.exists():
         rnd = (v[0] & 0xFF) if a["P_RND"] % 2 == 0 else (v[0] >> 8)
@@ -2620,8 +2614,8 @@ def check_missions9():
         check("the generation ship's market answered", False)
 
     # 2. deep space: a platform launches Cougars, a generation ship nothing
-    witch = list(BOOT) + [poke_at(a["WI_ODDS"], 256), "press 004", "run 60", "press 154", "run 30",
-                          "press 154", "run 30", "press 107", "run 200", "press 107", "run 60"]
+    witch = list(BOOT) + [poke_at(a["WI_ODDS"], 256), "press 004", ui_ready(t), "press 154", ui_ready(t, frames=1),
+                          "press 154", ui_ready(t, frames=1), "press 107", ui_ready(t, frames=1), "press 107", ui_ready(t, frames=2)]
     nuniv = a["NUNIV"]
 
     def sky(key):
@@ -2652,7 +2646,7 @@ def check_missions9():
     #    with the standard drive, nothing
     for kind, where in ((2, (255, 0)), (0, (0, 7))):
         v = run(list(BOOT) + [f"pokecpu {a['P_GALDRIVE']:o} {kind:o}", f"peekcpu {t['PFUEL']}",
-                              "press 004", "run 90", "press 177", "run 200",
+                              "press 004", ui_ready(t), "press 177", ui_ready(t, frames=1),
                               f"peekcpu {t['GALNUM']}", f"peekcpu {t['SYS_INDEX']}",
                               f"peekcpu {t['PFUEL']}"])
         if len(v) >= 4:
@@ -2665,8 +2659,8 @@ def check_missions9():
 
     # 4. a galactic jump is never intercepted (Legend rolls in JumpToPlanet
     #    only): with the odds at certain, the drive still lands in a system
-    v = run(list(BOOT) + [poke_dev(t, "P_GALDRIVE"), poke_at(a["WI_ODDS"], 256), "press 004", "run 90",
-                          "press 107", "run 200", f"peekcpu {t['GALNUM']}", f"peekcpu {t['WITCH']}"])
+    v = run(list(BOOT) + [poke_dev(t, "P_GALDRIVE"), poke_at(a["WI_ODDS"], 256), "press 004", ui_ready(t),
+                          "press 107", ui_ready(t, frames=1), f"peekcpu {t['GALNUM']}", f"peekcpu {t['WITCH']}"])
     if len(v) >= 2:
         check("a galactic jump is never intercepted", v[0] == 1 and v[1] == 0,
               f"galaxy {v[0]}, witch {v[1]}")
@@ -2979,6 +2973,11 @@ def check_splash():
         check(f"{name} shows its complete Russian Enter prompt", wrong == 0, f"{wrong} wrong pixels")
 
 
+def check_palette():
+    from verify_palette import check_palette as run
+    run(sys.modules[__name__])
+
+
 def check_title():
     """The game opens on a title screen, with a tune, and asks who is flying."""
     print("the title screen")
@@ -3255,7 +3254,7 @@ def check_chart():
     shot = ROOT / "tmp" / "verify-chart.bmp"
     if shot.exists():
         shot.unlink()
-    script = BOOT + ["press 004", "run 60",
+    script = BOOT + ["press 004", ui_ready(),
                      f"peekcpu {t['HOME_X']}", f"peekcpu {t['HOME_Y']}",
                      f"peekcpu {t['PFUEL']}",
                      f"screenshot {shot}", "quit"]
@@ -3304,29 +3303,31 @@ def check_commanders():
                             # the slot names (see BOOT)
 
     # make a commander in the SECOND slot, buy something, and dock to save
-    script = title + ["press 031", "run 60",           # "2"
+    script = title + ["press 031", f"runpc {t['NAME_READY']} 1200",  # empty slot 2
                       "press 067", "run 8",            # a name: Я
-                      "press 153", "run 60",
+                      "press 153", ui_ready(t),
                       poke_dev(t, "P_DOCKCOMP")]
     for _ in range(5):
-        script += ["press 004", "run 90"]              # to the outfitter
-    script += ["press 107", "run 35"]                          # buy a missile
-    script += ["press 004", "run 90"] * (int(t["NSCREENS"], 8) - 5)  # -> cockpit
-    script += ["press 107", "run 50"]                          # launch
+        script += ["press 004", ui_ready(t)]              # to the outfitter
+    script += ["press 107", ui_ready(t)]                          # buy a missile
+    script += ["press 004", ui_ready(t)] * (int(t["NSCREENS"], 8) - 5)  # -> cockpit
+    script += ["press 107", ui_ready(t, frames=1), f"peekcpu {t['DOCKED']}"]                          # launch
     for _ in range(4):
         script += ["press 166", "run 20"]              # throttle to zero
-    script += ["run 900", f"peekcpu {t['DOCKED']}",
+    script += [f"waitcpu {t['DOCKED']} 1 2000", ui_ready(t, frames=1), f"peekcpu {t['DOCKED']}",
                f"peekcpu {t['CMDR_SLOT']}", f"peekcpu {t['CASH_L']}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, disk))]
-    if len(v) < 3:
+    if len(v) != 4:
         check("the commander run answered", False)
         return
+    check("the new commander actually launches before the docking save", v[0] == 0)
+    v = v[1:]
     check("a commander can be made in any slot", v[1] == 1, f"slot {v[1]}")
     check("and docking saves him there", v[0] == 1, f"docked {v[0]}")
     saved = v[2]
 
     # the FIRST slot is still empty, so it asks for a name
-    script = title + ["press 030", "run 60", "press 153", "run 60",
+    script = title + ["press 030", f"runpc {t['NAME_READY']} 1200", "press 153", ui_ready(t),
                       f"peekcpu {t['CASH_L']}", f"peekcpu {t['CMDR_SLOT']}",
                       "quit"]
     w = [int(x, 8) for x in PEEK.findall(run_emu(script, disk))]
@@ -3335,7 +3336,7 @@ def check_commanders():
               f"{w[0]} tenths in slot {w[1]}")
 
     # and the second still has the commander who was saved in it
-    script = title + ["press 031", "run 60",
+    script = title + ["press 031", ui_ready(frames=1),
                       f"peekcpu {t['CASH_L']}", f"peekcpu {t['CMDR_SLOT']}",
                       "quit"]
     w = [int(x, 8) for x in PEEK.findall(run_emu(script, disk))]
@@ -3357,8 +3358,8 @@ def check_planets():
     shot = ROOT / "tmp" / "verify-data.bmp"
     if shot.exists():
         shot.unlink()
-    script = BOOT + ["press 004", "run 90", "press 004", "run 90",
-                     "press 004", "run 60",
+    script = BOOT + ["press 004", ui_ready(t), "press 004", ui_ready(t),
+                     "press 004", ui_ready(t),
                      f"peekcpu {t['SCREEN']}", f"screenshot {shot}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("data")))]
     check("the data page is where it should be", v and v[0] == 3,
@@ -3385,7 +3386,7 @@ def check_planets():
     shot2 = ROOT / "tmp" / "verify-short.bmp"
     if shot2.exists():
         shot2.unlink()
-    script = BOOT + ["press 004", "run 90", "press 004", "run 90",
+    script = BOOT + ["press 004", ui_ready(t), "press 004", ui_ready(t),
                      f"peekcpu {t['SCREEN']}", f"screenshot {shot2}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("short")))]
     check("the short-range chart opens", v and v[0] == 2,
@@ -3406,8 +3407,8 @@ def check_planets():
 def check_saving():
     """Save a commander by docking, then reboot and find him again.
 
-    Runs on a COPY of the disk: the game writes the commander to LBA 100,
-    and `make verify` should not leave build/elite.dsk modified.
+    Runs on a disposable RT-11 volume and reuses it explicitly for the
+    reload. Native commander files and monitor swapping may both write.
     """
     print("saving a commander")
     t = syms.table()
@@ -3421,11 +3422,11 @@ def check_saving():
     boot = list(BOOT)
     first = boot + [poke_dev(t, "P_DOCKCOMP")]
     for _ in range(5):
-        first += ["press 004", "run 90"]                 # to the outfitter
+        first += ["press 004", ui_ready(t)]                 # to the outfitter
     first += ["press 107", "run 35",                          # buy a missile
               f"peekcpu {t['PMISSILES']}", f"peekcpu {t['CASH_L']}"]
-    first += ["press 004", "run 90"] * (int(t["NSCREENS"], 8) - 5)   # -> cockpit
-    first += ["press 107", "run 50"]                          # launch
+    first += ["press 004", ui_ready(t)] * (int(t["NSCREENS"], 8) - 5)   # -> cockpit
+    first += ["press 107", ui_ready(t, frames=1)]                          # launch
     for _ in range(4):
         first += ["press 166", "run 20"]                 # throttle round to zero
     # Long enough for the computer to roll the ship into line with the
@@ -3442,7 +3443,7 @@ def check_saving():
         if f.exists():
             f.unlink()
     # dumpcpu's length is DECIMAL (atoi in uknc-headless), the address octal
-    first += ["run 900", f"peekcpu {t['DOCKED']}",
+    first += [f"waitcpu {t['DOCKED']} 1 2000", ui_ready(t, frames=1), f"peekcpu {t['DOCKED']}",
               f"dumpcpu {pilot:o} {plen} {before}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(first, disk))]
     if len(v) < 3:
@@ -3543,18 +3544,18 @@ def check_manifest():
         shot.unlink()
     script = list(BOOT)     # a copy: += on BOOT would grow it
     for _ in range(4):
-        script += ["press 004", "run 90"]              # -> the market
+        script += ["press 004", ui_ready(t)]              # -> the market
     script += [f"peekcpu {t['P_PRODUCT']}"]
     for _ in range(3):
-        script += ["press 133", "run 25"]              # three of the first
-    script += ["press 134", "run 25"]
+        script += ["press 133", ui_ready(t, frames=1)]              # three of the first
+    script += ["press 134", ui_ready(t, frames=1)]
     for _ in range(2):
-        script += ["press 133", "run 25"]              # two of the second
+        script += ["press 133", ui_ready(t, frames=1)]              # two of the second
     cargo = int(t["CARGO"], 8)
     script += [f"peekcpu {t['P_PRODUCT']}",
                f"peekcpu {cargo:o}", f"peekcpu {cargo + 2:o}",
-               "press 004", "run 90", "press 004", "run 90",
-               "press 004", "run 90",  # market -> equip -> yard -> pilot
+               "press 004", ui_ready(t), "press 004", ui_ready(t),
+               "press 004", ui_ready(t),  # market -> equip -> yard -> pilot
                f"peekcpu {t['SCREEN']}", f"screenshot {shot}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, disk))]
     if len(v) < 5:
@@ -3673,26 +3674,26 @@ def check_market():
         if f.exists():
             f.unlink()
     # dumpcpu's length is decimal
-    market = ["press 004", "run 90"] * 4          # -> the market screen
+    market = ["press 004", ui_ready(t)] * 4          # -> the market screen
     script = list(BOOT) + [f"peekcpu {prnd & ~1:o}", f"peekcpu {t['SYS_ECON']}"]
     script += market + [f"dumpcpu {mp:o} {ng * 2} {dumps['mp']}",
                         f"dumpcpu {pp:o} {ng * 2} {dumps['pp']}",
                         f"dumpcpu {aq:o} {ng * 2} {dumps['aq']}",
                         # ФИКС on the first row buys all the food there is
-                        "press 107", "run 30",
+                        "press 107", ui_ready(t),
                         f"peekcpu {int(t['CARGO'], 8):o}", f"peekcpu {pp:o}",
                         f"peekcpu {t['P_FREECARGO']}", f"peekcpu {t['CASH_L']}",
                         # and again sells it all back
-                        "press 107", "run 30",
+                        "press 107", ui_ready(t),
                         f"peekcpu {int(t['CARGO'], 8):o}", f"peekcpu {t['CASH_L']}",
                         f"peekcpu {t['P_LEGAL']}",
                         # the hermit's rock: its own list
                         poke_at(int(t["DOCKED_AT"], 8), int(t["BK_HERMIT"], 8))]
     nscreens = int(t["NSCREENS"], 8)
-    script += ["press 004", "run 90"] * nscreens + [f"dumpcpu {mp:o} {ng * 2} {dumps['mpa']}",
+    script += ["press 004", ui_ready(t)] * nscreens + [f"dumpcpu {mp:o} {ng * 2} {dumps['mpa']}",
                                              f"peekcpu {t['MKT_OPEN']}",
                poke_at(int(t["DOCKED_AT"], 8), int(t["BK_MILITARY"], 8))]
-    script += ["press 004", "run 90"] * nscreens + [f"peekcpu {t['MKT_OPEN']}",
+    script += ["press 004", ui_ready(t)] * nscreens + [f"peekcpu {t['MKT_OPEN']}",
                                              "press 133", "run 25",
                                              f"peekcpu {int(t['CARGO'], 8):o}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("market")))]
@@ -3836,8 +3837,8 @@ def check_equip():
     rowitem = int(t["EQ_ROWITEM"], 8)
     page = [f"peekcpu {rowitem + 2 * i:o}" for i in range(15)]
     rich = [poke_at(int(t["CASH_L"], 8), 20000), poke_at(int(t["CASH_H"], 8), 1)]
-    outfitter = ["press 004", "run 90"] * 5
-    again = ["press 004", "run 90"] * int(t["NSCREENS"], 8)   # round the cycle
+    outfitter = ["press 004", ui_ready(t)] * 5
+    again = ["press 004", ui_ready(t)] * int(t["NSCREENS"], 8)   # round the cycle
 
     def peekb(name):
         """The byte NAME, out of the word peeked at its even address."""
@@ -4008,8 +4009,8 @@ def check_yard():
     if dump.exists():
         dump.unlink()
     rich = [poke_at(a["CASH_L"], 0), poke_at(a["CASH_H"], 100)]       # 6 553 600
-    yard = ["press 004", "run 90"] * 6
-    again = ["press 004", "run 90"] * (int(t["NSCREENS"], 8) - 1)   # from the
+    yard = ["press 004", ui_ready(t)] * 6
+    again = ["press 004", ui_ready(t)] * (int(t["NSCREENS"], 8) - 1)   # from the
                                                  #   pilot's page round to the yard
 
     def peekb(name):
@@ -4041,18 +4042,18 @@ def check_yard():
          f"peekcpu {t['YD_PL']}", f"peekcpu {t['YD_PH']}",
          "press 134", "run 25", f"peekcpu {t['YD_PL']}", f"peekcpu {t['YD_PH']}",
          "press 154", "run 25", f"peekcpu {t['YD_PL']}", f"peekcpu {t['YD_PH']}",
-         "press 107", "run 60",                            # ФИКС: the Adder
+         "press 107", ui_ready(t),                            # ФИКС: the Adder
          f"peekcpu {t['SCREEN']}", f"peekcpu {t['P_SHIP']}",
          f"peekcpu {t['CASH_L']}", f"peekcpu {t['CASH_H']}",
          f"peekcpu {t['P_FREECARGO']}", f"peekcpu {a['CARGO']:o}",
          f"peekcpu {a['P_YARD']:o}", f"peekcpu {a['P_SHIPS']:o}",
          f"peekcpu {a['P_SHIPS'] + 2:o}", f"peekcpu {t['P_LASERS']}",
          f"peekcpu {t['PFUEL']}"] + \
-        again + ["press 153", "run 40",                    # ВВОД: the berths
+        again + ["press 153", ui_ready(t),                    # ВВОД: the berths
                  f"peekcpu {t['YD_MODE']}", f"peekcpu {t['YD_N']}",
                  f"peekcpu {a['YD_LIST']:o}", f"peekcpu {t['YD_PL']}",
                  f"peekcpu {t['YD_PH']}", f"peekcpu {t['YD_DL']}", f"peekcpu {t['YD_DH']}",
-                 "press 133", "run 25", "press 107", "run 40",   # sell it
+                 "press 133", "run 25", "press 107", ui_ready(t),   # sell it
                  f"peekcpu {t['CASH_L']}", f"peekcpu {t['CASH_H']}",
                  f"peekcpu {a['P_SHIPS']:o}", f"peekcpu {t['YD_MODE']}",
                  f"peekcpu {t['YD_N']}", "quit"]
@@ -4107,20 +4108,20 @@ def check_yard():
     #    to another system of this galaxy, eight times the distance
     lave, other = galaxy_model(planet), galaxy_model(0)
     script = list(BOOT) + rich + [f"pokecpu {a['P_YARD']:o} 1"] + yard + \
-        ["press 107", "run 60",
+        ["press 107", ui_ready(t),
          f"pokecpu {a['P_SHIPS'] + 1:o} 2"] + \
-        again + ["press 153", "run 40",
+        again + ["press 153", ui_ready(t),
                  f"peekcpu {t['YD_DL']}", f"peekcpu {t['YD_DH']}",
                  "press 133", "run 25", "press 134", "run 25",   # deliver
-                 "press 107", "run 40",
+                 "press 107", ui_ready(t),
                  f"peekcpu {t['CASH_L']}", f"peekcpu {t['CASH_H']}",
                  f"peekcpu {a['P_SHIPS']:o}", f"peekcpu {t['YD_DL']}",
-                 "press 107", "run 60",                          # select
+                 "press 107", ui_ready(t),                          # select
                  f"peekcpu {t['SCREEN']}", f"peekcpu {t['P_SHIP']}",
                  f"peekcpu {t['P_LASERS']}", f"peekcpu {t['PMISSILES']}",
                  f"peekcpu {a['P_SHIPS']:o}", f"peekcpu {t['P_FREECARGO']}",
                  f"pokecpu {a['P_SHIPS'] + 2:o} 0"] + \
-        again + ["press 153", "run 40",
+        again + ["press 153", ui_ready(t),
                  f"peekcpu {t['YD_DL']}", f"peekcpu {t['YD_DH']}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script))]
     if len(v) < 14:
@@ -4258,9 +4259,9 @@ def check_cockpit_block():
     # its first row: cockpit 5 - eight missiles, a hundred tenths of
     # fuel, eighty tonnes; the outfitter fills the tank
     script = list(BOOT) + rich + [f"pokecpu {a['P_YARD']:o} 10"] + \
-        ["press 004", "run 90"] * 6 + ["press 107", "run 60"] + ckv + \
+        ["press 004", ui_ready(t)] * 6 + ["press 107", "run 60"] + ckv + \
         [f"peekcpu {t['P_SHIP']}", f"peekcpu {t['P_FREECARGO']}"] + \
-        ["press 004", "run 90"] * (int(t["NSCREENS"], 8) - 2) + \
+        ["press 004", ui_ready(t)] * (int(t["NSCREENS"], 8) - 2) + \
         ["press 107", "run 35", f"peekcpu {t['PFUEL']}"] + \
         ["press 107", "run 35"] * 9 + [f"peekcpu {t['PMISSILES']}", "quit"]   # the top
     v = [int(x, 8) for x in PEEK.findall(run_emu(script))]           #   row is
@@ -4282,7 +4283,7 @@ def check_energy():
     hit costing the facing shield five blows and the banks the rest."""
     print("energy banks and shields")
     t = syms.table()
-    need = ["PBANKS", "PSHIELD_F", "PSHIELD_A", "CKV_ENUNITS", "ENERGY_MAX", "FRAMES",
+    need = ["PBANKS", "PSHIELD_F", "PSHIELD_A", "CKV_ENUNITS", "ENERGY_MAX", "RC_LAST",
             "P_ENERGYUNIT", "P_SHIELDGEN", "SH_SIDEWINDER", "SS_COLLIDE", "P_MILSHIELDS"]
     if any(n not in t for n in need):
         check("energy symbols found", False, f"missing {[n for n in need if n not in t][:4]}")
@@ -4297,17 +4298,19 @@ def check_energy():
 
     # 1. docked: the last bank fills first at a point an interrupt, the
     #    shields only once the banks are full, twice as fast with the
-    #    generator; a naval energy unit makes four points of one
-    script = list(BOOT) + banks + shields + \
+    #    generator; a naval energy unit makes four points of one. Sample
+    #    at RECHARGE boundaries and count RC_LAST, the interrupts already
+    #    applied, so no partially completed batch enters the comparison.
+    script = list(BOOT) + [f"runpc {t['RECHARGE']} 1200"] + banks + shields + \
         [poke_at(a["PBANKS"] + 4, 100), poke_at(a["PBANKS"] + 6, 100),
          poke_at(a["PSHIELD_F"], 100), poke_at(a["PSHIELD_A"], 100),
-         f"peekcpu {t['FRAMES']}", "run 10", f"peekcpu {t['FRAMES']}"] + banks + shields + \
+         f"peekcpu {t['RC_LAST']}", "run 1", f"runpc {t['RECHARGE']} 1200", f"peekcpu {t['RC_LAST']}"] + banks + shields + \
         [poke_at(a["PBANKS"] + 4, full), poke_at(a["PBANKS"] + 6, full),
-         f"peekcpu {t['FRAMES']}", "run 10", f"peekcpu {t['FRAMES']}"] + shields + \
+         f"peekcpu {t['RC_LAST']}", "run 1", f"runpc {t['RECHARGE']} 1200", f"peekcpu {t['RC_LAST']}"] + shields + \
         [poke_dev(t, "P_SHIELDGEN"), poke_at(a["PSHIELD_F"], 100), poke_at(a["PSHIELD_A"], 100),
-         f"peekcpu {t['FRAMES']}", "run 10", f"peekcpu {t['FRAMES']}"] + shields + \
+         f"peekcpu {t['RC_LAST']}", "run 1", f"runpc {t['RECHARGE']} 1200", f"peekcpu {t['RC_LAST']}"] + shields + \
         [f"pokecpu {a['P_ENERGYUNIT']:o} 1", poke_at(a["PBANKS"] + 6, 100),   # naval
-         f"peekcpu {t['FRAMES']}", "run 10", f"peekcpu {t['FRAMES']}"] + banks + ["quit"]
+         f"peekcpu {t['RC_LAST']}", "run 1", f"runpc {t['RECHARGE']} 1200", f"peekcpu {t['RC_LAST']}"] + banks + ["quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script))]
     if len(v) < 28:
         check("the energy run answered", False, f"{len(v)} values")
@@ -4505,7 +4508,7 @@ def check_damage():
     def ram(kind):
         return [poke_slot(5, "U.TYPE", a[kind]), poke_slot(5, "U.FLAGS", 0),
                 poke_slot(5, "U.EXPL", 0), poke_slot(5, "U.X", 0), poke_slot(5, "U.Y", 0),
-                poke_slot(5, "U.Z", 40)] + mind(t, 5, a[kind], still=True) + ["run 6"]
+                poke_slot(5, "U.Z", 40)] + mind(t, 5, a[kind], still=True) + [ui_ready(t, frames=2)]
     refill = [poke_at(a["PSHIELD_F"], full), poke_at(a["PSHIELD_A"], full)] + \
         [poke_at(a["PBANKS"] + 2 * i, full) for i in range(4)]
     # every breakable device but the military shields, which would halve
@@ -4633,7 +4636,7 @@ def check_ecm():
     #    the 8 key picks the military rack and the launch draws on it
     flags = [f"peekcpu {slot_field(t, s, 'U.FLAGS')}" for s in range(3, a["NUNIV"])]
     armed = a["AUTOECM_ARMED"] | a["AUTOECM_OUT"]
-    script = fly + [poke_dev(t, "P_ECM"), f"pokecpu {a['P_AUTOECM']:o} {armed:o}", "run 3",
+    script = fly + [poke_dev(t, "P_ECM"), f"pokecpu {a['P_AUTOECM']:o} {armed:o}", ui_ready(t, frames=2),
                     f"peekcpu {t['ECM_TIME']}", "run 60",
                     poke_at(a["PMISSILES"], 3), poke_at(a["P_MISSTYPE"], 1),
                     poke_slot(5, "U.TYPE", a["SH_SIDEWINDER"]), poke_slot(5, "U.FLAGS", 0),
@@ -5182,9 +5185,9 @@ def check_galaxies():
         return
     a = {n: int(t[n], 8) for n in need}
     check("forty-eight galaxies", a["NGALAXY"] == 48, str(a["NGALAXY"]))
-    chart = ["press 004", "run 60"]
-    step_up, step_down = ["press 031", "run 30"], ["press 030", "run 30"]
-    jump = ["press 107", "run 160"]
+    chart = ["press 004", ui_ready(t)]
+    step_up, step_down = ["press 031", ui_ready(t, frames=1)], ["press 030", ui_ready(t, frames=1)]
+    jump = ["press 107", ui_ready(t, frames=1)]
 
     def peeks(*names):
         return [f"peekcpu {t[n]}" for n in names]
@@ -5233,7 +5236,7 @@ def check_galaxies():
     script = list(BOOT) + [f"pokecpu {a['P_GALDRIVE']:o} 2"] + chart + step_up * 10 + peeks("CHART_GAL") + \
         [poke_at(a["CHART_GAL"], 47)] + step_up + peeks("CHART_GAL") + \
         [poke_at(a["CHART_GAL"], 0), poke_dev(t, "P_GALDRIVE", fitted=False)] + step_up + peeks("CHART_GAL") + \
-        ["press 107", "run 60"] + peeks("GALNUM") + ["quit"]
+        ["press 107", ui_ready(t, frames=1)] + peeks("GALNUM") + ["quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script))]
     if len(v) >= 4:
         check("the experimental drive steps the chart anywhere, up to 47",
@@ -5262,9 +5265,9 @@ def check_list():
         check("list symbols found", False, f"missing {[n for n in need if n not in t][:4]}")
         return
     a = {n: int(t[n], 8) for n in need}
-    chart = ["press 004", "run 60"]
-    toggle, up, down, right, left = (["press 032", "run 40"], ["press 154", "run 30"], ["press 134", "run 30"],
-                                     ["press 133", "run 30"], ["press 116", "run 30"])
+    chart = ["press 004", ui_ready(t)]
+    toggle, up, down, right, left = (["press 032", ui_ready(t, frames=1)], ["press 154", ui_ready(t, frames=1)], ["press 134", ui_ready(t, frames=1)],
+                                     ["press 133", ui_ready(t, frames=1)], ["press 116", ui_ready(t, frames=1)])
 
     def peeks(*names):
         return [f"peekcpu {t[n]}" for n in names]
@@ -5294,9 +5297,9 @@ def check_list():
     #    with the experimental one; and stepping the galaxy away from
     #    this one with the standard array drops back to the chart
     script = list(BOOT) + [poke_dev(t, "P_ADVNAV"), f"pokecpu {a['P_GALDRIVE']:o} 2"] + chart + \
-        ["press 031", "run 40"] + toggle + peeks("CH_LIST", "CHART_GAL") + \
+        ["press 031", ui_ready(t, frames=1)] + toggle + peeks("CH_LIST", "CHART_GAL") + \
         [f"pokecpu {a['P_ADVNAV']:o} 1"] + toggle + peeks("CH_LIST") + \
-        ["press 030", "run 40", poke_dev(t, "P_ADVNAV"), "press 031", "run 40"] + peeks("CH_LIST", "CHART_GAL") + ["quit"]
+        ["press 030", ui_ready(t, frames=1), poke_dev(t, "P_ADVNAV"), "press 031", ui_ready(t, frames=1)] + peeks("CH_LIST", "CHART_GAL") + ["quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script))]
     if len(v) >= 5:
         check("another galaxy's list wants the experimental array",
@@ -5547,10 +5550,10 @@ def check_carrier():
         return
     a = {n: int(t[n], 8) for n in need}
     csize = a["C.SIZE"]
-    menu = ["press 004", "run 90"] * (a["NSCREENS"] - 1)     # the last screen
-    fire, up, down, left, enter = (["press 107", "run 40"], ["press 154", "run 30"],
-                                   ["press 134", "run 30"], ["press 116", "run 30"],
-                                   ["press 153", "run 40"])
+    menu = ["press 004", ui_ready(t)] * (a["NSCREENS"] - 1)     # the last screen
+    fire, up, down, left, enter = (["press 107", ui_ready(t, frames=1)], ["press 154", ui_ready(t, frames=1)],
+                                   ["press 134", ui_ready(t, frames=1)], ["press 116", ui_ready(t, frames=1)],
+                                   ["press 153", ui_ready(t, frames=1)])
 
     def poke_bytes(addr, bs):
         return f"pokecpu {addr:o} " + " ".join(f"{b:o}" for b in bs)
@@ -5638,7 +5641,7 @@ def check_carrier():
     #    fresh offers on the table
     # (an intercepted jump makes no fresh offers: the roll is ruled out)
     script = list(BOOT) + [poke_bytes(a["P_CONTRACT"], contract_bytes((0, 7, 0, 500, 500, 0, 0x85))),
-                           poke_at(int(t["WI_ODDS"], 8), 0), "press 004", "run 90"] + up * 3 + ["press 107", "run 160"] + \
+                           poke_at(int(t["WI_ODDS"], 8), 0), "press 004", ui_ready(t)] + up * 3 + ["press 107", ui_ready(t, frames=1)] + \
         peeks("PFUEL", "CT_FRESH", "P_CONTRACTS") + [f"peekcpu {a['P_CONTRACT'] + 8:o}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script))]
     if len(v) >= 4:
@@ -5651,7 +5654,7 @@ def check_carrier():
     #    goes back and the rating falls
     script = list(BOOT) + [poke_bytes(a["P_CONTRACT"], contract_bytes((0, 8, 50, 1000, 300, 1, 0x41))),
                            poke_bytes(a["P_CONTRACT"] + csize, contract_bytes((0, 8, 0, 500, 300, 0, 0x85))),
-                           "press 107", "run 60", poke_dev(t, "P_ESCPOD"), "press 035", "run 60"] + \
+                           "press 107", ui_ready(t, frames=1), poke_dev(t, "P_ESCPOD"), "press 035", "run 60"] + \
         peeks("DOCKED", "CASH_L", "P_DELIV", "P_CONTRACT") + [f"peekcpu {a['P_CONTRACT'] + csize:o}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("carrier")))]
     if len(v) >= 5:
@@ -5669,7 +5672,7 @@ def check_carrier():
              contract_bytes((0, 8, 0, 500, 300, 0, 0x85))]
     slots = [f"peekcpu {a['P_CONTRACT'] + i * csize:o}" for i in range(3)]
     script = list(BOOT) + [poke_bytes(a["P_CONTRACT"] + i * csize, b) for i, b in enumerate(three)] + \
-        [poke_dev(t, "P_GALDRIVE"), "press 004", "run 90", "press 107", "run 90"] + \
+        [poke_dev(t, "P_GALDRIVE"), "press 004", ui_ready(t), "press 107", "run 90"] + \
         peeks("GALNUM", "CASH_L", "CASH_H", "P_DELIV") + slots + ["quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("carrier")))]
     check("a galactic jump tears up every contract, at what each costs",
@@ -5685,7 +5688,7 @@ def check_carrier():
     script = list(BOOT) + [poke_at(a["CASH_L"], 0), poke_at(int(t["CASH_H"], 8), 100),
                            f"pokecpu {int(t['P_YARD'], 8):o} 1"] + \
         [poke_bytes(a["P_CONTRACT"] + i * csize, b) for i, b in enumerate(two)] + \
-        ["press 004", "run 90"] * 6 + ["press 107", "run 60"] + \
+        ["press 004", ui_ready(t)] * 6 + ["press 107", ui_ready(t, frames=1)] + \
         peeks("P_SHIP", "P_DELIV") + slots[:2] + ["quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("carrier")))]
     check("a new ship leaves the passengers behind and keeps the cargo",
@@ -5756,7 +5759,7 @@ def check_find():
         return
 
     def search(keys):
-        script = BOOT + ["press 004", "run 90", "press 153", "run 30"]
+        script = BOOT + ["press 004", ui_ready(t), "press 153", "run 30"]
         for k in keys:
             script += [f"press {k}", "run 20"]
         script += ["press 153", "run 90", f"peekcpu {t['CURSYS']}", "quit"]
@@ -5807,7 +5810,7 @@ def check_ai():
     reads = [word(5, "U.X"), word(5, "U.Y"), word(5, "U.Z")] + [word(5, "U.MAT", 2 * i) for i in range(9)]
     # no station: near one a Krait is shy of you (F2_SHY) and turns away
     # on its reaction frames, and its nose hunts between the two
-    script = list(BOOT) + ["press 107", "run 40"] + quiet + [poke_at(int(slot_field(t, 2, "U.TYPE"), 8), 0)]
+    script = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + quiet + [poke_at(int(slot_field(t, 2, "U.TYPE"), 8), 0)]
     script += ship_pokes(t, 5, "KRAITH", x=3000, z=3000, energy=4000)
     script += reads + alive + ["run 60"] + reads + alive + ["run 60"] + reads + ["quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("steer")))]
@@ -5819,7 +5822,7 @@ def check_ai():
     # 2. a pirate with the police in the sky goes for them first
     #    (SetNewTargetObj's list: bit 4 before you), at its counter's
     #    end - 10 is slot 9 plus one, which is how a target is named
-    script = list(BOOT) + ["press 107", "run 40"] + quiet
+    script = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + quiet
     script += ship_pokes(t, 8, "KRAITH", z=6000, energy=200)
     script += ship_pokes(t, 9, "VIPERH", x=400, z=6400, hostile=False, energy=200)
     for _ in range(8):
@@ -5832,10 +5835,10 @@ def check_ai():
     #    with the station in the sky, heads home to it now and then
     #    (MoveAllObjects' goto662: one odd frame in two its container
     #    target is the station's slot+1, which is 3 here)
-    script = list(BOOT) + ["press 107", "run 40"] + quiet
+    script = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + quiet
     script += ship_pokes(t, 5, "PYTHONHT", x=800, z=4000, hostile=False, speed=10, hyper=False)
     for _ in range(8):
-        script += alive + ["run 3", word(5, "U.LAUNCH"), word(5, "U.FLAGS")]
+        script += alive + [ui_ready(t, frames=1), word(5, "U.LAUNCH"), word(5, "U.FLAGS")]
     script.append("quit")
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("trader")))]
     if len(v) >= 16:
@@ -5850,7 +5853,7 @@ def check_ai():
     #    "leaving" state, and it is gone in four frames - and UF_DERELICT
     #    on the Cobra after.  The station goes too, or its anger at a
     #    hostile trader scrambles Vipers into the sky under test.
-    script = list(BOOT) + ["press 107", "run 40"] + quiet + [poke_at(int(slot_field(t, 2, "U.TYPE"), 8), 0)]
+    script = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + quiet + [poke_at(int(slot_field(t, 2, "U.TYPE"), 8), 0)]
     script += ship_pokes(t, 5, "COBRAMK3HT1", x=600, z=3000, energy=10, hostile=False, hyper=False)
     script += alive
     for _ in range(60):                 # the capsule lands in the first free
@@ -5864,10 +5867,10 @@ def check_ai():
 
     # 5. a ship with nothing to do but leave, leaves: AI_HYPER alone and a
     #    counter of one is eight frames of hyperspace and an empty slot
-    script = list(BOOT) + ["press 107", "run 40"] + quiet
+    script = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + quiet
     script += ship_pokes(t, 5, "PYTHONHT", x=800, z=4000, hostile=False)
     script += [poke_at(int(slot_field(t, 5, "U.AI"), 8), (1 << 8) | a["AI_HYPER"]),
-               alive[0], "run 8", word(5, "U.TYPE"), word(5, "U.AI"), "run 40", word(5, "U.TYPE"), "quit"]
+               alive[0], "run 8", word(5, "U.TYPE"), word(5, "U.AI"), ui_ready(t, frames=12), word(5, "U.TYPE"), "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("hyper")))]
     if len(v) >= 3:
         check("a ship with nothing to keep it leaves by hyperspace",
@@ -5875,7 +5878,7 @@ def check_ai():
 
     # 6. shooting a trader makes it hostile and you an aggressor
     #    (FireLaser's goto603): the anger, and the record of it
-    script = list(BOOT) + ["press 107", "run 40"] + quiet
+    script = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + quiet
     script += ship_pokes(t, 5, "COBRAMK3HT1", z=700, hostile=False, energy=4000)
     script += [f"peekcpu {t['AGGRESSOR']}", "keydown 107", "run 30", "keyup 107", "run 4",
                word(5, "U.FLAGS"), f"peekcpu {t['AGGRESSOR']}", "quit"]
@@ -5936,9 +5939,9 @@ def check_hulls():
         f"dumpcpu {t['UNIV']} {usize * nuniv} {dumps[2]}",
         f"peekcpu {t['STATION_TYPE']}", f"peekcpu {t['HULL_FILL']}",
         f"peekcpu {t['SYS_TECH']}",
-        "press 004", "run 90",                       # the chart, three rows
-        "press 154", "run 30", "press 154", "run 30",  # up, and jump
-        "press 154", "run 30", "press 107", "run 200",
+        "press 004", ui_ready(t),                       # the chart, three rows
+        "press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1),  # up, and jump
+        "press 154", ui_ready(t, frames=1), "press 107", ui_ready(t, frames=1),
         f"dumpcpu {t['SHIP_TABLE']} {n * 2} {dumps[3]}",
         f"dumpcpu {t['UNIV']} {usize * nuniv} {dumps[4]}",
         f"peekcpu {t['STATION_TYPE']}", f"peekcpu {t['SYS_TECH']}", "quit"]
@@ -6057,8 +6060,8 @@ def check_bases():
 
     dumps = [ROOT / "tmp" / f"verify-bases-{k}.bin" for k in ("lave", "up", "launch", "ring")]
     dumps[0].parent.mkdir(exist_ok=True)
-    jump = ["press 004", "run 90", "press 154", "run 30", "press 154", "run 30",
-            "press 154", "run 30"] + steady_drive(t) + ["press 107", "run 200"]
+    jump = ["press 004", ui_ready(t), "press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1),
+            "press 154", ui_ready(t, frames=1)] + steady_drive(t) + ["press 107", ui_ready(t, frames=1)]
     # Lave, then three rows up; the service station is slot 5 at Lave
     # (the first slot the 1985 layout leaves) and is poked dead ahead,
     # level and slow, which is the docking test; a launch follows
@@ -6071,8 +6074,8 @@ def check_bases():
                      poke_at(int(slot_field(t, fuel, "U.X"), 8), 0),
                      poke_at(int(slot_field(t, fuel, "U.Y"), 8), 0),
                      poke_at(int(slot_field(t, fuel, "U.Z"), 8), 600)] + identity(fuel) + [
-                     "run 300", f"peekcpu {t['DOCKED']}", f"peekcpu {t['DOCKED_AT']}",
-                     "press 107", "run 40",
+                     f"waitcpu {t['DOCKED']} 1 2000", ui_ready(t, frames=1), f"peekcpu {t['DOCKED']}", f"peekcpu {t['DOCKED_AT']}",
+                     "press 107", ui_ready(t, frames=2),
                      f"dumpcpu {t['UNIV']} {usize * nuniv} {dumps[2]}",
                      f"peekcpu {t['DOCKED_AT']}"] + jump
     script = to_up + [f"dumpcpu {t['UNIV']} {usize * nuniv} {dumps[1]}",
@@ -6216,7 +6219,7 @@ def check_pause():
             f"peekcpu {t['FLY_TICK']}", "run 300", f"peekcpu {t['FLY_TICK']}",
             "press 070", "run 20", f"peekcpu {t['OPTIONS']}",
             "press 055", "run 20", f"peekcpu {t['OPTIONS']}",
-            "press 113", "run 60"] + clock + [f"peekcpu {t['FLY_TICK']}",
+            "press 113", ui_ready(t, frames=1)] + clock + [f"peekcpu {t['FLY_TICK']}",
             # 2. U asks before the launch: Т no, then Ф launches and stops asking
             "press 107", "run 60", f"peekcpu {t['DOCKED']}",
             "press 114", "run 60", f"peekcpu {t['DOCKED']}",
@@ -6247,7 +6250,7 @@ def check_pause():
             opt(0o2), poke_at(p, 0), "keydown 116", "run 10", f"peekcpu {t['PROLL']}", "keyup 116",
             "run 3",                  # the release reaches the key word a tick late
             opt(0o20), poke_at(p, 5), "run 20", f"peekcpu {t['PROLL']}",
-            opt(0), poke_at(p, 5), "run 20", f"peekcpu {t['PROLL']}",
+            opt(0), poke_at(p, 5), ui_ready(t, frames=6), f"peekcpu {t['PROLL']}",
             opt(0), poke_at(p, 8), "keydown 116", "run 6", f"peekcpu {t['PROLL']}", "keyup 116",
             "run 30", opt(0o10), poke_at(p, 8), "keydown 116", "run 6", f"peekcpu {t['PROLL']}",
             "keyup 116", "quit"])
@@ -6269,7 +6272,7 @@ def check_pause():
             opt(0), poke_at(q, 0), "keydown 154", "run 10", f"peekcpu {t['PPITCH']}", "keyup 154", "run 30",
             opt(0o4), poke_at(q, 0), "keydown 154", "run 10", f"peekcpu {t['PPITCH']}", "keyup 154", "run 3",
             peek_byte(t, "P_AUTOECM"), peek_byte(t, "P_AUTOPOD"),
-            "press 006", "run 100", "press 051", "run 20", "press 157", "run 20", "press 113", "run 60",
+            "press 006", "run 100", "press 051", "run 20", "press 157", "run 20", "press 113", ui_ready(t, frames=1),
             peek_byte(t, "P_AUTOECM"), peek_byte(t, "P_AUTOPOD"), "quit"])
     if len(v) >= 6:
         up, flipped = signed(v[0]), signed(v[1])
@@ -6288,8 +6291,8 @@ def check_pause():
 
     # 4. F: the Targons stop every jump
     v = run(BOOT + ["press 107", "run 100", opt(0o41),
-            "press 004", "run 90", "press 154", "run 30", "press 154", "run 30",
-            "press 154", "run 30", "press 107", "run 160", f"peekcpu {t['WITCH']}", "quit"])
+            "press 004", ui_ready(t), "press 154", ui_ready(t, frames=1), "press 154", ui_ready(t, frames=1),
+            "press 154", ui_ready(t, frames=1), "press 107", ui_ready(t, frames=1), f"peekcpu {t['WITCH']}", "quit"])
     check("F: every jump is intercepted", v[-1:] == [1], f"witch {v}")
 
     # 5. C: docking with the slot across, the station poked dead ahead
@@ -6490,7 +6493,7 @@ GROUPS = [
     ("missions6", "check_missions6"), ("missions7", "check_missions7"),
     ("missions8", "check_missions8"), ("missions9", "check_missions9"),
     ("ppu", "check_ppu_room"), ("presentation", "check_presentation"),
-    ("splash", "check_splash"), ("title", "check_title"), ("cockpit", "check_cockpit"),
+    ("palette", "check_palette"), ("splash", "check_splash"), ("title", "check_title"), ("cockpit", "check_cockpit"),
     ("law", "check_law"), ("chart", "check_chart"),
     ("commanders", "check_commanders"), ("planets", "check_planets"),
     ("worlds", "check_worlds"),

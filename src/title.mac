@@ -18,6 +18,7 @@
 
 		JMP	TITLE_SCREEN		; the overlay's entry, at OVL_BASE
 
+TI_LAST:	.WORD	0		; raw keyboard transition, independent of bindings
 TI_TICK:	.WORD	0
 TI_BLINK = 20.			; frames the prompt spends on, out of 32
 LOGO_X	= 18.			; the logo's left byte column: 44 bytes wide,
@@ -29,7 +30,8 @@ TI_CY	= 268.
 ; TITLE_SCREEN - hold the title until ФИКС.  Returns with the screen
 ; blank and the segment buffer empty, ready for the game to draw itself.
 ; =========================================================================
-TITLE_SCREEN:	CLR	R0			; a clean screen, both bands
+TITLE_SCREEN:	MOV	PP_LASTKEY,TI_LAST
+		CLR	R0			; a clean screen, both bands
 		MOV	#SCRH,R1
 		CLR	R2
 		CALL	FILL_LINES
@@ -41,6 +43,15 @@ TITLE_SCREEN:	CLR	R0			; a clean screen, both bands
 		MOV	#TI_CY,TY
 		MOV	#S_T_CREDITS,R1
 		CALL	PUTS
+		MOV	#74.,TX
+		MOV	#272.,TY
+		MOV	#S_SP_VERSION,R1
+		CALL	PUTS
+		MOV	#28.,TX
+		MOV	#236.,TY
+		MOV	#S_T_PALETTE,R1
+		CALL	LATIN_PUTS
+		CALL	TI_MARK
 
 		MOV	#2,R0			; and the tune, round and round,
 		CALL	TUNE			;   from the PPU (COMMAND_3)
@@ -52,6 +63,7 @@ TITLE_SCREEN:	CLR	R0			; a clean screen, both bands
 		MOV	KEYS_EDGE,R0
 		BIT	#K_FIRE,R0
 		BNE	80$
+		CALL	TI_PALETTE
 		MOV	TI_TICK,R0		; the prompt blinks, which is what
 		BIC	#177740,R0		; says the game is waiting for you
 		BNE	3$
@@ -78,6 +90,40 @@ TITLE_SCREEN:	CLR	R0			; a clean screen, both bands
 		CALL	FILL_LINES
 		CALL	SEG_RESET
 		JMP	INPUT_FLUSH
+
+; Fixed title keys 1/2 select the physical layout, regardless of flight binds.
+TI_PALETTE:	MOV	PP_LASTKEY,R0
+		CMP	R0,TI_LAST
+		BEQ	9$
+		MOV	R0,TI_LAST
+		SUB	#30,R0			; scancodes 030/031 -> GRB/RGB
+		CMP	R0,#1
+		BHI	9$
+		CMP	R0,PALETTE_MODE
+		BEQ	9$
+		MOV	R0,PALETTE_MODE
+		CALL	SET_COLORS
+		CALL	TI_MARK
+9$:		RETURN
+
+; White underline under the active six-character choice; no bitmap repaint.
+TI_MARK:	CALL	RING_WAIT
+		MOV	#<VRAM+<249.*SCRWB>+37.>,R0
+		MOV	#15.,R1
+1$:		MOV	R0,@#VADDR
+		CLR	@#VDATA
+		INC	R0
+		SOB	R1,1$
+		MOV	#<VRAM+<249.*SCRWB>+37.>,R0
+		TST	PALETTE_MODE
+		BEQ	2$
+		ADD	#9.,R0
+2$:		MOV	#6,R1
+3$:		MOV	R0,@#VADDR
+		MOV	#377,@#VDATA
+		INC	R0
+		SOB	R1,3$
+		RETURN
 
 ; =========================================================================
 ; LG_DRAW - the logo, out of LOGO_RLE: LOGO_H rows of LOGO_W bytes, each

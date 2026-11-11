@@ -18,6 +18,7 @@ restarts go straight to that logo.
 | ← → | ← → | cockpit | roll |
 | ↑ ↓ | ↑ ↓ | cockpit | pitch |
 | ВВОД | Enter | startup welcome and controls | advance one page; the second Enter opens the Legend logo |
+| 1 / 2 | 1 / 2 | title screen | select GRB (default) / RGB physical palette; fixed keys, independent of flight bindings; choice lasts until exit |
 | ФИКС | Left Ctrl | title screen | start |
 | ФИКС | Left Ctrl | cockpit | fire the laser (held; heats up and cuts out) |
 | ФИКС | Left Ctrl | docked | launch - with ПОДТВЕРЖДЕНИЕ НА ВЗЛЕТ on in the pause menu, after НАЧАТЬ РАССТЫКОВКУ?: Н (PC Y) yes, Т (PC N) or СТОП no, Ф (PC A) yes and never ask again |

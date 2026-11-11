@@ -50,8 +50,8 @@ def check_completion(v):
         return [int(x, 8) for x in v.PEEK.findall(v.run_emu(
             script + ["quit"], v.fresh_disk("completion-" + name)))]
 
-    jump = ["press 004", "run 90"] + ["press 154", "run 30"] * 3
-    jump += [v.poke_at(a("HYP_NOROLL"), 1), "press 107", "run 200"]
+    jump = ["press 004", v.ui_ready(t)] + ["press 154", v.ui_ready(t, frames=1)] * 3
+    jump += [v.poke_at(a("HYP_NOROLL"), 1), "press 107", v.ui_ready(t, frames=1)]
     for support in (0x80, 0x40, 0):
         script = list(v.BOOT) + [v.poke_byte(t, "P_LIFESUPPORT", support),
                   v.poke_byte(t, "P_AUTOREPAIR", 0x80), v.poke_byte(t, "P_WEAR", 254)]
@@ -67,22 +67,31 @@ def check_completion(v):
                 got[0] == 1 and got[2:6] == want and got[6] == 12, str(got))
         v.check("jump wear saturates at 255", v.byte_of(t, "P_WEAR", got[1]) == 255)
 
+    # Seed at the actual jump-effect call, after the tunnel's random draws
+    # and key entropy. These fixtures exercise no repair, each eligible
+    # device, and the absent/broken repair system without a probabilistic pass.
     repaired = 0
-    for seed in range(6):
-        script = list(v.BOOT) + [v.poke_byte(t, "P_AUTOREPAIR", 0),
+    for seed, repair, expected in ((0, 0, (0x41, 0x40)),
+                                    (1, 0, (0x41, 0)),
+                                    (7, 0, (1, 0x40)),
+                                    (7, 0x40, (0x41, 0x40)),
+                                    (7, 0x80, (0x41, 0x40))):
+        script = list(v.BOOT) + [v.poke_byte(t, "P_AUTOREPAIR", repair),
             v.poke_byte(t, "P_WEAR", 0), v.poke_byte(t, "P_ENERGYUNIT", 0x41),
-            v.poke_byte(t, "P_GALDRIVE", 0xC1), v.poke_byte(t, "P_ECM", 0x40),
-            v.poke_at(a("RNDSEED"), seed * 10000), v.poke_at(a("RNDSEED") + 2, seed)] + jump
+            v.poke_byte(t, "P_GALDRIVE", 0xC1), v.poke_byte(t, "P_ECM", 0x40)]
+        script += jump[:-1] + [f"runpc {t['PILOT_JUMP']} 1200",
+            v.poke_at(a("RNDSEED"), 0), v.poke_at(a("RNDSEED") + 2, seed),
+            v.ui_ready(t, frames=1)]
         script += [v.peek_byte(t, k) for k in ("P_WEAR", "P_ENERGYUNIT", "P_GALDRIVE", "P_ECM")]
         got = run(script, "repair")
         wear, unit, drive, ecm = [v.byte_of(t, k, w) for k, w in zip(
             ("P_WEAR", "P_ENERGYUNIT", "P_GALDRIVE", "P_ECM"), got)]
         n = (unit == 1) + (ecm == 0)
         repaired += n
-        v.check(f"repair seed {seed}: no wear underflow, no absent-device repair, at most one mend",
-                0 <= wear <= 2 and drive == 0xC1 and n <= 1 and unit in (1, 0x41) and ecm in (0, 0x40),
+        v.check(f"repair {repair:o}, seed {seed}: exact mend, no wear underflow or absent-device repair",
+                0 <= wear <= 2 and drive == 0xC1 and n <= 1 and (unit, ecm) == expected,
                 str((wear, unit, drive, ecm)))
-    v.check("working automatic repair actually mends a broken device", repaired > 0, str(repaired))
+    v.check("working automatic repair actually mends a broken device", repaired == 2, str(repaired))
 
     fly = list(v.BOOT) + ["press 107", "run 60"] + v.clear_traffic(t) + [v.poke_at(a("PSPEED"), 0)]
     got = run(fly + [v.poke_dev(t, "P_ESCPOD"), v.poke_at(a("WITCH"), 1),

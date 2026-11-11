@@ -1,16 +1,19 @@
 /*  uknc-headless -- command-line UKNC (Elektronika MS 0511) emulator runner
     built on the emubase core of UKNCBTL (https://github.com/nzeemin/ukncbtl-qt,
-    LGPL v3).  Made for automated build-and-test of the Exolon MC0511 project:
+    LGPL v3).  Made for automated build-and-test of the Elite MC0511 project:
     boots a raw .dsk image, runs frames, injects keyboard scancodes, takes
     BMP screenshots and reads emulated memory -- all scriptable from stdin
     or a script file, no display required.
 
     Usage:
-        uknc-headless --rom uknc_rom.bin --disk game.dsk [--script file]
+        uknc-headless --rom uknc_rom.bin --disk game.dsk [--script file] [--palette grb|rgb]
 
     Script commands (one per line; '#' starts a comment):
-        run N                 run N SystemFrames of 1/25 s (25 = 1 emulated second;
-                              each carries TWO 50 Hz EVNT interrupts)
+        timing                report core frames/second and samples/second
+        run N                 run N SystemFrames (duration follows timing)
+        runrel ADDR N LIMIT   wait for a CPU counter to advance N, or fail
+        waitcpu ADDR VALUE LIMIT  wait for a CPU word to equal VALUE, or fail
+        runpc ADDR LIMIT      stop at a CPU instruction address, or fail
         press CODE [HOLD]     press+release key, CODE = octal UKNC scancode,
                               HOLD = frames to hold (default 5)
         keydown CODE          press and keep pressed
@@ -65,6 +68,8 @@ static bool WriteWav(const char *path)
     fclose(f);
     return true;
 }
+
+#include "palette.h"
 
 // YRGB -> RGB32 palette (ScreenView_StandardRGBColors from UKNCBTL).
 static const uint32_t g_colors[16 * 8] =
@@ -131,7 +136,7 @@ static void PrepareScreenRGB32(uint32_t *pImageBits, const uint32_t *colors)
             for (uint8_t c = 0; c < 8; c++)
             {
                 uint8_t valueYRGB = (uint8_t)(palette >> (c << 2)) & 15;
-                palettecurrent[c] = colors[pbpgpr | valueYRGB];
+                palettecurrent[c] = PhysicalColor(colors[pbpgpr | valueYRGB]);
             }
         }
 
@@ -168,7 +173,7 @@ static void PrepareScreenRGB32(uint32_t *pImageBits, const uint32_t *colors)
                 uint32_t valueRGB;
                 if (cursorOn && (pos == cursorPos) &&
                     (!okCursorType || (okCursorType && bit == cursorAddress)))
-                    valueRGB = colors[cursorYRGB];
+                    valueRGB = PhysicalColor(colors[cursorYRGB]);
                 else
                 {
                     uint8_t value012 = (src0 & 1) | ((src1 & 1) << 1) | ((src2 & 1) << 2);
@@ -277,7 +282,11 @@ static int ExecuteLine(char *line)
         return 0;
 
     const char *cmd = tok[0];
-    if (!strcmp(cmd, "run") && tok.size() >= 2)
+    if (!strcmp(cmd, "timing"))
+    {
+        printf("timing: %d frames/sec, %d samples/sec\n", FRAMERATE, SAMPLERATE);
+    }
+    else if (!strcmp(cmd, "run") && tok.size() >= 2)
     {
         RunFrames(atoi(tok[1]));
     }
@@ -286,7 +295,7 @@ static int ExecuteLine(char *line)
         // runrel ADDR N [MAXTICKS] -- run emulated frames until the CPU
         // word at octal ADDR has advanced by N (decimal), or MAXTICKS
         // frames have passed.  With a frame counter at ADDR this runs
-        // the *game* an exact number of frames however slow it is.
+        // the game at least N frames however slow it is.
         unsigned addr;
         if (!ParseOctal(tok[1], &addr))
             return Fail("bad octal address: %s", tok[1]);
@@ -295,14 +304,54 @@ static int ExecuteLine(char *line)
         uint16_t off = (uint16_t)(addr / 2);   // CPU space = planes 1+2
         uint16_t start = (uint16_t)(g_pBoard->GetRAMByte(1, off) |
                                     (g_pBoard->GetRAMByte(2, off) << 8));
-        for (int t = 0; t < maxt; t++)
+        bool ready = false;
+        for (int t = 0; t <= maxt; t++)
         {
             uint16_t w = (uint16_t)(g_pBoard->GetRAMByte(1, off) |
                                     (g_pBoard->GetRAMByte(2, off) << 8));
             if ((uint16_t)(w - start) >= (uint16_t)n)
+            {
+                ready = true;
                 break;
+            }
+            if (t == maxt) break;
             RunFrames(1);
         }
+        if (!ready)
+            return Fail("runrel timed out: %06o did not advance %d in %d ticks (PC=%06o)",
+                        addr, n, maxt, g_pBoard->GetCPU()->GetPC());
+    }
+    else if (!strcmp(cmd, "waitcpu") && tok.size() >= 4)
+    {
+        unsigned addr, value;
+        if (!ParseOctal(tok[1], &addr) || !ParseOctal(tok[2], &value))
+            return Fail("usage: waitcpu OCTAL-ADDR OCTAL-VALUE MAXTICKS");
+        int limit = atoi(tok[3]);
+        uint16_t off = (uint16_t)(addr / 2);
+        for (int t = 0; t <= limit; t++)
+        {
+            uint16_t word = g_pBoard->GetRAMByte(1, off) |
+                           (g_pBoard->GetRAMByte(2, off) << 8);
+            if (word == value) return 0;
+            if (t == limit) break;
+            RunFrames(1);
+        }
+        return Fail("waitcpu timed out: %06o != %06o (PC=%06o)",
+                    addr, value, g_pBoard->GetCPU()->GetPC());
+    }
+    else if (!strcmp(cmd, "runpc") && tok.size() >= 3)
+    {
+        unsigned addr;
+        if (!ParseOctal(tok[1], &addr))
+            return Fail("usage: runpc OCTAL-ADDR MAXTICKS");
+        int limit = atoi(tok[2]);
+        uint16_t breakpoints[] = { (uint16_t)addr, 0177777 };
+        g_pBoard->SetCPUBreakpoints(breakpoints);
+        for (int t = 0; t < limit && g_pBoard->GetCPU()->GetPC() != addr; t++)
+            g_pBoard->SystemFrame();
+        g_pBoard->SetCPUBreakpoints(nullptr);
+        if (g_pBoard->GetCPU()->GetPC() != addr)
+            return Fail("runpc timed out: PC=%06o, expected %06o", g_pBoard->GetCPU()->GetPC(), addr);
     }
     else if (!strcmp(cmd, "press") && tok.size() >= 2)
     {
@@ -512,6 +561,14 @@ int main(int argc, char *argv[])
             romPath = argv[++i];
         else if (!strcmp(argv[i], "--disk") && i + 1 < argc)
             diskPath = argv[++i];
+        else if (!strcmp(argv[i], "--palette") && i + 1 < argc)
+        {
+            if (!SetPaletteLayout(argv[++i]))
+            {
+                fprintf(stderr, "--palette must be grb or rgb\n");
+                return 1;
+            }
+        }
         else if (!strcmp(argv[i], "--script") && i + 1 < argc)
             scriptPath = argv[++i];
         else

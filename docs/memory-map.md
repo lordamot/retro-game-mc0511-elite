@@ -1,6 +1,6 @@
 # Memory map
 
-Snapshot of the v0.8.0 build, checked against `src/defs.mac`,
+Snapshot of the v0.8.2 build, checked against `src/defs.mac`,
 `build/elite.lst` and `build/manifest.json`. Addresses are **octal**; sizes
 and file-block numbers are decimal. End addresses are exclusive. Recheck
 the listing after a rebuild; limits are enforced by `src/tail.mac`, the
@@ -11,8 +11,8 @@ generated hull tables and `tools/build_elite.py`.
 | Region | Start | End (exclusive) | Bytes |
 |---|---|---|---:|
 | RT-11 low memory, vectors and job header | 000000 | 001000 | 512 |
-| Resident code/data | 001000 | 131732 | 45530 |
-| Resident reserve | 131732 | 132400 | **294** |
+| Resident code/data | 001000 | 132004 | 45572 |
+| Resident reserve | 132004 | 132400 | **252** |
 | Downward game stack | 132400 | 133400 | 512 |
 | One CPU working hull | 133400 | 134400 | 512 |
 | Overlay window | 134400 | 146400 | 5120 |
@@ -43,7 +43,7 @@ length and record signature/version before replacing the live commander.
 No save transfer buffer occupies the active overlay or USR swap region.
 
 After `PP_MAIN_LOAD`, live buffers overwrite 113640..122230.
-Published PPU words start at 122410: **112 bytes remain**.
+Published PPU words start at 122460: **152 bytes remain**.
 Nothing may read these buffers before initialization; the SAV initially
 contains PPU instructions there. The reused buffers are `UNIV`, `NPSHOT`,
 `SVX`, `SVY`, `SVOK`/`SVNEED`/`CO_R`, `SVLIST`, `SLIST`, `EXPTAB`,
@@ -66,41 +66,42 @@ not physical disk sectors. The data file can be moved on the volume.
 
 | # | Overlay | Bytes | Free in window | DAT block | Blocks |
 |---:|---|---:|---:|---:|---:|
-| 0 | title | 3749 | 1371 | 3 | 8 |
-| 1 | charts | 1977 | 3143 | 11 | 4 |
-| 2 | info | 1725 | 3395 | 15 | 4 |
-| 3 | trade | 1863 | 3257 | 19 | 4 |
-| 4 | cmdr | 2764 | 2356 | 23 | 6 |
-| 5 | pilot | 3425 | 1695 | 29 | 7 |
-| 6 | equip | 4959 | 161 | 36 | 10 |
-| 7 | yard | 3943 | 1177 | 46 | 8 |
-| 8 | save | 1395 | 3725 | 54 | 3 |
-| 9 | carrier | 4269 | 851 | 57 | 9 |
-| 10 | ctgen | 2158 | 2962 | 66 | 5 |
-| 11 | fly | 4844 | 276 | 71 | 10 |
-| 12 | mission | 2020 | 3100 | 81 | 4 |
-| 13 | dash | 2472 | 2648 | 85 | 5 |
-| 14 | pause | 1004 | 4116 | 90 | 2 |
-| 15 | sfx | 3622 | 1498 | 92 | 8 |
+| 0 | title | 4352 | 768 | 3 | 9 |
+| 1 | charts | 1977 | 3143 | 12 | 4 |
+| 2 | info | 1725 | 3395 | 16 | 4 |
+| 3 | trade | 1863 | 3257 | 20 | 4 |
+| 4 | cmdr | 2764 | 2356 | 24 | 6 |
+| 5 | pilot | 3425 | 1695 | 30 | 7 |
+| 6 | equip | 4959 | 161 | 37 | 10 |
+| 7 | yard | 3943 | 1177 | 47 | 8 |
+| 8 | save | 1395 | 3725 | 55 | 3 |
+| 9 | carrier | 4269 | 851 | 58 | 9 |
+| 10 | ctgen | 2158 | 2962 | 67 | 5 |
+| 11 | fly | 4844 | 276 | 72 | 10 |
+| 12 | mission | 2020 | 3100 | 82 | 4 |
+| 13 | dash | 2472 | 2648 | 86 | 5 |
+| 14 | pause | 1004 | 4116 | 91 | 2 |
+| 15 | sfx | 3622 | 1498 | 93 | 8 |
 
 | Resource | DAT block | Blocks |
 |---|---:|---:|
 | SAV/DAT pairing header | 0 | 1 |
 | Overlay directory | 1 | 1 |
 | Key tables and options | 2 | 1 |
-| Overlays | 3 | 97 |
-| Hull bank (13,612 bytes) | 100 | 27 |
-| Mission text | 127 | 15 |
-| Zero guard for two-block message reads | 142 | 1 |
+| Overlays | 3 | 98 |
+| Hull bank (13,612 bytes) | 101 | 27 |
+| Mission text | 128 | 15 |
+| Zero guard for two-block message reads | 143 | 1 |
 
-`ELITE.DAT` is 143 blocks. `ELSAV1.DAT`..`ELSAV4.DAT` are independent
+`ELITE.DAT` is 144 blocks. `ELSAV1.DAT`..`ELSAV4.DAT` are independent
 two-block files, accessed on channel 1. Replacement uses ENTER/WRITW/CLOSE;
 a failed tentative write is purged. The build/refresh tools migrate legacy
 raw slots at physical blocks 100..107, preserving bytes and a full backup.
 Those old addresses are used only by the host-side migration tool.
 
-The commander overlay also carries the two startup pages and their Latin
-ROM glyphs. It shares the commander overlay window budget shown above.
+The commander overlay carries the two startup pages and their Latin ROM
+glyphs. The title overlay carries its own copy of the Latin renderer and
+glyph bank for GRB/RGB labels; neither adds a resident font bank.
 
 The overlay window has one tenant. Resident code calls flight code only
 through `FV_*` during the flight frame. Sound executes from its mutable
@@ -108,7 +109,7 @@ PPU cache, never from the CPU window.
 
 ## PPU and video planes
 
-The copied PPU program is 3448 bytes, followed in its firmware allocation by a
+The copied PPU program is 3488 bytes, followed in its firmware allocation by a
 2392-byte backup of the terminal line-table region (02300..07027).
 This backup is allocated dynamically and is not stored in the CPU image.
 Saved scalar state includes firmware row/scroll settings, receiver-enable

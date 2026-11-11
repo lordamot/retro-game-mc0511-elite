@@ -24,7 +24,7 @@ MEM_TOP = 146400                ; .SETTO request; checked at entry
 OVL_DIR_LBA = 1
 KEYS_LBA = 2
 OVL_LBA0 = 3
-HULL_LBA0 = 100.
+HULL_LBA0 = 101.
 ; All hulls live in video planes 1/2 above the screen (13,612 bytes).
 ; HULL_SYSTEM keeps the original 5120-byte logical selection budget;
 ; SHIP_TABLE contains bank addresses. HULL_FETCH supplies a CPU pointer.
@@ -46,7 +46,7 @@ OVL_DASH = 13.			; the dashboard, drawn for the cockpit (src/ovl_dash.mac)
 OVL_PAUSE = 14.			; the pause menu and the launch prompt (src/ovl_pause.mac)
 OVL_SFX	= 15.			; Legend's effects engine, which the PPU runs out
 				;   of the overlay cache (src/ppu_sfx.mac)
-MTEXT_LBA0 = 127.		; the missions' text (build/mistext.bin), after
+MTEXT_LBA0 = 128.		; the missions' text (build/mistext.bin), after
 				;   the hull bank (tools/mission_text.py)
 ; the flight overlay's entries: a JMP each at the window's head
 FV_AI	= OVL_BASE		; AI_STEP (src/ai_fly.mac)

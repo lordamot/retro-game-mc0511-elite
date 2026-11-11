@@ -10,6 +10,9 @@ COLORWORD3:	.WORD	PAL_DASH1	; dashboard palette, entries 0..3
 COLORWORD4:	.WORD	PAL_DASH2	; ... entries 4..7
 CPU_MODE:	.WORD	MODE_640	; display control word: 640 mode
 
+; Physical connector layout; survives restarts, reset by a fresh RT-11 load.
+PALETTE_MODE:	.WORD	0		; 0 = GRB (default), 1 = RGB
+
 FILL_Y:		.WORD	0		; COMMAND_6 arguments
 FILL_CNT:	.WORD	0
 FILL_COLOR:	.WORD	0

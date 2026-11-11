@@ -44,17 +44,15 @@ def check_rules(v):
         patch += [v.poke_at(a("DRAW_HARNESS"), 0o000137),
                   v.poke_at(a("DRAW_HARNESS") + 2, a("BENCH")),
                   v.poke_at(a("BENCH_RAM"), 0), v.poke_at(a("HARN_GO"), 1), "run 1"]
-        # A whole flight frame may take several ticks.  Re-read the hook
-        # until it has returned; the other values are sampled each tick.
+        # Overlay loads may take hundreds of ticks. Observe the completion
+        # flag with a bounded wait before reading the captured results.
         script = list(fly if boot is None else boot) + list(setup) + patch
         keys = [a("BENCH_RAM"), a("BENCH_BUF")] + list(reads)
-        script += sum(([f"peekcpu {x:o}" for x in keys] + ["run 1"] for _ in range(30)), [])
+        script += [f"waitcpu {t['BENCH_RAM']} 1 1200"]
+        script += [f"peekcpu {x:o}" for x in keys]
         values = run(script, name)
-        rows = [values[i:i+len(keys)] for i in range(0, len(values), len(keys))]
-        # HARN_GO is cleared at entry; allow one further tick for return.
-        ready = next((i for i, row in enumerate(rows) if row[0] == 1), None)
-        v.check(f"{name} probe returns", ready is not None)
-        return rows[ready][1:] if ready is not None else []
+        v.check(f"{name} probe returns", len(values) == len(keys) and values[0] == 1)
+        return values[1:] if len(values) == len(keys) and values[0] == 1 else []
 
     # Life on a distant asteroid field, with both signs and exact boundary.
     for x, y, z, expected in ((0, 0, 0, 0), (65535, 0, 0, 0),

@@ -78,10 +78,11 @@ def build_headless():
             REPO_ROOT, "cannot clone ukncbtl-qt (network?)")
     work = TMP / "uknc-headless"
     work.mkdir(parents=True, exist_ok=True)
-    for f in ("main.cpp", "uknc-play.cpp", "stdafx.h", "sdl2_min.h",
-              "Makefile"):
+    for f in ("main.cpp", "uknc-play.cpp", "audio-test.cpp", "stdafx.h",
+              "sdl2_min.h", "palette.h", "Makefile"):
         shutil.copy2(REPO_ROOT / "tools/uknc-headless" / f, work / f)
     run(["make"], work, "uknc-headless build failed")
+    run(["make", "check-audio"], work, "player audio regression failed")
     dest = REPO_ROOT / "bin/ukncbtl"
     dest.mkdir(parents=True, exist_ok=True)
     shutil.copy2(work / "uknc-headless", dest / "uknc-headless")

@@ -4,19 +4,20 @@
     is declared by hand).  This is `make run`: boot the game disk and play.
 
     Usage:
-        uknc-play --rom uknc_rom.bin --disk build/exolon.dsk [--no-autoboot]
+        uknc-play --rom uknc_rom.bin --disk build/elite.dsk [--no-autoboot] [--palette grb|rgb]
 
     By default the firmware loader menu is driven automatically
-    ("1 - диск" + ВВОД), landing straight on the title screen.
+    ("1 - диск" + ВВОД), landing on the welcome screen.
 
     Keys:
-        arrows           move / jump / crouch
-        Space or LCtrl   ФИКС      (fire)
-        KP Enter, RCtrl  доп. ВВОД (throw a grenade)
+        arrows           steer / navigate menus
+        LCtrl            ФИКС      (fire)
+        Space            ПРОБЕЛ    (lock / selected function)
+        KP Enter, RCtrl  доп. ВВОД (cycle throttle)
         Enter            ВВОД      (menu select)
         Tab              АР2       (pause)
         Esc              СТОП
-        1..0             UKNC digit row ("1" starts a game)
+        1..0             UKNC digit row (title: 1 = GRB, 2 = RGB)
         close window     quit the emulator
 */
 
@@ -29,14 +30,21 @@
 static CMotherboard *g_pBoard = nullptr;
 
 // --- speaker output -------------------------------------------------
-// emubase calls this 882 times per SystemFrame (SAMPLERATE 22050 / 25);
-// the samples collect here and the main loop queues them on the SDL
+// Use the core's cadence: current emubase runs at 50 Hz (441 samples).
+// The samples collect here and the main loop queues them on the SDL
 // audio device once a frame.
+static constexpr uint32_t kFrameMs = 1000 / FRAMERATE;
+static constexpr uint32_t kFrameBytes = SAMPLERATE / FRAMERATE * sizeof(int16_t);
+static_assert(1000 % FRAMERATE == 0, "frame pacing needs whole milliseconds");
 static std::vector<int16_t> g_audioBuf;
 static void CALLBACK AudioCallback(unsigned short L, unsigned short /*R*/)
 {
-    g_audioBuf.push_back((int16_t)((int)L - 16384));
+    // The core supplies 0..32767 with silence at zero. Subtracting 16384
+    // turns silence into DC, which buzzes whenever the device underruns.
+    g_audioBuf.push_back((int16_t)L);
 }
+
+#include "palette.h"
 
 // YRGB -> RGB32 palette (ScreenView_StandardRGBColors from UKNCBTL).
 static const uint32_t g_colors[16 * 8] =
@@ -102,7 +110,7 @@ static void PrepareScreenRGB32(uint32_t *pImageBits, const uint32_t *colors)
             for (uint8_t c = 0; c < 8; c++)
             {
                 uint8_t valueYRGB = (uint8_t)(palette >> (c << 2)) & 15;
-                palettecurrent[c] = colors[pbpgpr | valueYRGB];
+                palettecurrent[c] = PhysicalColor(colors[pbpgpr | valueYRGB]);
             }
         }
 
@@ -139,7 +147,7 @@ static void PrepareScreenRGB32(uint32_t *pImageBits, const uint32_t *colors)
                 uint32_t valueRGB;
                 if (cursorOn && (pos == cursorPos) &&
                     (!okCursorType || (okCursorType && bit == cursorAddress)))
-                    valueRGB = colors[cursorYRGB];
+                    valueRGB = PhysicalColor(colors[cursorYRGB]);
                 else
                 {
                     uint8_t value012 = (src0 & 1) | ((src1 & 1) << 1) | ((src2 & 1) << 2);
@@ -226,6 +234,14 @@ int main(int argc, char *argv[])
             romPath = argv[++i];
         else if (!strcmp(argv[i], "--disk") && i + 1 < argc)
             diskPath = argv[++i];
+        else if (!strcmp(argv[i], "--palette") && i + 1 < argc)
+        {
+            if (!SetPaletteLayout(argv[++i]))
+            {
+                fprintf(stderr, "--palette must be grb or rgb\n");
+                return 1;
+            }
+        }
         else if (!strcmp(argv[i], "--no-autoboot"))
             autoboot = false;
         else
@@ -276,28 +292,30 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    // the beeper: 22050 Hz mono S16, pushed with SDL_QueueAudio; if the
+    // Speaker and AY: mono S16, pushed with SDL_QueueAudio; if the
     // host has no usable audio the game still runs, just silent
     uint32_t audioDev = 0;
+    bool audioPlaying = false;
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0)
     {
         SDL_AudioSpec want;
         memset(&want, 0, sizeof(want));
-        want.freq = 22050;
+        want.freq = SAMPLERATE;
         want.format = AUDIO_S16LSB;
         want.channels = 1;
-        want.samples = 1024;
+        want.samples = 512;
         audioDev = SDL_OpenAudioDevice(nullptr, 0, &want, nullptr, 0);
         if (audioDev)
         {
             g_pBoard->SetSoundGenCallback(AudioCallback);
-            SDL_PauseAudioDevice(audioDev, 0);
+            g_audioBuf.reserve(SAMPLERATE / FRAMERATE);
+            // SDL opens paused. Prime the queue before starting playback.
         }
     }
     if (!audioDev)
         fprintf(stderr, "no audio device, running silent: %s\n",
                 SDL_GetError());
-    SDL_Window *win = SDL_CreateWindow("Exolon  \xd0\xa3\xd0\x9a\xd0\x9d\xd0\xa6 \xd0\x9c\xd0\xa1-0511",
+    SDL_Window *win = SDL_CreateWindow("Elite  \xd0\xa3\xd0\x9a\xd0\x9d\xd0\xa6 \xd0\x9c\xd0\xa1-0511",
                                        (int)SDL_WINDOWPOS_CENTERED,
                                        (int)SDL_WINDOWPOS_CENTERED,
                                        1280, 960, SDL_WINDOW_RESIZABLE);
@@ -355,17 +373,38 @@ int main(int argc, char *argv[])
             }
         }
 
-        g_pBoard->SystemFrame();   // 1/25 s of emulated time
+        g_pBoard->SystemFrame();   // 1/FRAMERATE seconds of emulated time
         frame++;
 
         if (audioDev)
         {
-            // keep at most ~4 frames (160 ms) queued so audio latency
-            // cannot build up when a frame overruns its 40 ms slot
-            if (SDL_GetQueuedAudioSize(audioDev) < 4 * 882 * 2)
-                SDL_QueueAudio(audioDev, g_audioBuf.data(),
-                               (uint32_t)(g_audioBuf.size() * 2));
+            if (audioPlaying && SDL_GetQueuedAudioSize(audioDev) == 0)
+            {
+                // After a host stall, rebuild the cushion instead of
+                // repeatedly starting with less than a device buffer.
+                SDL_PauseAudioDevice(audioDev, 1);
+                audioPlaying = false;
+            }
+            if (SDL_QueueAudio(audioDev, g_audioBuf.data(),
+                               (uint32_t)(g_audioBuf.size() * sizeof(int16_t))) != 0)
+            {
+                fprintf(stderr, "audio queue failed: %s\n", SDL_GetError());
+                g_pBoard->SetSoundGenCallback(nullptr);
+                SDL_CloseAudioDevice(audioDev);
+                audioDev = 0;
+            }
             g_audioBuf.clear();
+            if (audioDev && !audioPlaying &&
+                SDL_GetQueuedAudioSize(audioDev) >= 3 * kFrameBytes)
+            {
+                SDL_PauseAudioDevice(audioDev, 0);
+                audioPlaying = true;
+            }
+            // Bound latency without throwing away pieces of music if the
+            // host audio clock is slightly slower than its timer.
+            while (audioDev && audioPlaying &&
+                   SDL_GetQueuedAudioSize(audioDev) > 4 * kFrameBytes)
+                SDL_Delay(1);
         }
 
         PrepareScreenRGB32(bits.data(), g_colors);
@@ -374,9 +413,9 @@ int main(int argc, char *argv[])
         SDL_RenderCopy(ren, tex, nullptr, nullptr);
         SDL_RenderPresent(ren);
 
-        next += 40;                // pace at 25 fps
+        next += kFrameMs;
         uint32_t now = SDL_GetTicks();
-        if (next > now)
+        if ((int32_t)(next - now) > 0)
             SDL_Delay(next - now);
         else
             next = now;

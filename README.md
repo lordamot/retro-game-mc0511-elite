@@ -12,7 +12,7 @@
 ![Карта](readme/03.png)
 
 A Russian-language Elite Legend port for the УКНЦ, written in MACRO-11
-with hardware MUL/DIV and a 640×288 display. Version **0.8.0** builds as a
+with hardware MUL/DIV and a 640×288 display. Version **0.8.2** builds as a
 bootable RT-11 disk containing `ELITE.SAV`, `ELITE.DAT` and normal commander
 files. Original game files and third-party binaries are supplied locally, not
 tracked in this repository.
@@ -34,8 +34,14 @@ workflows. `make toolchain` builds the assembler and UKNCBTL runners under
 `tmp/` and installs their results under `bin/`; it uses the host build tools
 and SDL2 runtime. See [tools](docs/tools.md) for dependencies and CLIs.
 
-Press **Enter twice**, once on each startup page, then **Left Ctrl** at the
-Elite logo. Select commander slot **1–4**; an empty slot asks for a name.
+Press **Enter twice**, once on each startup page, to reach the Elite logo.
+At the logo, **1 selects GRB** (default), **2 selects RGB**;
+the white underline marks the choice, which lasts until exit to RT-11.
+The local **Elite** emulator also defaults to GRB. For RGB wiring, launch it
+with `--palette rgb` and select RGB in the game. Both `uknc-play` and
+`uknc-headless` accept `--palette grb|rgb`.
+
+After Left Ctrl, select commander slot **1–4**; an empty slot asks for a name.
 Flight uses arrows to steer, Left Ctrl to fire, Right Ctrl/keypad Enter to
 cycle throttle, and Space to lock/perform the function selected with `8`.
 Esc cycles screens and Tab opens pause. **Tab, then X exits to RT-11 without
@@ -105,8 +111,9 @@ save failures, disk refresh and exit constraints.
 Start with [AGENTS.md](AGENTS.md) and the [documentation index](docs/README.md).
 The references describe current architecture, final decisions, caveats and
 reproducible checks. [Testing](docs/testing.md) distinguishes full-suite
-results from focused checks; no clean full-suite run is recorded for the
-current v0.8.0 runtime. [Rendering](docs/rendering.md) records the applicable
+results from focused checks and records the v0.8.2 title checks and the
+preceding clean v0.8.1 full-suite run.
+[Rendering](docs/rendering.md) records the applicable
 benchmark workload and evidence limits.
 
 ```sh

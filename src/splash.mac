@@ -5,7 +5,6 @@
 
 SP_PAGE:	.WORD	0		; 1 = welcome, 2 = controls, 0 = finished
 SP_PTR:		.WORD	0
-SP_LATIN:	.WORD	0
 
 SPLASH:		MOV	#1,SP_PAGE
 		MOV	#SP_WELCOME,SP_PTR
@@ -48,7 +47,7 @@ SP_DRAW:	CALL	INPUT_FLUSH
 		MOV	(R4)+,TY
 		MOV	(R4)+,R1
 		MOV	R4,SP_PTR
-		CALL	SP_PUTS
+		CALL	LATIN_PUTS
 		BR	1$
 9$:		RETURN
 
@@ -57,47 +56,6 @@ SP_WAIT:	CALL	VSYNC
 		BIT	#K_ENTER,KEYS_EDGE
 		BEQ	SP_WAIT
 		RETURN
-
-; Body strings use <ASCII> for Latin names inside KOI-7 Russian text.
-; Those glyphs come from the same UKNC ROM, in an overlay-local bank.
-SP_PUTS:	CALL	RING_WAIT
-		CLR	SP_LATIN
-1$:		MOVB	(R1)+,R0
-		BEQ	9$
-		CMP	R0,#74			; < opens Latin text
-		BNE	2$
-		INC	SP_LATIN
-		BR	1$
-2$:		CMP	R0,#76			; > returns to Russian
-		BNE	3$
-		CLR	SP_LATIN
-		BR	1$
-3$:		MOV	R1,-(SP)
-		TST	SP_LATIN
-		BEQ	4$
-		CMP	R0,#SPLAT_FIRST
-		BLO	4$
-		CMP	R0,#SPLAT_LAST
-		BHI	4$
-		SUB	#SPLAT_FIRST,R0
-		MUL	#FONT_H,R0
-		MOV	R1,R0
-		ADD	#SPLAT8,R0
-		MOV	TY,R1
-		MUL	#SCRWB,R1
-		ADD	TX,R1
-		ADD	#VRAM,R1
-		MOV	#FONT_H,R2
-5$:		MOV	R1,@#VADDR
-		MOVB	(R0)+,@#VDATA
-		ADD	#SCRWB,R1
-		SOB	R2,5$
-		INC	TX
-		BR	6$
-4$:		CALL	PUTC
-6$:		MOV	(SP)+,R1
-		BR	1$
-9$:		RETURN
 
 SP_V:		.BYTE	0,0,0,0,102,102,044,044,030,0,0
 		.EVEN

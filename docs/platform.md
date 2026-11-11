@@ -56,6 +56,19 @@ selects the dashboard's colours for the remaining 88 lines. Text pages
 reuse the full height. Firmware row count and scrolling state are restored
 on exit along with the table.
 
+Canonical palette constants remain YRGB. `COMMAND_4` exchanges the red and
+green bits of every nibble in both screen palettes when `PALETTE_MODE=0`
+(default GRB); mode 1 writes unchanged RGB words. The display-mode word,
+bitplanes, cached art and rendering inks stay unchanged. Title keys 1/2
+select the layout and reapply the palettes immediately. The resident choice
+survives screen changes and restarts; a fresh RT-11 launch resets it to GRB.
+
+Both local emulator runners default to physical GRB output and accept
+`--palette grb|rgb`. Their shared `palette.h` swaps decoded red and green,
+including attenuated colors and the hardware cursor. The SDL window is
+named **Elite УКНЦ МС-0511**. Matching game and emulator choices preserves
+the canonical colors; real hardware should use its connector's layout.
+
 The table permits split screens and page flipping, but memory capacity
 rules out a second full space-view bitmap in this layout. See
 [rendering](rendering.md) for the retained buffering decision.
@@ -134,7 +147,9 @@ The PPU's 50 Hz handler publishes `CPU_VSYNC` and advances `FRAMES` during
 normal service. Native I/O defers this work under `RT_IOBUSY` while
 retaining firmware motor service. Do not install a separate CPU clock ISR.
 `VSYNC_PACE` avoids waiting a whole additional tick after a long frame.
-One emulator `run` tick contains two 50 Hz interrupts: **1/25 second**.
+The current emulator core runs one 50 Hz interrupt per `run` tick:
+**1/50 second**. Older cores used two interrupts per tick (1/25 second).
+The headless `timing` command reports the installed core's frame rate.
 Clock counters and game frames are different quantities.
 
 ## Arithmetic

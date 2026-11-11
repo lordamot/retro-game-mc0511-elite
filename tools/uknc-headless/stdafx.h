@@ -8,6 +8,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <math.h>
+#include <errno.h>
 
 typedef char TCHAR;
 typedef char *LPTSTR;
@@ -22,6 +24,28 @@ typedef const char *LPCTSTR;
 #define _tcsicmp    _stricmp
 #define _snprintf   snprintf
 #define _sntprintf  snprintf
+#define _tcstod     strtod
+#define _TRUNCATE   ((size_t)-1)
+
+// Secure-string compatibility used by current upstream disassembly hints.
+inline int _tcsncpy_s(char *dest, size_t size, const char *src, size_t count)
+{
+    if (!dest || !size || !src) return EINVAL;
+    size_t length = strlen(src);
+    if (count != _TRUNCATE && length > count) length = count;
+    if (length >= size)
+    {
+        if (count != _TRUNCATE) { dest[0] = 0; return ERANGE; }
+        length = size - 1;
+    }
+    memcpy(dest, src, length);
+    dest[length] = 0;
+    return 0;
+}
+inline int _tcscpy_s(char *dest, size_t size, const char *src)
+{
+    return _tcsncpy_s(dest, size, src, strlen(src));
+}
 
 #define CALLBACK
 typedef void *HANDLE;
