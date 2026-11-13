@@ -61,6 +61,10 @@ and 172 signed 32-bit three-shear cases against the original Q14 integer
 model. They include sign/word boundaries, wrapping, untouched coordinates,
 preserved `TURN_SET` registers and stack balance. A separate ship probe
 checks seven visible, empty and rejected paths for cursor cleanup.
+Position-narrowing probes cover 96 signed 32-bit vectors, including extrema,
+word/sign boundaries and seeded random inputs. They compare all six output
+words and the smallest common shift with an integer model, and check
+unchanged inputs, preserved registers and stack balance.
 
 ## Isolation and sequencing
 
@@ -109,6 +113,13 @@ Flight edges survive I/O in acknowledged packets. Raw scancode prompts
 are not a queue of arbitrary typed characters; allow each prompt to draw,
 and send separate press/release events.
 
+After launch, wait for completed main-loop frames before installing flight
+fixtures or testing controls. `DOCKED` clears before the flight overlay's
+first native read has finished; a 40- or 60-tick delay can still end inside
+RT-11. Use `ui_ready(t, frames=2)` for this boundary. The collision-energy
+probe also stops at `COLLIDE_STEP` before installing its near target, so
+its damage sample starts with the prepared collision pass.
+
 ## Controlled probes
 
 Use the current helper routines to initialize complete ship state, both
@@ -145,15 +156,16 @@ reruns and host-only checks. Do not combine earlier passing groups into a
 claim that one complete run passed. Disposable logs in `tmp/` are evidence
 for a local session, not enduring dependencies of the project documentation.
 
-The v0.8.2 build with PPU walker optimizations passed `make build`
+The v0.8.2 build with renderer arithmetic optimizations passed `make build`
 and one complete `python3 -u tools/verify_build.py` run on 2026-11-13:
-**779 assertions passed, zero failed, exit status 0**. This includes native
+**783 assertions passed, zero failed, exit status 0**. This includes native
 RT-11, palette, gameplay, presentation and exact renderer checks, including
-the isolated line pixels and the station/tunnel regressions. The local
-full-run log is `tmp/render-speed4/verify-full-final.log`. Build identities:
+the 96 position-narrowing cases, isolated line pixels and station/tunnel
+regressions. The local full-run log is
+`tmp/render-speed5/verify-full-verified.log`. Build identities:
 
-- `ELITE.SAV` SHA-256: `4fd73825c5f1d3b65a1f51cb76eae801bf0e37076f137f480659b5ff3b13b718`
-- `ELITE.DAT` SHA-256: `01e66765ebf0928aa86b16c54290b932bc94ad1fe91537554e73208a9f984692`
+- `ELITE.SAV` SHA-256: `d47502e76dbcd006e79eef2f12ff8ce694b23443b7cc2439b758b781af216a40`
+- `ELITE.DAT` SHA-256: `a740236a421a0f978f402e79528759f06d2f4279eb4dad0965b82555a3fc74f1`
 
 The retired 1985 commodity-table comparison was skipped because that table
 is no longer a maintained resource; Legend resource round trips passed.

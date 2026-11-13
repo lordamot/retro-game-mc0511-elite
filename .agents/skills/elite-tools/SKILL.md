@@ -90,10 +90,14 @@ python3 tools/harness.py --turning --no-stars
 ```
 
 The ordinary benchmark measures whole-game frames. An emulator `run` tick
-is **1/25 second**. The drawing harness measures 100 render frames by
+follows the core's frame rate, reported by `timing` and used by `bench.py`:
+the current core is **50 Hz**, while older cores used 25 Hz. The drawing
+harness installs its scene at a stopped frame boundary, clears old geometry
+before timing, and freezes on completion. It measures 100 render frames by
 **50 Hz interrupts**, draining the PPU at both ends; `--no-stars` is an
 ablation, not the shipped appearance. Do not compare its fps directly to
-whole-game fps. See [rendering reference](../../../docs/rendering.md).
+whole-game fps or to the older harness that warmed up the scene by ticks.
+See [rendering reference](../../../docs/rendering.md).
 
 Compare the same benchmark revision and fixed scene. Inspect the ending
 screenshot when a rate changes unexpectedly: fillers that die or a scene

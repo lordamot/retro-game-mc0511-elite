@@ -12,8 +12,8 @@ generated hull tables and `tools/build_elite.py`.
 | Region | Start | End (exclusive) | Bytes |
 |---|---|---|---:|
 | RT-11 low memory, vectors and job header | 000000 | 001000 | 512 |
-| Resident code/data | 001000 | 131666 | 45494 |
-| Resident reserve | 131666 | 132400 | **330** |
+| Resident code/data | 001000 | 131722 | 45522 |
+| Resident reserve | 131722 | 132400 | **302** |
 | Downward game stack | 132400 | 133400 | 512 |
 | One CPU working hull | 133400 | 134400 | 512 |
 | Overlay window | 134400 | 146400 | 5120 |
@@ -43,8 +43,8 @@ to stage the 772-byte commander plus zero padding. Loading validates file
 length and record signature/version before replacing the live commander.
 No save transfer buffer occupies the active overlay or USR swap region.
 
-After `PP_MAIN_LOAD`, live buffers overwrite 113626..122216.
-Published PPU words start at 122342: **84 bytes remain**.
+After `PP_MAIN_LOAD`, live buffers overwrite 113656..122246.
+Published PPU words start at 122376: **88 bytes remain**.
 Nothing may read these buffers before initialization; the SAV initially
 contains PPU instructions there. The reused buffers are `UNIV`, `NPSHOT`,
 `SVX`, `SVY`, `SVOK`/`SVNEED`/`CO_R`, `SVLIST`, `SLIST`, `EXPTAB`,
@@ -110,7 +110,7 @@ PPU cache, never from the CPU window.
 
 ## PPU and video planes
 
-The copied PPU program is 3420 bytes, followed in its firmware allocation by a
+The copied PPU program is 3424 bytes, followed in its firmware allocation by a
 2392-byte backup of the terminal line-table region (02300..07027).
 This backup is allocated dynamically and is not stored in the CPU image.
 Saved scalar state includes firmware row/scroll settings, receiver-enable

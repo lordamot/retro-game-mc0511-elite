@@ -709,13 +709,18 @@ POS_NARROW:	MOV	U.X(R5),PN_X
 		MOV	U.Z(R5),PN_Z
 		MOV	U.ZH(R5),PN_Z+2
 		CLR	PN_SH
-1$:		MOV	#PN_X,R2
-		MOV	#3,R0
-2$:		MOV	(R2)+,R1		; low
-		SXT	R1			; what the high word would be
-		CMP	R1,(R2)+		;   if it fits
+1$:		MOV	PN_X,R1
+		SXT	R1			; each high word must extend its low word
+		CMP	R1,PN_X+2
 		BNE	5$
-		SOB	R0,2$
+		MOV	PN_Y,R1
+		SXT	R1
+		CMP	R1,PN_Y+2
+		BNE	5$
+		MOV	PN_Z,R1
+		SXT	R1
+		CMP	R1,PN_Z+2
+		BNE	5$
 		RETURN
 5$:		ASR	PN_X+2			; halve all three, and again
 		ROR	PN_X

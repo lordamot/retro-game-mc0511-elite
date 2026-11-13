@@ -120,6 +120,7 @@ def check_render(v):
                     px[x, y] = (255, 255, 255)
         v.check(f'filled sun pixels after transition {ix}', im.tobytes() == expected.tobytes(), str(seq))
 
+    check_position_narrow(v, t, out)
     check_turn_arithmetic(v, t, out)
     check_ship_stack(v, t, out)
     check_vertex_projection(v, t, out)
@@ -131,6 +132,73 @@ def check_render(v):
     check_walk_pixels(v, t, out)
     check_walk_isolated(v, t, out)
     check_span_pixels(v, t, out)
+
+
+def check_position_narrow(v, t, out):
+    """Compare all six result words and the shared shift with signed integers."""
+    a = lambda key: int(t[key], 8)
+    bounds = (-2147483648, -2147483647, -65537, -65536, -32769,
+              -32768, -32767, -1, 0, 1, 32767, 32768, 65535,
+              65536, 2147483647)
+    cases = [(0, 0, 0), (32767, -32768, 0)]
+    for axis in range(3):
+        for value in bounds:
+            xyz = [1, -1, 32767]
+            xyz[axis] = value
+            cases.append(tuple(xyz))
+    cases += [(value, -1, value) for value in bounds]
+    rng = random.Random(518)
+    cases += [tuple(rng.randint(-2147483648, 2147483647) for _ in range(3))
+              for _ in range(34)]
+    assert len(cases) == 96
+    offsets = [a(key) for key in ('U.X', 'U.XH', 'U.Y', 'U.YH', 'U.Z', 'U.ZH')]
+    outputs = [a('PN_X'), a('PN_X') + 2, a('PN_Y'), a('PN_Y') + 2,
+               a('PN_Z'), a('PN_Z') + 2, a('PN_SH')]
+    for batch in range(0, len(cases), 24):
+        subset = cases[batch:batch + 24]
+        entry, dest = a('OVL_BASE'), a('OVL_BASE') + 4096
+        code, expected = [], []
+        for i, xyz in enumerate(subset):
+            result = dest + 36 * i
+            words = [part for value in xyz for part in (value & 65535, value >> 16 & 65535)]
+            for offset, word in zip(offsets, words):
+                code += [0o012737, word, a('UNIV') + offset]
+            code += [0o012703, 0x1234, 0o012704, 0x5678, 0o012705, a('UNIV'),
+                     0o010637, result + 20, 0o004737, a('POS_NARROW')]
+            for j, address in enumerate(outputs):
+                code += [0o013737, address, result + 2 * j]
+            code += [0o010337, result + 14, 0o010437, result + 16,
+                     0o010537, result + 18, 0o010637, result + 22]
+            for j, offset in enumerate(offsets):
+                code += [0o013737, a('UNIV') + offset, result + 24 + 2 * j]
+            shift = 0
+            while any(not -32768 <= value >> shift <= 32767 for value in xyz):
+                shift += 1
+            narrowed = [part for value in xyz
+                        for part in ((value >> shift) & 65535,
+                                     (value >> (shift + 16)) & 65535)]
+            expected.append((narrowed + [shift], words))
+        code += [0o012737, 1, a('BENCH_RAM'), 0o000777]
+        assert len(code) * 2 < 4096
+        assert len(subset) * 36 <= a('OVL_END') - dest
+        patch = [v.poke_at(entry + 2 * i, word) for i, word in enumerate(code)]
+        patch += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
+                  v.poke_at(a('DRAW_HARNESS') + 2, entry),
+                  v.poke_at(a('BENCH_RAM'), 0), v.poke_at(a('HARN_GO'), 1)]
+        dump = out / f'narrow-{batch}.bin'
+        log = v.run_emu(list(v.BOOT) + ['run 20'] + patch + [
+            'run 100', f"peekcpu {t['BENCH_RAM']}",
+            f'dumpcpu {dest:o} {36 * len(subset)} {dump}', 'quit'],
+            v.fresh_disk('position-narrow'))
+        data = struct.unpack('<' + 'H' * (18 * len(subset)), dump.read_bytes())
+        errors = []
+        for i, (want, original) in enumerate(expected):
+            got = list(data[18 * i:18 * (i + 1)])
+            if (got[:7] != want or got[7:10] != [0x1234, 0x5678, a('UNIV')]
+                    or got[10] != got[11] or got[12:] != original):
+                errors.append((cases[batch + i], got, want, original))
+        v.check(f'position narrowing: exact shift, words, input, registers and stack, cases {batch}..{batch + len(subset) - 1}',
+                not errors and [int(n, 8) for n in v.PEEK.findall(log)] == [1], str(errors[:2]))
 
 
 def check_turn_arithmetic(v, t, out):

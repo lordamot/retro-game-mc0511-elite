@@ -22,6 +22,7 @@ Do not compare tick counts across core revisions without this conversion.
 
 import argparse
 import re
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -116,6 +117,7 @@ def main(argv=None):
 
     from verify_build import BOOT, fresh_disk
     script = ["timing"] + list(BOOT) + ["press 107", "run 60"]
+    scene_start = len(script)
     for slot in range(nuniv):                       # a clean sky first
         script.append(field(slot, "U.TYPE", 0))
     scene = [row for row in SCENE
@@ -226,6 +228,7 @@ def main(argv=None):
             roster_reads.append(sum(line.startswith("peekcpu ") for line in script))
             script.extend(f"peekcpu {univ + slot*usize + int(t['U.TYPE'], 8):o}"
                           for slot in range(nuniv))
+    scene_setup = script[scene_start:]
     script += [poke(int(t["PSPEED"], 8), speed), "run 20",
                f"peekcpu {t['FLY_TICK']}"]
     script += [f"peekcpu {t[name]}" for name in args.peek]
@@ -234,18 +237,40 @@ def main(argv=None):
     if args.draw_frames:
         if not 1 <= args.draw_frames <= 1000:
             sys.exit("error: --draw-frames must be 1..1000")
-        script = script[:script.index(f"peekcpu {t['FLY_TICK']}")]
-        if args.no_stars:
-            script += [poke(int(t["STAR_ON"], 8), 0)]
-        if args.turning:
-            # Keep the requested rates through the main loop's final
-            # controls pass before the drawing-only hook is entered.
-            script += [poke(int(t["OPTIONS"], 8), int(t["OPT_STEADY"],8) | int(t["OPT_SOUND"],8)),
-                       poke(int(t["PROLL"], 8), 8), poke(int(t["PPITCH"], 8), 4)]
-        script += [poke(int(t["HARN_MOVE"], 8), int(moving)),
+        a = lambda name: int(t[name], 8)
+        entry, reserve = a("DRAW_HARNESS"), a("PROG_USED")
+        sav = (ROOT / "build/ELITE.SAV").read_bytes()
+        original = struct.unpack_from("<2H", sav, entry)
+        # Pause after the last ordinary flight frame, then install the scene.
+        # A fixed tick warm-up would move/rotate it by a build-dependent amount.
+        script = script[:scene_start] + [poke(a("HARN_GO"), 1),
+                  f"runpc {entry:o} 1000", "regs"]
+        script += [poke(univ + offset, 0) for offset in range(0, usize*nuniv, 2)]
+        script += scene_setup
+        for i in range(9):
+            script.append(poke(a("PMAT") + 2*i, Q1 if i in (0, 4, 8) else 0))
+        for i, word in enumerate(struct.unpack_from("<36H", sav, a("STAR_DATA"))):
+            script.append(poke(a("STAR_DATA") + 2*i, word))
+        script += [poke(a("PSPEED"), speed), poke(a("JD_SPEED"), 0),
+                   poke(a("PROLL"), 8 if args.turning else 0),
+                   poke(a("PPITCH"), 4 if args.turning else 0),
+                   poke(a("VIEW_DIR"), 0), poke(a("HULL_CACHED"), 0),
+                   poke(a("STAR_ON"), int(not args.no_stars))]
+        # Clear old geometry before timing. This disposable RAM prelude uses
+        # resident reserve, not the live flight overlay, and restores the entry.
+        prelude = [0o004737, a("SEG_RESET"), 0o004737, a("CLS_SCREEN"),
+                   0o012737, original[0], entry,
+                   0o012737, original[1], entry+2, 0o004737, entry, 0o000777]
+        stop = reserve + 2*(len(prelude)-1)
+        if reserve + 2*len(prelude) > a("PROG_SIZE"):
+            sys.exit("error: drawing benchmark needs 26 bytes of resident reserve")
+        script += [poke(reserve + 2*i, word) for i, word in enumerate(prelude)]
+        script += [poke(entry, 0o000137), poke(entry+2, reserve),
+                   poke(int(t["HARN_MOVE"], 8), int(moving)),
                    poke(int(t["HARN_GO"], 8), args.draw_frames),
-                   f"run {args.draw_frames * 25 + 100}",
+                   f"runpc {stop:o} {args.draw_frames * 25 + 100}", "regs",
                    f"peekcpu {t['HARN_GO']}", f"peekcpu {t['HARN_TICKS']}"]
+        check_roster()
     elif moving:
         left = args.ticks
         while left > 0:
@@ -302,6 +327,9 @@ def main(argv=None):
     if len(vals) < 2:
         sys.exit("error: no answer from the emulator")
     if args.draw_frames:
+        pcs = [int(pc, 8) for pc in re.findall(r"CPU PC=([0-7]+)", r.stdout)]
+        if pcs != [int(t["DRAW_HARNESS"], 8), stop]:
+            sys.exit("error: drawing benchmark missed its setup or completion boundary")
         if len(vals) != 2 or vals[0] or not vals[1]:
             sys.exit(f"error: incomplete drawing benchmark: {vals}")
         print(f"{args.draw_frames} drawing frames in {vals[1]} interrupts "

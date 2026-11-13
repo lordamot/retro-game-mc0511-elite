@@ -41,6 +41,12 @@ The edge pass retains its list cursor on the stack across `SEG_LINE`,
 avoiding a PC-relative address word on each cursor load/store. It releases
 that word after the last edge; an empty list never pushes it.
 
+`POS_NARROW` finds the smallest common arithmetic right shift that fits
+all three signed 32-bit coordinates into signed 16-bit words. Its unrolled
+high-word checks avoid loop setup in the common near case. Input positions
+remain unchanged; the six result words and shared shift retain exact
+integer behavior.
+
 The station's added docking rectangle lies on the negative-z face, opposite
 the entrance in the Legend blueprint. `STATION_SLOT` transforms the camera
 position into model space and draws the added rectangle only when the eye
@@ -89,6 +95,11 @@ pointing at the port instead of copying a software cursor before each XOR.
 Port writes refresh the data latch; timer and command interrupts preserve
 the selected address. Long spans split whole bytes from the tail once,
 then advance the same port directly for each full-byte XOR.
+Span division loads the divisor into R2 before `DIV`. Sun scanline-width
+calculations similarly stage immediate and memory operands in R2 for EIS
+instructions. On the emulator's processor model, a separate load followed
+by register `MUL`/`DIV` costs less than those instructions' memory modes.
+The arithmetic and integer rounding are unchanged.
 
 Every segment draws both endpoints: a point segment draws one pixel, and
 shared XOR endpoints can cancel. `CLIP_LINE` mutates its input endpoints;
@@ -129,31 +140,48 @@ The drawing harness measures a fixed frame count using **50 Hz interrupts**
 with the PPU drained at both ends. It excludes normal AI/HUD/input work;
 its fps is not whole-game fps. `--no-stars` and `--no-bodies` are ablations,
 not the shipped scene. The harness does not run at boot.
+`bench.py` stops at its entry after a normal flight frame, then installs
+the complete universe, identity player matrix and initial star data.
+A disposable 26-byte RAM prelude clears old geometry before measurement
+and freezes the CPU immediately after the requested frames. Setup and
+completion PCs, frame count and roster are checked. The prelude uses free
+resident reserve without changing the SAV or overwriting the flight overlay.
+
+Earlier drawing measurements installed the scene before a fixed tick
+warm-up. Builds could enter the harness with different positions and
+orientations, making those figures unsuitable for exact A/B comparisons.
+Use the corrected harness on both builds. Its whole-game scripts are
+unchanged, so the whole-game baseline remains applicable.
 
 ## Applicable baseline
 
-The row-first x-major walkers and direct video-address updates were measured
-on 2026-11-13 against the rotation and edge-cursor build (`f449be6`). Both
-builds used identical `bench.py --ticks 6000` fixtures and the same 50 Hz
+The unrolled position checks and register-operand sun/span arithmetic were
+measured on 2026-11-13 against the PPU walker build (`876ebbb`). Both builds
+used identical whole-game `bench.py --ticks 6000` scripts and the same 50 Hz
 emulator: 120 emulated seconds per run. The first three rows use `--fixed`;
 the last uses `--sparse --turning`, with only five occupied slots.
 
 | Workload | Before: frames / FPS | Optimized: frames / FPS | Change |
 |---|---:|---:|---:|
-| Still | 1163 / 9.692 | 1163 / 9.692 | 0.0% |
-| Moving | 912 / 7.600 | 912 / 7.600 | 0.0% |
-| Turning | 714 / 5.950 | 713 / 5.942 | -0.1% |
-| Sparse turning | 888 / 7.400 | 904 / 7.533 | 1.8% |
+| Still | 1163 / 9.692 | 1167 / 9.725 | 0.3% |
+| Moving | 912 / 7.600 | 921 / 7.675 | 1.0% |
+| Turning | 713 / 5.942 | 718 / 5.983 | 0.7% |
+| Sparse turning | 904 / 7.533 | 919 / 7.658 | 1.7% |
 
 Roster checks passed and ending screenshots were inspected. Local logs and
-images are `tmp/render-speed3/long-edge-{still,moving,turning,sparse}` for the
-baseline and `tmp/render-speed4/long-port-{still,moving,turning,sparse}` for
-the optimized build, with `.log`/`.png` suffixes. The drawing-only harness's
-100-frame workloads remain at 336 interrupts still (67.2 ms/frame) and
-change from 582 to 564 turning (116.4 → 112.8 ms/frame, 3.1% less time).
-Filled turning differs by only one completed frame over 120 seconds;
-there is no demonstrated whole-game gain in that workload. Harness rates
-exclude gameplay and are not flight FPS.
+images are `tmp/render-speed4/long-port-{still,moving,turning,sparse}` for
+the baseline and `tmp/render-speed5/long-verified-{still,moving,turning,sparse}`
+for the optimized build, with `.log`/`.png` suffixes. These are small gains;
+individual intermediate changes did not improve every workload.
+
+Both builds were also measured with the corrected drawing-only harness.
+Its 100-frame still workload changes from 340 to 338 interrupts
+(68.0 → 67.6 ms/frame), and turning from 572 to 569
+(114.4 → 113.8 ms/frame). The whole universe, player matrix, star data and
+speed/turn inputs match byte for byte at entry; all 640×288 final screen
+pixels match after the 100-frame turning run. Local evidence is
+`tmp/render-speed5/ready-{base,verified}` and `harness-{base,verified}-*.log`.
+Harness rates exclude gameplay and are not flight FPS.
 
 Before/after segment captures match all 287 segments across eleven frozen
 scenes. One of the twelve requested scenes did not freeze and was skipped.
@@ -162,9 +190,9 @@ face signs, hull-copy contents, stack/register preservation and the
 station/tunnel regressions; see
 [testing](testing.md) for the completed groups and build identities.
 
-The changes add four resident bytes, leaving 330 bytes free. Overlay sizes
+The changes add 28 resident bytes, leaving 302 bytes free. Overlay sizes
 are unchanged (the largest is 4959 bytes, leaving 161). The PPU program occupies
-3420 bytes; 84 bytes remain between reused buffers and published words.
+3424 bytes; 88 bytes remain between reused buffers and published words.
 These are emulator measurements, with frame-count boundary and fixture limits;
 they are not physical-hardware timing or a uniform speed guarantee.
 
@@ -204,23 +232,31 @@ Elite's immutable hull copy. Its other major gains have different prerequisites:
   vertices change with depth and orientation. Reusing per-object geometry
   would require explicit invalidation and a memory budget for retained state.
 
-At the `f449be6` baseline, 1200-tick turning samples placed 31–34% of
-PPU time in the x-major walkers and 19–21% in queue decoding/draining.
-The drawing drain was active for about 82% of the filled workload and 90%
-of sparse turning. These samples precede the walker changes and identify
-costs, not speed gains. Further improvements should target measured raster
-costs or reduce submitted records while preserving pixels and buffer ownership.
+At the `876ebbb` baseline, 1200-tick turning samples placed 27–31% of
+PPU time in the x-major walkers and 17–20% in queue decoding/draining.
+The drawing drain was active for about 77% of the filled workload and 84%
+of sparse turning. Still-flight CPU samples placed about 15% in vertex
+projection and 5% in position narrowing. These samples identify costs,
+not speed gains. Further improvements should target measured arithmetic
+or raster costs while preserving pixels and buffer ownership.
 
 Keep per-record tail publication. Trials publishing every four or eight
 records, with an immediate publication at the cached head, did not produce
 a consistent whole-game gain.
 
-Keep the eight-pixel-per-scanline span threshold. On the `9933f5e` build,
-four- and sixteen-pixel trials took 607 and 612 interrupts respectively in
-the 100-frame turning harness, compared with 605 at eight pixels.
-Removing stars or bodies is useful only as an ablation: on the earlier
-`7e5c359` harness they cost about 8 and 44 ms/frame respectively; their
-removal is not an optimization of the shipped appearance.
+Keep register operands in the matrix multiply. Folding an operand load
+into `MUL (R4)+` reduced instructions but slowed the `876ebbb` baseline's
+6000-tick still workload from 1163 to 1127 frames and moving from 912 to
+889. Exact projection tests passed; the processor model's more expensive
+EIS memory addressing outweighed the removed loads.
+
+Keep the eight-pixel-per-scanline span threshold. After staging the span
+divisor in a register, thresholds 4, 6, 12 and 16 took 570, 570, 577 and 579
+interrupts in the corrected 100-frame turning harness, compared with 569
+at eight pixels. Their sparse-turning runs completed 907, 916, 902 and 907
+frames, compared with 919 at eight pixels. Removing stars or bodies is
+useful only as an ablation; their removal does not optimize the shipped
+appearance.
 
 General PPU geometry needs a new measurement and scheduling design before
 implementation. The PPU has a lower clock, transfers geometry/results

@@ -4362,7 +4362,8 @@ def check_energy():
     # ship/commander fixture, no traffic or bay, and a stationary target.
     v = []
     for military in (False, True):
-        setup = (list(BOOT) + [poke_dev(t, "P_FUELSCOOPS"), "press 107", "run 40"]
+        setup = (list(BOOT) + [poke_dev(t, "P_FUELSCOOPS"), "press 107",
+                   ui_ready(t, frames=2), f"runpc {t['COLLIDE_STEP']} 1200"]
                  + clear_traffic(t) + [poke_at(int(t["WITCH"], 8), 1),
                    poke_slot(2, "U.TYPE", 0), poke_at(int(t["PSPEED"], 8), 0),
                    poke_dev(t, "P_MILSHIELDS", fitted=military)]
@@ -4612,7 +4613,7 @@ def check_ecm():
         return expl != 0 or ty != a["SH_MISSILE"]
 
     ecm_word = f"peekcpu {a['P_ECM'] & ~1:o}"
-    fly = list(BOOT) + ["press 107", "run 60"] + clear_traffic(t)
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t)
 
     # 1. the field: twelve frames, yours switched on for them, four off
     #    the first bank a frame (the last bank is emptied so the
@@ -4970,7 +4971,7 @@ def check_bombs():
     three = ship(5, a["SH_TARGONH"], 4000) + ship(6, a["SH_COBRAMK3HT1"], 5000) + \
         ship(7, a["SH_TARGON6H"], 6000)
     expl = [f"peekcpu {slot_field(t, sl, 'U.EXPL')}" for sl in (5, 6, 7)]
-    fly = list(BOOT) + ["press 107", "run 60"] + clear_traffic(t) + three
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t) + three
 
     v = [int(x, 8) for x in PEEK.findall(run_emu(
         fly + [poke_dev(t, "P_EBOMB"), "press 032", "run 5"] + expl + [peek_dev(t, "P_EBOMB"), "quit"]))]
@@ -5063,7 +5064,7 @@ def check_drone():
     a = {n: int(t[n], 8) for n in need}
     cargo = a["P_CARGO"] + 2 * a["G_DRONE"]
     kind = f"peekcpu {t['MISS_KIND']}"
-    fly = list(BOOT) + ["press 107", "run 60"] + clear_traffic(t) + [poke_at(a["PSPEED"], 0)]
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t) + [poke_at(a["PSPEED"], 0)]
     # the wreck is in slot 3, the first the lock's search meets (a ship
     # the station launches lands in the first FREE slot, and took the
     # lock when the wreck was in 5); the drone lands in the first free
@@ -5730,7 +5731,7 @@ def check_modes():
         check("mode symbols found", False, f"missing {[n for n in need if n not in t]}")
         return
     a = {n: int(t[n], 8) for n in need}
-    fly = list(BOOT) + ["press 107", "run 60"] + clear_traffic(t) + [poke_at(a["PSPEED"], 0)]
+    fly = list(BOOT) + ["press 107", ui_ready(t, frames=2)] + clear_traffic(t) + [poke_at(a["PSPEED"], 0)]
     mode = f"peekcpu {t['CO_MODE']}"
 
     # the compass: no mode without the device; mode 3 is the station,
