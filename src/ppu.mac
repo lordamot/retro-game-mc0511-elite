@@ -92,7 +92,7 @@ MOV	@#330,K1_SAVE		; save the channel K1 receiver vector
 		INC	R3
 		CMP	R1,#400
 		BLO	2$
-		CLR	PP_TAIL			; the ring starts empty
+		MOV	#RING/2,PP_TAIL		; the ring starts empty
 		CLR	PP_DRAWING
 
 		CALL	NEW_TABLE		; program the 640x288 line table
@@ -600,60 +600,42 @@ PP_IO_TICK:
 
 ; PP_DRAIN - draw records from PP_TAIL up to PP_HEAD, then look again;
 ; return when the ring is empty.  A record is read through the window -
-; the three words of a walk (the head of src/gfx.mac) - and opened out
-; into the six PP_LINE_RUN reads, and PP_TAIL is published back into CPU
+; the three words of a walk (the head of src/gfx.mac) - and decoded into
+; registers for PP_LINE_RUN. PP_TAIL is published back into CPU
 ; RAM after every record, which is what the CPU's RING_WAIT and its
 ; full-ring wait watch.
-PP_DRAIN:	MOV	PP_TAIL,R0
-		ASR	R0		; byte offset -> the window's word address
-		ADD	#RING/2,R0
-		MOV	R0,@#PADDR
+PP_DRAIN:	MOV	PP_TAIL,@#PADDR	; already a window word address
 		MOV	@#PDATA,R1	; dx, its sign and the start bit
 		INC	@#PADDR
 		MOV	@#PDATA,R2	; dy and its sign
 		INC	@#PADDR
 		MOV	@#PDATA,R0	; starting plane byte
-		TST	R2
-		BNE	15$
-		TST	R1
-		BMI	15$
-		MOV	R1,R4		; rightward horizontal walks need only
-		BIC	#176000,R4	; address, dx and mask, all in registers
+		MOV	R1,R3		; retain the encoded x direction
+		MOV	R1,R4
+		BIC	#176000,R4	; dx
 		SWAB	R1
 		ASR	R1
 		BIC	#177761,R1	; bits 10..12 become a word-table offset
 		ADD	PPBT,R1
-		MOV	@R1,R1
+		MOV	@R1,R1		; starting mask
+		TST	R2
+		BNE	15$
+		TST	R3
+		BMI	15$
 		CALL	PP_FLAT_R
 		BR	4$
-15$:		MOV	R0,PP_LADDR
-		MOV	#1,R3		; the x step
-		TST	R1
-		BPL	2$
-		MOV	#-1,R3
-2$:		MOV	R3,PP_LSX
-		MOV	R1,R0
-		BIC	#176000,R1
-		MOV	R1,PP_LADX
-		SWAB	R0		; bits 10..12 become bits 1..3: a word
-		ASR	R0		; offset avoids MOVB sign extension
-		BIC	#177761,R0
-		ADD	PPBT,R0
-		MOV	@R0,R0
-		MOV	R0,PP_LMASK
+15$:		MOV	R3,PP_LSX	; only the sign is used by the walkers
 		MOV	#SCRWB,R3	; the y step
 		TST	R2
 		BPL	3$
 		MOV	#-SCRWB,R3
 		BIC	#100000,R2
-3$:		MOV	R3,PP_LSY
-		MOV	R2,PP_LADY
-		CALL	PP_LINE_RUN
+3$:		CALL	PP_LINE_RUN
 4$:		MOV	PP_TAIL,R0
-		ADD	#RECB,R0
-		CMP	R0,#RING_BYTES
+		ADD	#RECB/2,R0
+		CMP	R0,#RING_END/2
 		BLO	1$
-		CLR	R0
+		MOV	#RING/2,R0
 1$:		MOV	R0,PP_TAIL
 		MOV	#RING_TAIL/2,@#PADDR
 		MOV	R0,@#PDATA	; the CPU can see this one is drawn
@@ -666,7 +648,7 @@ PP_DRAIN:	MOV	PP_TAIL,R0
 		BNE	PP_DRAIN
 		RETURN
 
-PP_TAIL:	.WORD	0		; byte offset of the next record to draw
+PP_TAIL:	.WORD	0		; window word address of the next record
 PP_HEAD:	.WORD	0		; the CPU's RING_HEAD, as last read
 PP_DRAWING:	.WORD	0		; a drain is running
 PP_T0:		.WORD	0		; when it started, and the total
@@ -677,10 +659,8 @@ PPBT:		.WORD	0		; ... and PP_BITS
 PP_BITS:	.WORD	1,2,4,10,20,40,100,200	; a bit's mask, by doubled index
 PP_LADX:	.WORD	0		; the walk, in record order
 PP_LADY:	.WORD	0
-PP_LSX:		.WORD	0
+PP_LSX:		.WORD	0		; encoded x direction: only bit 15 matters
 PP_LSY:		.WORD	0
-PP_LADDR:	.WORD	0
-PP_LMASK:	.WORD	0
 PP_LDXY:	.WORD	0		; PP_LADX - PP_LADY, what the span loop
 					;   adds back after every scanline
 ; How many pixels lie between a bit and each end of its plane byte, read
@@ -692,9 +672,8 @@ PP_AVAIL_L:	.BLKB	129.		; ... and back to its first
 		.EVEN
 
 ; =========================================================================
-; The pixel loops, moved here from src/gfx.mac word for word, with the
-; PPU's register pair in place of the CPU's.  Read the commentary there
-; on why they are shaped as they are; what follows is the code.
+; Pixel kernels for the packed walks produced by src/gfx.mac. The PPU
+; accumulates pixels until a plane byte changes, then XORs that byte once.
 ; Everything they touch is reached PC-relative, because this block is
 ; copied to wherever the PPU's firmware puts it.
 ; =========================================================================
@@ -709,12 +688,13 @@ PP_FLAT_R:	TST	R4
 		XOR	R1,@#PDATA
 		RETURN
 
-PP_LINE_RUN:	MOV	PP_LADDR,R0
-		MOV	PP_LMASK,R1
-		MOV	PP_LADY,R5
-		CMP	PP_LADX,R5
+; R0 = address, R1 = mask, R2 = dy, R3 = signed row stride, R4 = dx.
+PP_LINE_RUN:	MOV	R2,R5
+		CMP	R4,R5
 		BLT	PP_LINE_Y
-		CMP	PP_LADX,#16.		; a short segment can never win back the
+		MOV	R4,PP_LADX
+		MOV	R3,PP_LSY
+		CMP	R4,#16.		; a short segment can never win back the
 		BLT	1$			; span loop's DIV, and this test is two
 					; instructions where the ratio below is
 					; five - which tells, because every
@@ -722,28 +702,24 @@ PP_LINE_RUN:	MOV	PP_LADDR,R0
 		ASL	R5			; eight or more pixels a scanline: the
 		ASL	R5			; span loop below is cheaper than
 		ASL	R5			; walking them a bit at a time, and
-		CMP	PP_LADX,R5			; below that its DIV and its mask
+		CMP	R4,R5			; below that its DIV and its mask
 		BGE	PP_LINE_SPAN		; arithmetic cost more than they save
 
 ; ---- x is the major axis: accumulate whole bytes ------------------------
-; Two loops, one per direction, rather than one loop testing PP_LSX every
-; pixel: that test was a memory read and a branch on the hottest path in
-; the program, and dropping it is worth about a quarter of the time spent
-; drawing lines.
-1$:		MOV	PP_LADX,R3
-		INC	R3		; pixels to draw
-		MOV	PP_LADX,R2
+; Choose the direction once. The first pixel is pending before the loop;
+; SOB counts the remaining steps and the final flush includes the endpoint.
+1$:		MOV	R4,R3		; steps after the first pixel
+		MOV	R2,R5		; the hot minor-axis step
+		MOV	R3,R2
 		ASR	R2		; error accumulator
-		MOV	PP_LADY,R5		; the hot minor-axis step
-		CLR	R4		; bits pending in the current byte
+		MOV	R1,R4		; the first pixel is already pending
+		TST	R3
+		BEQ	PP_LINE_LAST
 		TST	PP_LSX
 		BLT	PP_LINE_XN
 
 ; ---- walking right ------------------------------------------------------
-PP_LINE_XP:	BIS	R1,R4
-		DEC	R3
-		BEQ	19$
-		ASLB	R1		; next pixel, one bit further left.  A
+PP_LINE_XP:	ASLB	R1		; next pixel, one bit further left.  A
 		BCC	13$		; BYTE shift carries the bit out of the
 				; mask when it leaves the plane byte,
 				; which is the same test the compare
@@ -759,7 +735,7 @@ PP_LINE_XP:	BIS	R1,R4
 		MOV	#1,R1
 		INC	R0
 13$:		SUB	R5,R2		; step y when the error runs out
-		BGE	PP_LINE_XP
+		BGE	15$
 		ADD	PP_LADX,R2
 		TST	R4		; a new line means a new address
 		BEQ	14$
@@ -767,16 +743,12 @@ PP_LINE_XP:	BIS	R1,R4
 		XOR	R4,@#PDATA
 		CLR	R4
 14$:		ADD	PP_LSY,R0
-		BR	PP_LINE_XP
-19$:		MOV	R0,@#PADDR
-		XOR	R4,@#PDATA
-		RETURN
+15$:		BIS	R1,R4
+		SOB	R3,PP_LINE_XP
+		BR	PP_LINE_LAST
 
 ; ---- walking left -------------------------------------------------------
-PP_LINE_XN:	BIS	R1,R4
-		DEC	R3
-		BEQ	29$
-		ASR	R1
+PP_LINE_XN:	ASR	R1
 		BNE	23$
 		MOV	R0,@#PADDR
 		XOR	R4,@#PDATA
@@ -784,7 +756,7 @@ PP_LINE_XN:	BIS	R1,R4
 		MOV	#200,R1
 		DEC	R0
 23$:		SUB	R5,R2
-		BGE	PP_LINE_XN
+		BGE	25$
 		ADD	PP_LADX,R2
 		TST	R4
 		BEQ	24$
@@ -792,39 +764,45 @@ PP_LINE_XN:	BIS	R1,R4
 		XOR	R4,@#PDATA
 		CLR	R4
 24$:		ADD	PP_LSY,R0
-		BR	PP_LINE_XN
-29$:		MOV	R0,@#PADDR
+25$:		BIS	R1,R4
+		SOB	R3,PP_LINE_XN
+PP_LINE_LAST:	MOV	R0,@#PADDR
 		XOR	R4,@#PDATA
 		RETURN
 
 ; ---- y is the major axis: every pixel is on its own line ---------------
-PP_LINE_Y:		MOV	PP_LADY,R3		; pixels after the first, which is
-		MOV	PP_LADY,R2		; drawn outside the loop so that SOB
-		ASR	R2		; can close it
-		MOV	PP_LADX,R5
-		MOV	PP_LSY,R4		; the y step, out of memory: it is read
-				; once a pixel down here
-		TST	R3
-		BEQ	29$
-20$:		MOV	R0,@#PADDR
+PP_LINE_Y:	MOV	R2,PP_LADY
+		MOV	R4,R5		; minor-axis step
+		MOV	R3,R4		; signed row stride
+		MOV	R2,R3		; dy steps after the first pixel; dy > dx
+		ASR	R2		; error accumulator
+		TST	PP_LSX		; choose the x direction once per line
+		BMI	PP_LINE_YN
+PP_LINE_YP:	MOV	R0,@#PADDR
 		XOR	R1,@#PDATA
 		ADD	R4,R0		; step y
 		SUB	R5,R2		; and step x when the error runs out
 		BGE	28$
 		ADD	PP_LADY,R2
-		TST	PP_LSX
-		BLT	22$
 		ASLB	R1		; as in PP_LINE_XP: the carry says the mask
 		BCC	28$		; has left the byte
 		MOV	#1,R1
 		INC	R0
-		BR	28$
-22$:		ASR	R1
+28$:		SOB	R3,PP_LINE_YP
+		BR	PP_LINE_YLAST
+
+PP_LINE_YN:	MOV	R0,@#PADDR
+		XOR	R1,@#PDATA
+		ADD	R4,R0
+		SUB	R5,R2
+		BGE	28$
+		ADD	PP_LADY,R2
+		ASR	R1
 		BNE	28$
 		MOV	#200,R1
 		DEC	R0
-28$:		SOB	R3,20$
-29$:		MOV	R0,@#PADDR	; the last pixel, which the loop above
+28$:		SOB	R3,PP_LINE_YN
+PP_LINE_YLAST:	MOV	R0,@#PADDR	; the last pixel, which the loop above
 		XOR	R1,@#PDATA	; steps up to but does not draw
 		RETURN
 
@@ -832,10 +810,10 @@ PP_LINE_Y:		MOV	PP_LADY,R3		; pixels after the first, which is
 ; =========================================================================
 ; PP_LINE_SPAN - the same line, a run at a time.
 ;
-; A line of slope under a quarter puts four or more pixels on every
-; scanline it touches, and PP_LINE_XP pays seven instructions for each one.
-; This works the whole run out at once and paints it with one XOR per
-; plane byte instead of one per pixel.
+; At least eight major-axis steps per scanline justify the run calculation.
+; The ordinary x-major loops otherwise step and accumulate every pixel.
+; This computes the run length once per scanline, then emits whole bytes
+; and edge masks without visiting each pixel.
 ;
 ; It is the SAME recurrence, which it has to be: every segment is drawn
 ; twice, once to put it on the screen and once to rub it out, so a run
@@ -857,14 +835,14 @@ PP_LINE_Y:		MOV	PP_LADY,R3		; pixels after the first, which is
 ; R0 = plane byte, R1 = bit mask, R2 = scratch, R3 = pixels left,
 ; R4 = the run, R5 = the error.
 ; =========================================================================
-PP_LINE_SPAN:	MOV	PP_LADX,R3
+PP_LINE_SPAN:	MOV	R2,PP_LADY
+		MOV	R4,R3
 		INC	R3			; pixels to draw
-		MOV	PP_LADX,R5
+		MOV	R4,R5
 		ASR	R5			; the error the bit loop starts with
-		MOV	PP_LADX,R4
-		SUB	PP_LADY,R4
+		SUB	R2,R4
 		MOV	R4,PP_LDXY			; what each scanline adds back
-		TST	PP_LADY
+		TST	R2
 		BEQ	PP_LSPAN_F			; flat: one run, and no error at all
 		TST	PP_LSX
 		BLT	PP_LSPAN_L
@@ -914,10 +892,9 @@ PP_LSPAN_RE:	CMP	R4,#8.			; a run longer than a byte always spills
 		BR	PP_LSPAN_R
 9$:		RETURN
 
-30$:		MOV	R1,R2			; to the end of this byte first:
-		ADD	PPAV_R,R2		;   the table's PPU address is in a
-		MOVB	@R2,R2			;   word, because this block cannot
-		BIC	#177400,R2		;   index off an assembled address
+30$:		MOV	R1,R2			; to the end of this byte first
+		ADD	PPAV_R,R2		; relocated mask-to-count table
+		MOVB	@R2,R2			; counts 1..8 never sign-extend
 		SUB	R2,R4			; what is left for the bytes after it
 		MOV	R1,R2
 		NEG	R2			; bits a..7, out of the mask itself
@@ -925,14 +902,17 @@ PP_LSPAN_RE:	CMP	R4,#8.			; a run longer than a byte always spills
 		MOV	R0,@#PADDR
 		XOR	R2,@#PDATA
 		INC	R0
-		MOV	#377,R2			; then whole bytes, eight at a time
-31$:		CMP	R4,#8.
-		BLT	32$
-		MOV	R0,@#PADDR
+		MOV	R4,R1			; split whole bytes from the tail once
+		BIC	#177770,R4
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		BEQ	32$
+		ADD	R1,R0			; retain the address after those bytes
+		MOV	#377,R2
+31$:		INC	@#PADDR		; the previous byte is still latched
 		XOR	R2,@#PDATA
-		INC	R0
-		SUB	#8.,R4
-		BR	31$
+		SOB	R1,31$
 32$:		MOV	#1,R1			; and the tail, in the byte the next
 		TST	R4			; scanline starts in
 		BEQ	2$
@@ -976,7 +956,6 @@ PP_LSPAN_LE:	CMP	R4,#8.
 30$:		MOV	R1,R2			; back to the start of this byte first
 		ADD	PPAV_L,R2
 		MOVB	@R2,R2
-		BIC	#177400,R2
 		SUB	R2,R4
 		MOV	R1,R2			; bits 0..a is twice the mask, less one
 		ASL	R2
@@ -984,14 +963,17 @@ PP_LSPAN_LE:	CMP	R4,#8.
 		MOV	R0,@#PADDR
 		XOR	R2,@#PDATA
 		DEC	R0
+		MOV	R4,R1
+		BIC	#177770,R4
+		ASR	R1
+		ASR	R1
+		ASR	R1
+		BEQ	32$
+		SUB	R1,R0
 		MOV	#377,R2
-31$:		CMP	R4,#8.
-		BLT	32$
-		MOV	R0,@#PADDR
+31$:		DEC	@#PADDR
 		XOR	R2,@#PDATA
-		DEC	R0
-		SUB	#8.,R4
-		BR	31$
+		SOB	R1,31$
 32$:		MOV	#200,R1			; the tail sits in the byte's high bits
 		TST	R4
 		BEQ	2$

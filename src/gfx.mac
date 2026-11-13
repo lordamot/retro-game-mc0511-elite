@@ -176,16 +176,18 @@ LINE_SETUP:	MOV	LX0,R0		; the start: its row out of the table,
 ; SEG_RESET and the text routines call it.  The gauges and the scanner
 ; share the dashboard band and are checked disjoint by byte column.
 ;
-; RING_HEAD is the byte offset the CPU writes next, RING_TAIL the one the
-; PPU draws next - written by the PPU, straight into CPU RAM through its
-; window.  Head == tail is empty; the ring is full when the head would
+; RING_HEAD is the window word address the CPU writes next. RING_TAIL is
+; the next address the PPU draws, written straight into CPU RAM through its
+; window. The CPU doubles it to store a record; the PPU uses it directly.
+; Head == tail is empty; the ring is full when the head would
 ; step onto the tail, and RING_PUTR then waits for the PPU, which is the
 ; only time the CPU ever waits for it.
 ; =========================================================================
-RING_HEAD:	.WORD	0
-RING_TAIL:	.WORD	0
+RING_HEAD:	.WORD	RING/2
+RING_TAIL:	.WORD	RING/2
 RING_STALL:	.WORD	0		; times the CPU found the ring full
 RING:		.BLKW	RING_BYTES/2
+RING_END:
 
 ; LINE - work the walk out and hand it over.  The one entry point for a
 ; caller with nothing to record; the segment buffers call RING_PUTR after
@@ -194,10 +196,10 @@ LINE:		MOV	#LREC,R4	; nothing to record: throw the walk away
 		MOV	R4,R5
 		CALL	LINE_SETUP
 RING_PUTR:	MOV	RING_HEAD,R2	; R4 = a record to hand over
-		ADD	#RECB,R2
-		CMP	R2,#RING_BYTES
+		ADD	#RECB/2,R2
+		CMP	R2,#RING_END/2
 		BLO	3$
-		CLR	R2
+		MOV	#RING/2,R2
 3$:		CMP	R2,RING_TAIL	; full: the PPU is behind, wait for it
 		BNE	2$
 		INC	RING_STALL	; ... and count the times, for the
@@ -205,7 +207,7 @@ RING_PUTR:	MOV	RING_HEAD,R2	; R4 = a record to hand over
 		BEQ	1$		;   2026-09-25 only a full ring at
 					;   the wrap was counted: 1 in 128)
 2$:		MOV	RING_HEAD,R3
-		ADD	#RING,R3
+		ASL	R3
 		MOV	(R4)+,(R3)+
 		MOV	(R4)+,(R3)+
 		MOV	(R4)+,(R3)+
@@ -223,17 +225,17 @@ RING_WAIT:	CMP	RING_HEAD,RING_TAIL
 ; R4 = new, R5 = old. Clobbers R0..R5; the slow path preserves ordering.
 RING_PUT2:	MOV	RING_HEAD,R3
 		MOV	R3,R2
-		ADD	#<2*RECB>,R2
-		CMP	R2,#RING_BYTES
+		ADD	#RECB,R2	; two records, in window words
+		CMP	R2,#RING_END/2
 		BHIS	8$
 		MOV	RING_TAIL,R1
 		CMP	R2,R1
 		BEQ	8$
 		MOV	R3,R0
-		ADD	#RECB,R0
+		ADD	#RECB/2,R0
 		CMP	R0,R1
 		BEQ	8$
-		ADD	#RING,R3
+		ASL	R3
 		MOV	(R4)+,(R3)+
 		MOV	(R4)+,(R3)+
 		MOV	(R4)+,(R3)+

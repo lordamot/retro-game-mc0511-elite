@@ -50,6 +50,9 @@ Hull-copy probes check all 55 bank records, all eight remainder lengths,
 unused destination bytes, cached repeats, preserved registers and stack
 balance. Face probes compare signed, wrapped dot products with an integer
 model; packed-line probes check every octant and start bit against XOR pixels.
+Horizontal spans get separate rows for lengths around byte boundaries and
+long runs in both directions. Line and queue probes compare all 288 screen
+rows, including the untouched dashboard band.
 
 ## Isolation and sequencing
 
@@ -107,7 +110,9 @@ Sample transient events across their active interval. Read completed frame
 counters and correct byte halves. Recharge batches are compared at
 `RECHARGE` boundaries using `RC_LAST`, not an unrelated clock sample;
 automatic repair inputs are seeded at `PILOT_JUMP`, after tunnel random
-draws. Keep a portal outside docking range when testing its appearance;
+draws. The fleeing probe waits for eight actual `SHIP_HURT` entries and
+verifies each fourteen-point drop in faith before checking escape motion.
+Keep a portal outside docking range when testing its appearance;
 wait for a completed jump when testing entry. The [caveats](caveats.md)
 reference lists common errors.
 
@@ -129,31 +134,22 @@ reruns and host-only checks. Do not combine earlier passing groups into a
 claim that one complete run passed. Disposable logs in `tmp/` are evidence
 for a local session, not enduring dependencies of the project documentation.
 
-The v0.8.2 build with renderer speed optimizations passed `make build` on
-2026-11-13. Completed focused runs of `python3 -u tools/verify_build.py`
-passed with `--only rules` (180 assertions, including the station/tunnel
-checks and seven hull-copy, face-sign and packed-line checks), `--only hulls`
-(11 assertions) and `--only ppu` (9 assertions), all exit 0. Local logs are
-`tmp/render-speed/verify-{rules,hulls,ppu}.log`. Before/after
-`seg_snapshot.py --scenes 12` captures matched all 287 segments across the
-eleven scenes frozen in both builds; scene 0 was skipped because it did not
-freeze. Exact pixel checks passed separately in the rules group. The full
-suite was not rerun for this build. Build identities:
+The v0.8.2 build with PPU line and queue optimizations passed `make build`
+and one complete `python3 -u tools/verify_build.py` run on 2026-11-13:
+**753 assertions passed, zero failed, exit status 0**. This includes native
+RT-11, palette, gameplay, presentation and exact renderer checks, with the
+fleeing fixture observing eight actual hits. The local full-run log is
+`tmp/render-speed2/verify-full-final.log`. Build identities:
 
-- `ELITE.SAV` SHA-256: `f1a3f741786a77a291d83bd3786cedb298f1605fdc5308e65165880d427fb99e`
-- `ELITE.DAT` SHA-256: `06377cb0de783dd1b782dd59eded83a862660358b5441d884e9c93ae4f8bb6ba`
+- `ELITE.SAV` SHA-256: `1e0dbdaa4e9d33ac81c1a0aafb839270d6c1b09d823cf4daf29d807c69750851`
+- `ELITE.DAT` SHA-256: `94814c555d0c15081748898a23652a484bd4fe0c4b1e131d6dad5168c6b648b9`
 
-The preceding v0.8.1 build passed one complete `make verify` run on 2026-11-11:
-**713 assertions passed, zero failed, exit status 0**. Build identities:
-
-- `ELITE.SAV` SHA-256: `f1c99532db75afd5451b6c69302750e7739eaedc51a9de51162f345f755066e4`
-- `ELITE.DAT` SHA-256: `378617c624cff253354015c96b3fee7af89aac1ccfb8d5d8576217eeb7861dd9`
-
-This includes all 87 palette assertions, 29 native RT-11 assertions and
-145 rule/renderer assertions (28 exact renderer subchecks). The retired
-1985 commodity-table comparison was skipped because that table is no
-longer a maintained resource; Legend resource round trips passed.
-The local full-run log is `tmp/verify-0.8.1-fixed.log`.
+The retired 1985 commodity-table comparison was skipped because that table
+is no longer a maintained resource; Legend resource round trips passed.
+Before/after `seg_snapshot.py --scenes 12` captures matched all 287 segments
+across the eleven scenes frozen in both builds; scene 0 was skipped because
+it did not freeze. Exact pixel checks passed separately in the rules group,
+including 476 packed lines and 432 isolated horizontal spans.
 
 A documentation-only change does not require another long gameplay run;
 validate its paths, commands and generated outputs. A runtime release

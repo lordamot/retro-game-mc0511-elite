@@ -3030,7 +3030,7 @@ def check_cockpit():
     need = ["MISS_LOCK", "LOCK_SHOWN", "LEGAL", "P_DOCKCOMP", "DOCKED",
             "UNIV", "U.SIZE", "U.TYPE", "U.FLAGS", "U.X", "U.Y", "U.Z",
             "U.ENERGY", "U.EXPL", "U.TARGET", "SH_COBRA3", "SH_SIDEWINDER",
-            "PENERGY", "PSHIELD_F", "WITCH", "U.AI3"]
+            "PENERGY", "PSHIELD_F", "WITCH", "U.AI3", "SHIP_HURT"]
     if any(n not in t for n in need):
         check("cockpit symbols found", False,
               f"missing {[n for n in need if n not in t]}")
@@ -3145,17 +3145,27 @@ def check_cockpit():
     # no station near.  check_ai has the anger; here, the Cobra shot at
     # eight times with the station gone (WITCH keeps the sky empty; the
     # station slot is emptied) and outside the reaction radius has FL3
-    # under 16 and flees: F3_FLEE set and its distance growing.
+    # under 16 and flees: F3_FLEE set and its distance growing. Observe
+    # eight actual hits: a fixed emulated interval can end between shots.
     fl3 = f"peekcpu {slot_field(t, 5, 'U.AI3')}"
     script = BOOT + ["press 107", "run 60"] + clear_traffic(t) + [poke_at(int(t["WITCH"], 8), 1),
                      poke_at(int(slot_field(t, 2, "U.TYPE"), 8), 0)]
     script += ship_pokes(t, 5, "COBRAMK3HT1", z=1500, hostile=False, energy=4000, hyper=False)
     script += [poke_at(int(t["PSPEED"], 8), 0),        # parked: its distance is its own doing
-               "keydown 107", "run 60", "keyup 107", "run 40",
+               fl3, "keydown 107"]
+    for _ in range(8):
+        # Only the trader can be hit in this fixture. Advance past the
+        # routine entry before waiting for the next hit, then read its faith.
+        script += [f"runpc {t['SHIP_HURT']} 300", "run 1", fl3]
+    script += ["keyup 107", ui_ready(t, frames=20),
                f"peekcpu {slot_field(t, 5, 'U.FLAGS')}", fl3,
                f"peekcpu {slot_field(t, 5, 'U.Z')}", "quit"]
     v = [int(x, 8) for x in PEEK.findall(run_emu(script, fresh_disk("flee")))]
-    if len(v) >= 3:
+    faith = [word & 0x7F for word in v[:9]]
+    check("eight observed laser hits take fourteen faith each",
+          len(v) == 12 and faith == list(range(126, 13, -14)), str(faith))
+    if len(v) == 12:
+        v = v[-3:]
         check("a trader shot to pieces of its faith runs for it",
               v[0] & 1 and v[1] & 0x80 and v[1] & 0x7F < 16, f"flags {v[0]:o}, faith {v[1] & 0x7F}, fled {v[1] >> 7 & 1}")
         check("and puts distance behind it", v[2] > 1500, f"{v[2]} away")

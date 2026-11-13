@@ -111,8 +111,11 @@ The CPU prepares three-word walk records in `gfx.mac`; `RING_PUT` and
 from its timer handler when no drain is already active. It drops priority
 while drawing so keyboard, channel and timer interrupts continue.
 
-The CPU owns `RING_HEAD`; the PPU owns `RING_TAIL`. Data is written before
-publishing the head. A paired submission takes one tail snapshot when
+The CPU owns `RING_HEAD`; the PPU owns `RING_TAIL`. Both contain window word
+addresses in `RING/2..RING_END/2`, with the end exclusive; each record advances
+them by three words. The CPU doubles an address to store a record, while the
+PPU uses it directly. Data is written before publishing the head.
+A paired submission takes one tail snapshot when
 checking space, preserves new-before-old order, and falls back to single
 submissions at wraparound or when two slots are unavailable. A full queue
 waits for the consumer. `RING_WAIT` establishes completion before direct

@@ -127,6 +127,7 @@ def check_render(v):
     check_hull_fetch(v, t, out)
     check_face_visibility(v, t, out)
     check_walk_pixels(v, t, out)
+    check_span_pixels(v, t, out)
 
 
 def check_hull_fetch(v, t, out):
@@ -238,16 +239,40 @@ def check_face_visibility(v, t, out):
 
 def check_walk_pixels(v, t, out):
     """Packed line decoding and XOR pixels for every octant and start bit."""
-    a = lambda key: int(t[key], 8)
     lines = []
     for bit in range(8):
-        for dx, dy in ((0, 0), (0, 63), (7, 0), (8, 0), (127, 0), (63, 63),
-                       (63, 15), (63, 16), (63, 7), (63, 8), (7, 63), (8, 63)):
+        for dx, dy in ((0, 0), (0, 63), (1, 0), (1, 1), (2, 1),
+                       (7, 0), (8, 0), (127, 0), (63, 63), (63, 64),
+                       (63, 31), (63, 32), (63, 15), (63, 16),
+                       (63, 7), (63, 8), (7, 63), (8, 63)):
             for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1)):
                 lines.append(((320+bit, 100), (320+bit+sx*dx, 100+sy*dy)))
     lines += [((0, 0), (639, 0)), ((639, 199), (0, 199)),
               ((0, 0), (639, 199)), ((639, 199), (0, 0))]
     lines = list(dict.fromkeys(lines))  # duplicate XOR walks would hide errors
+    check_walk_image(v, t, out, lines, 'walk-octants',
+                     'packed walks match exact XOR pixels in all octants')
+
+
+def check_span_pixels(v, t, out):
+    """Each horizontal span gets its own row, so overlaps cannot hide errors."""
+    lengths = (0, 1, 7, 8, 9, 15, 16, 17, 23, 24, 25, 31, 32, 33,
+               63, 64, 65, 127, 128, 129, 255, 256, 257, 511, 512, 513)
+    lines = []
+    for bit in range(8):
+        for direction in (1, -1):
+            x = bit if direction > 0 else 632 + bit
+            limit = 639 - x if direction > 0 else x
+            for length in lengths + (limit,):
+                y = len(lines) % 200
+                lines.append(((x, y), (x + direction * length, y)))
+    check_walk_image(v, t, out, lines, 'walk-spans',
+                     'horizontal spans preserve every byte boundary and tail')
+
+
+def check_walk_image(v, t, out, lines, name, description):
+    """Compare queued records with an independent per-pixel Bresenham model."""
+    a = lambda key: int(t[key], 8)
     for batch in range(0, len(lines), 200):
         subset = lines[batch:batch+200]
         entry, records = a('OVL_BASE'), a('OVL_BASE')+1024
@@ -283,16 +308,16 @@ def check_walk_pixels(v, t, out):
         patch += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
                   v.poke_at(a('DRAW_HARNESS')+2, entry),
                   v.poke_at(a('BENCH_RAM'), 0), v.poke_at(a('HARN_GO'), 1)]
-        bmp = out / f'walk-octants-{batch}.bmp'
+        bmp = out / f'{name}-{batch}.bmp'
         log = v.run_emu(list(v.BOOT) + ['run 20'] + patch + [
             'run 200', f"peekcpu {t['BENCH_RAM']}", f'screenshot {bmp}', 'quit'],
-            v.fresh_disk('walk-octants'))
-        im = Image.open(bmp).convert('RGB').crop((0, 0, 640, 200))
+            v.fresh_disk(name))
+        im = Image.open(bmp).convert('RGB')
         im.save(bmp.with_suffix('.png'))
-        expected = Image.new('RGB', (640, 200))
+        expected = Image.new('RGB', (640, 288))  # dashboard must remain clear
         for point in pixels:
             expected.putpixel(point, (255, 255, 255))
-        v.check(f'packed walks match exact XOR pixels in all octants, batch {batch//200}',
+        v.check(f'{description}, batch {batch//200}',
                 im.tobytes() == expected.tobytes() and
                 [int(n, 8) for n in v.PEEK.findall(log)] == [1])
 
@@ -578,9 +603,9 @@ def check_walk_pairs(v, t, out):
                    [f'peekcpu {t[key]}' for key in keys] + [f'screenshot {bmp}', 'quit'],
                    v.fresh_disk('paired-wrap'))
     values = [int(n, 8) for n in v.PEEK.findall(log)]
-    im = Image.open(bmp).convert('RGB').crop((0, 0, 640, 200))
+    im = Image.open(bmp).convert('RGB')
     im.save(out / 'paired-wrap.png')
-    expected = Image.new('RGB', (640, 200))
+    expected = Image.new('RGB', (640, 288))
     # 511 pairs over 199 starting rows cancel every intermediate row.
     for y in (0, 511 % 199):
         for x in range(640):

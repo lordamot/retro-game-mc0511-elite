@@ -63,9 +63,15 @@ byte-accumulating Bresenham and span paths, including a rightward horizontal
 shortcut. `RING_PUT2` publishes a replacement and its erase record together
 when room permits, taking one tail snapshot. Both paired and fallback paths
 keep new-before-old ordering.
-Horizontal rightward records decode directly into registers before the
-general Bresenham state is written. An eight-word mask table avoids a
-byte sign-extension fixup for every record, including start bit 7.
+Ring cursors are window word addresses, avoiding an offset conversion on
+every record. The decoder passes the address, mask, deltas and row stride
+in registers, writing only the state needed by the selected walker. An
+eight-word mask table avoids byte sign extension, including start bit 7.
+Rightward horizontal lines bypass the general walker. Both major-axis
+walkers select the x direction once per line; x-major loops start with the
+first pixel pending and count the remaining steps with `SOB`. Long spans
+split whole bytes from the tail once, then advance the video-address port
+directly for each full-byte XOR.
 
 Every segment draws both endpoints: a point segment draws one pixel, and
 shared XOR endpoints can cancel. `CLIP_LINE` mutates its input endpoints;
@@ -109,24 +115,26 @@ not the shipped scene. The harness does not run at boot.
 
 ## Applicable baseline
 
-The hull-copy, face-dot and PPU-decoding optimizations were measured on
-2026-11-13 against the preceding station/tunnel fixes (`7e5c359`). Both builds
+The PPU decoder, line-loop and queue optimizations were measured on
+2026-11-13 against the preceding renderer optimizations (`a47e45a`). Both builds
 used identical `bench.py --ticks 6000` fixtures and the same 50 Hz emulator:
 120 emulated seconds per run. The first three rows use `--fixed`; the last
 uses `--sparse --turning`, with only five occupied slots.
 
 | Workload | Before: frames / FPS | Optimized: frames / FPS | Gain |
 |---|---:|---:|---:|
-| Still | 1125 / 9.375 | 1161 / 9.675 | 3.2% |
-| Moving | 887 / 7.392 | 912 / 7.600 | 2.8% |
-| Turning | 651 / 5.425 | 668 / 5.567 | 2.6% |
-| Sparse turning | 772 / 6.433 | 822 / 6.850 | 6.5% |
+| Still | 1161 / 9.675 | 1161 / 9.675 | 0.0% |
+| Moving | 912 / 7.600 | 912 / 7.600 | 0.0% |
+| Turning | 668 / 5.567 | 693 / 5.775 | 3.7% |
+| Sparse turning | 822 / 6.850 | 868 / 7.233 | 5.6% |
 
 Roster checks passed and ending screenshots were inspected. Local logs and
-images are `tmp/render-speed/long-{base,final}-{still,moving,turning,sparse}`
-with `.log`/`.png` suffixes. The drawing-only harness's 100-frame workloads
-take 355 → 337 interrupts still (71.0 → 67.4 ms/frame) and 643 → 633 turning
-(128.6 → 126.6 ms/frame). Harness rates exclude gameplay and are not flight FPS.
+images are `tmp/render-speed/long-final-{still,moving,turning,sparse}` for the
+baseline and `tmp/render-speed2/long-final-{still,moving,turning,sparse}` for
+the optimized build, with `.log`/`.png` suffixes. The drawing-only harness's
+100-frame workloads remain at 337 interrupts still (67.4 ms/frame) and drop
+from 633 to 605 turning (126.6 → 121.0 ms/frame, 4.4% less time).
+Harness rates exclude gameplay and are not flight FPS.
 
 Before/after segment captures match all 287 segments across eleven frozen
 scenes. One of the twelve requested scenes did not freeze and was skipped.
@@ -134,9 +142,9 @@ The rules group independently verifies exact pixels, face signs, hull-copy
 contents, register preservation and the station/tunnel regressions; see
 [testing](testing.md) for the completed groups and build identities.
 
-The changes add 80 resident bytes, leaving 160 bytes free. Overlays are
-unchanged (the largest is 4959 bytes, leaving 161). The PPU program grows by
-12 bytes to 3500; 164 bytes remain between reused buffers and published words.
+The changes save 86 resident bytes, leaving 246 bytes free. Overlays are
+unchanged (the largest is 4959 bytes, leaving 161). The PPU program shrinks by
+84 bytes to 3416; 80 bytes remain between reused buffers and published words.
 These are emulator measurements, with frame-count boundary and fixture limits;
 they are not physical-hardware timing or a uniform speed guarantee.
 
@@ -176,19 +184,21 @@ Elite's immutable hull copy. Its other major gains have different prerequisites:
   vertices change with depth and orientation. Reusing per-object geometry
   would require explicit invalidation and a memory budget for retained state.
 
-Baseline 1200-tick fixed-scene PC samples place about 15% of still-flight CPU time
-in vertex projection and 10% in hull fetching, while the PPU is mostly idle.
-Turning instead keeps the drawing drain active for about 94% of the interval;
-roughly 25% of PPU samples are in record decoding and 47% in the three ordinary
-line-walk kernels. These coarse samples identify candidates, not speed gains.
+At the earlier `7e5c359` baseline, 1200-tick fixed-scene PC samples placed
+about 15% of still-flight CPU time in vertex projection and 10% in hull
+fetching, while the PPU was mostly idle. Turning kept the drawing drain
+active for about 94% of the interval; roughly 25% of PPU samples were in
+record decoding and 47% in the three ordinary line-walk kernels. These
+coarse samples identified candidates, not speed gains.
 Further turning improvements should target measured raster/queue costs or
 reduce the records submitted while preserving pixels and buffer ownership.
 
-Keep the eight-pixel-per-scanline span threshold. A four-pixel trial left the
-short turning benchmark at 130 frames and increased the 100-frame harness
-from 643 to 647 interrupts. Removing stars or bodies is useful only as an
-ablation: on that harness they cost about 8 and 44 ms/frame respectively;
-their removal is not an optimization of the shipped appearance.
+Keep the eight-pixel-per-scanline span threshold. With the current kernels,
+four- and sixteen-pixel trials take 607 and 612 interrupts respectively in
+the 100-frame turning harness, compared with 605 at eight pixels.
+Removing stars or bodies is useful only as an ablation: on the earlier
+`7e5c359` harness they cost about 8 and 44 ms/frame respectively; their
+removal is not an optimization of the shipped appearance.
 
 General PPU geometry needs a new measurement and scheduling design before
 implementation. The PPU has a lower clock, transfers geometry/results
