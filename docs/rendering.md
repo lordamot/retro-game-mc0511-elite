@@ -25,6 +25,9 @@ drain the PPU queue, and full-height pages invalidate the dashboard.
 CPU workspace, caching the last model. Hull records store vertices at four
 times blueprint scale and doubled vertex indices in four-byte edge records.
 Do not interpret the bank with the readable blueprint's units.
+Cache misses copy eight words per loop and then the exact remaining words.
+Incrementing the CPU video-address port refreshes its read latch; the copy
+does not maintain a second address cursor. `HULL_FETCH` preserves R1–R5.
 
 The ship pipeline rejects distant/outside objects, computes visible face
 masks, then marks the endpoints of surviving edges. `VERT_MARK` also builds
@@ -32,6 +35,8 @@ a compact edge list so unused vertices need not be transformed. Model-space
 face testing transforms the eye/centre once through the transpose matrix;
 zero-face geometry remains visible. A blueprint radius is not a strict
 bounding sphere; `SHIP_CONE` allows twice the recorded radius.
+Each face's first signed product initializes the 32-bit dot-product sum;
+the other two products retain the same carry and wrapping arithmetic.
 
 The station's added docking rectangle lies on the negative-z face, opposite
 the entrance in the Legend blueprint. `STATION_SLOT` transforms the camera
@@ -58,6 +63,9 @@ byte-accumulating Bresenham and span paths, including a rightward horizontal
 shortcut. `RING_PUT2` publishes a replacement and its erase record together
 when room permits, taking one tail snapshot. Both paired and fallback paths
 keep new-before-old ordering.
+Horizontal rightward records decode directly into registers before the
+general Bresenham state is written. An eight-word mask table avoids a
+byte sign-extension fixup for every record, including start bit 7.
 
 Every segment draws both endpoints: a point segment draws one pixel, and
 shared XOR endpoints can cancel. `CLIP_LINE` mutates its input endpoints;
@@ -101,29 +109,36 @@ not the shipped scene. The harness does not run at boot.
 
 ## Applicable baseline
 
-The station/tunnel renderer fixes were measured on 2026-11-13 with identical
-`bench.py --fixed --ticks 1200` fixtures, with and without `--turning`.
-The installed core reports 50 Hz, so each run covers 24 emulated seconds.
+The hull-copy, face-dot and PPU-decoding optimizations were measured on
+2026-11-13 against the preceding station/tunnel fixes (`7e5c359`). Both builds
+used identical `bench.py --ticks 6000` fixtures and the same 50 Hz emulator:
+120 emulated seconds per run. The first three rows use `--fixed`; the last
+uses `--sparse --turning`, with only five occupied slots.
 
-| Sixteen-slot workload | Before: frames / FPS | Fixed: frames / FPS |
-|---|---:|---:|
-| Still | 226 / 9.42 | 225 / 9.38 |
-| Turning | 132 / 5.50 | 130 / 5.42 |
+| Workload | Before: frames / FPS | Optimized: frames / FPS | Gain |
+|---|---:|---:|---:|
+| Still | 1125 / 9.375 | 1161 / 9.675 | 3.2% |
+| Moving | 887 / 7.392 | 912 / 7.600 | 2.8% |
+| Turning | 651 / 5.425 | 668 / 5.567 | 2.6% |
+| Sparse turning | 772 / 6.433 | 822 / 6.850 | 6.5% |
 
 Roster checks passed and ending screenshots were inspected. Local logs and
-images are `tmp/renderer-{still,turning}-{before,after}.{log,png}`. These
-short runs differ by only one or two completed frames; they establish no
-speed improvement. Geometry intentionally changes for hidden station slots
-and tunnel closure; the rules group's explicit polygon/pixel checks verify
-those changes.
+images are `tmp/render-speed/long-{base,final}-{still,moving,turning,sparse}`
+with `.log`/`.png` suffixes. The drawing-only harness's 100-frame workloads
+take 355 → 337 interrupts still (71.0 → 67.4 ms/frame) and 643 → 633 turning
+(128.6 → 126.6 ms/frame). Harness rates exclude gameplay and are not flight FPS.
 
-The fix adds 12 resident bytes, leaving 240 bytes free. Overlays are
-unchanged (the largest is 4959 bytes, leaving 161); the PPU program remains
-3488 bytes, with 152 bytes between reused buffers and published words.
+Before/after segment captures match all 287 segments across eleven frozen
+scenes. One of the twelve requested scenes did not freeze and was skipped.
+The rules group independently verifies exact pixels, face signs, hull-copy
+contents, register preservation and the station/tunnel regressions; see
+[testing](testing.md) for the completed groups and build identities.
 
-There is no current moving-only, sparse or drawing-only baseline for this
-build. Run those workloads when needed rather than importing rates from a
-different core, memory layout or fixture.
+The changes add 80 resident bytes, leaving 160 bytes free. Overlays are
+unchanged (the largest is 4959 bytes, leaving 161). The PPU program grows by
+12 bytes to 3500; 164 bytes remain between reused buffers and published words.
+These are emulator measurements, with frame-count boundary and fixture limits;
+they are not physical-hardware timing or a uniform speed guarantee.
 
 ## Acceptance criteria for renderer changes
 
@@ -142,6 +157,38 @@ different core, memory layout or fixture.
   faster renderer can change combat and traffic frequency per second.
 
 ## Constraints on further optimization
+
+The sibling `retro-game-mc0511-dizzy` at `f6c66a7` was reviewed for applicable
+techniques, especially `PP_CPU_COPY` in `src/ppu_anim.mac` and address-port
+increments in `src/cpu_prepare.mac`. Its unrolled window transfers apply to
+Elite's immutable hull copy. Its other major gains have different prerequisites:
+
+- Dizzy's 320-pixel, 173-row composition fits small framebuffer banks. Elite's
+  640×200 view needs 16,000 bytes per plane, exceeding the 9728-byte offscreen
+  space, which also holds hulls and overlay caches.
+- Direct RAM0 painting applies to Dizzy's plane-zero mappings. Elite's XOR
+  geometry uses plane 1 through the video port; changing that requires a new
+  plane/palette layout and pixel proofs.
+- Dizzy overlaps simulation with a pending bank flip. Elite already submits
+  line records asynchronously; its current flight loop does not wait for a
+  bank-flip acknowledgment.
+- Prepared sprite caches reuse finite animation poses. Elite's projected
+  vertices change with depth and orientation. Reusing per-object geometry
+  would require explicit invalidation and a memory budget for retained state.
+
+Baseline 1200-tick fixed-scene PC samples place about 15% of still-flight CPU time
+in vertex projection and 10% in hull fetching, while the PPU is mostly idle.
+Turning instead keeps the drawing drain active for about 94% of the interval;
+roughly 25% of PPU samples are in record decoding and 47% in the three ordinary
+line-walk kernels. These coarse samples identify candidates, not speed gains.
+Further turning improvements should target measured raster/queue costs or
+reduce the records submitted while preserving pixels and buffer ownership.
+
+Keep the eight-pixel-per-scanline span threshold. A four-pixel trial left the
+short turning benchmark at 130 frames and increased the 100-frame harness
+from 643 to 647 interrupts. Removing stars or bodies is useful only as an
+ablation: on that harness they cost about 8 and 44 ms/frame respectively;
+their removal is not an optimization of the shipped appearance.
 
 General PPU geometry needs a new measurement and scheduling design before
 implementation. The PPU has a lower clock, transfers geometry/results

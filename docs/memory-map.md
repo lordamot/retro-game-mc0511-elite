@@ -1,6 +1,6 @@
 # Memory map
 
-Snapshot of the v0.8.2 build with docking renderer fixes, checked on
+Snapshot of the v0.8.2 build with renderer speed optimizations, checked on
 2026-11-13 against `src/defs.mac`,
 `build/elite.lst` and `build/manifest.json`. Addresses are **octal**; sizes
 and file-block numbers are decimal. End addresses are exclusive. Recheck
@@ -12,8 +12,8 @@ generated hull tables and `tools/build_elite.py`.
 | Region | Start | End (exclusive) | Bytes |
 |---|---|---|---:|
 | RT-11 low memory, vectors and job header | 000000 | 001000 | 512 |
-| Resident code/data | 001000 | 132020 | 45584 |
-| Resident reserve | 132020 | 132400 | **240** |
+| Resident code/data | 001000 | 132140 | 45664 |
+| Resident reserve | 132140 | 132400 | **160** |
 | Downward game stack | 132400 | 133400 | 512 |
 | One CPU working hull | 133400 | 134400 | 512 |
 | Overlay window | 134400 | 146400 | 5120 |
@@ -43,8 +43,8 @@ to stage the 772-byte commander plus zero padding. Loading validates file
 length and record signature/version before replacing the live commander.
 No save transfer buffer occupies the active overlay or USR swap region.
 
-After `PP_MAIN_LOAD`, live buffers overwrite 113654..122244.
-Published PPU words start at 122474: **152 bytes remain**.
+After `PP_MAIN_LOAD`, live buffers overwrite 113760..122350.
+Published PPU words start at 122614: **164 bytes remain**.
 Nothing may read these buffers before initialization; the SAV initially
 contains PPU instructions there. The reused buffers are `UNIV`, `NPSHOT`,
 `SVX`, `SVY`, `SVOK`/`SVNEED`/`CO_R`, `SVLIST`, `SLIST`, `EXPTAB`,
@@ -110,7 +110,7 @@ PPU cache, never from the CPU window.
 
 ## PPU and video planes
 
-The copied PPU program is 3488 bytes, followed in its firmware allocation by a
+The copied PPU program is 3500 bytes, followed in its firmware allocation by a
 2392-byte backup of the terminal line-table region (02300..07027).
 This backup is allocated dynamically and is not stored in the CPU image.
 Saved scalar state includes firmware row/scroll settings, receiver-enable

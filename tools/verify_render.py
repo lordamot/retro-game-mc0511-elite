@@ -9,6 +9,7 @@ source image or a player's disk.
 import math
 import random
 import struct
+from pathlib import Path
 from PIL import Image
 import syms
 
@@ -123,6 +124,177 @@ def check_render(v):
     check_walk_pairs(v, t, out)
     check_system_font(v, t, out)
     check_docking_geometry(v, t, out)
+    check_hull_fetch(v, t, out)
+    check_face_visibility(v, t, out)
+    check_walk_pixels(v, t, out)
+
+
+def check_hull_fetch(v, t, out):
+    """All bank hulls: exact copy length, cached repeat, registers and stack."""
+    import shiplib
+    from ships_gen import bank_layout, record_bytes
+    a = lambda key: int(t[key], 8)
+    ships = shiplib.read_dir(v.ROOT / 'src/res/legend/ships')
+    _, offsets = bank_layout(ships)
+    cases = [(ship.key, a('HBANK_ADDR') + offset, record_bytes(ship))
+             for ship, offset in zip(ships, offsets) if not ship.geometry]
+    errors, register_errors = [], []
+    for batch in range(0, len(cases), 20):
+        subset = cases[batch:batch+20]
+        entry, dest = a('OVL_BASE'), a('OVL_BASE') + 4096
+        code, stops = [], []
+        for _, bank, _ in subset:
+            code += [0o012737, 0, a('HULL_CACHED'),
+                     0o012701, a('HULL_BASE'), 0o012702, 256,
+                     0o012700, 0xa55a, 0o010021, 0o077202]
+            for reg in range(1, 6):
+                code += [0o012700 + reg, 1000 + reg]
+            code += [0o010637, dest+12, 0o012700, bank, 0o004737, a('HULL_FETCH'),
+                     0o012700, bank, 0o004737, a('HULL_FETCH')]
+            for reg in range(6):
+                code += [0o010037 + (reg << 6), dest+2*reg]
+            code += [0o010637, dest+14]
+            stops.append(entry + len(code)*2)
+            code.append(0o000777)
+        assert len(code)*2 < 4096
+        script = list(v.BOOT) + ['run 20']
+        script += [v.poke_at(entry+2*i, word) for i, word in enumerate(code)]
+        script += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
+                   v.poke_at(a('DRAW_HARNESS')+2, entry), v.poke_at(a('HARN_GO'), 1)]
+        for i, stop in enumerate(stops):
+            prefix = out / f'hull-fetch-{batch+i}'
+            script += [f'runpc {stop:o} 100', f"peekcpu {t['HULL_CACHED']}",
+                       f"dumpcpu {t['HULL_BASE']} 512 {prefix}.bin",
+                       f'dumpcpu {dest:o} 16 {prefix}-regs.bin']
+            if i+1 < len(stops):
+                script.append(v.poke_at(stop, 0o000240))
+        log = v.run_emu(script + ['quit'], v.fresh_disk('hull-fetch'))
+        cached = [int(n, 8) for n in v.PEEK.findall(log)]
+        for i, (key, bank, record) in enumerate(subset):
+            prefix = out / f'hull-fetch-{batch+i}'
+            got = prefix.with_suffix('.bin').read_bytes()
+            expected = record + b'\x5a\xa5' * ((512-len(record))//2)
+            if got != expected or cached[i] != bank:
+                errors.append(key)
+            regs = struct.unpack('<8H', Path(str(prefix)+'-regs.bin').read_bytes())
+            if regs[:6] != (a('HULL_BASE'), 1001, 1002, 1003, 1004, 1005) or regs[6] != regs[7]:
+                register_errors.append((key, regs))
+    v.check('all 55 hull fetches and cached repeats preserve exact bytes and unused tail',
+            len(cases) == 55 and not errors, str(errors))
+    v.check('all hull fetches preserve R1..R5 and stack balance',
+            not register_errors, str(register_errors[:3]))
+
+
+def check_face_visibility(v, t, out):
+    """Check face-dot signs with signed products, zero normals and wrapping."""
+    a = lambda key: int(t[key], 8)
+    signed = lambda n: (n + 32768) % 65536 - 32768
+    rng = random.Random(514)
+    for batch in range(3):
+        code, expected = [], []
+        entry, dest = a('OVL_BASE'), a('OVL_BASE')+4096
+        def mov(addr, value):
+            code.extend([0o012737, value & 65535, addr])
+        for case in range(8):
+            matrix = [rng.randint(-16384, 16384) for _ in range(9)]
+            pos = [rng.randint(-32768, 32767) for _ in range(3)]
+            normals = [[rng.randint(-32768, 32767) for _ in range(3)] for _ in range(16)]
+            normals[:3] = [[0, 0, 0], [0, 0, 160], [0, 0, -160]]
+            if case == 0:
+                matrix = [16384 if j in (0, 4, 8) else 0 for j in range(9)]
+                pos = [(-32768, 0, 32767)[batch]] * 3
+            if batch == case == 0:
+                normals = []
+            for j, value in enumerate(matrix):
+                mov(a('PMAT')+2*j, value)
+            for key, value in zip(('SD_X', 'SD_Y', 'SD_Z'), pos):
+                mov(a(key), value)
+            for j, value in enumerate(n for normal in normals for n in normal):
+                mov(a('HULL_BASE')+2*j, value)
+            mov(a('SD_MAT'), a('PMAT'))
+            mov(a('SD_NP'), a('HULL_BASE'))
+            mov(a('SD_NF'), len(normals))
+            code += [0o004737, a('FACE_VIS'), 0o013737, a('SD_VIS'), dest+2*case]
+            centre = [signed((sum(matrix[3*j+i]*pos[j] for j in range(3)) & 0xffffffff) >> 14)
+                      for i in range(3)]
+            mask = sum(1 << i for i, normal in enumerate(normals)
+                       if (sum(x*y for x, y in zip(normal, centre)) & 0xffffffff) >= 0x80000000)
+            expected.append(mask if normals else 65535)
+        mov(a('BENCH_RAM'), 1)
+        code.append(0o000777)
+        assert len(code)*2 < 4096
+        patch = [v.poke_at(entry+2*i, word) for i, word in enumerate(code)]
+        patch += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
+                  v.poke_at(a('DRAW_HARNESS')+2, entry),
+                  v.poke_at(a('BENCH_RAM'), 0), v.poke_at(a('HARN_GO'), 1)]
+        dump = out / f'face-visibility-{batch}.bin'
+        log = v.run_emu(list(v.BOOT) + ['run 20'] + patch + [
+            'run 100', f"peekcpu {t['BENCH_RAM']}", f'dumpcpu {dest:o} 16 {dump}', 'quit'],
+            v.fresh_disk('face-visibility'))
+        got = list(struct.unpack('<8H', dump.read_bytes()))
+        v.check(f'face visibility matches signed 32-bit model, batch {batch}',
+                got == expected and [int(n, 8) for n in v.PEEK.findall(log)] == [1], str(got))
+
+
+def check_walk_pixels(v, t, out):
+    """Packed line decoding and XOR pixels for every octant and start bit."""
+    a = lambda key: int(t[key], 8)
+    lines = []
+    for bit in range(8):
+        for dx, dy in ((0, 0), (0, 63), (7, 0), (8, 0), (127, 0), (63, 63),
+                       (63, 15), (63, 16), (63, 7), (63, 8), (7, 63), (8, 63)):
+            for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1)):
+                lines.append(((320+bit, 100), (320+bit+sx*dx, 100+sy*dy)))
+    lines += [((0, 0), (639, 0)), ((639, 199), (0, 199)),
+              ((0, 0), (639, 199)), ((639, 199), (0, 0))]
+    lines = list(dict.fromkeys(lines))  # duplicate XOR walks would hide errors
+    for batch in range(0, len(lines), 200):
+        subset = lines[batch:batch+200]
+        entry, records = a('OVL_BASE'), a('OVL_BASE')+1024
+        code = [0o004737, a('SEG_RESET'), 0o004737, a('CLS_SCREEN'),
+                0o012704, records, 0o012705, len(subset),
+                0o004737, a('RING_PUTR'), 0o077503,
+                0o004737, a('RING_WAIT'), 0o012737, 1, a('BENCH_RAM'), 0o000777]
+        patch = [v.poke_at(entry+2*i, word) for i, word in enumerate(code)]
+        pixels = set()
+        for i, ((x, y), (ex, ey)) in enumerate(subset):
+            dx, dy = abs(ex-x), abs(ey-y)
+            sx, sy = (1 if ex >= x else -1), (1 if ey >= y else -1)
+            packed = (dx | ((x & 7) << 10) | (32768 if sx < 0 else 0),
+                      dy | (32768 if sy < 0 else 0), a('VRAM')+80*y+x//8)
+            patch += [v.poke_at(records+6*i+2*j, word) for j, word in enumerate(packed)]
+            major, minor = max(dx, dy), min(dx, dy)
+            error = major//2
+            for step in range(major+1):
+                pixels.symmetric_difference_update([(x, y)])
+                if step == major:
+                    break
+                if dx >= dy:
+                    x += sx
+                else:
+                    y += sy
+                error -= minor
+                if error < 0:
+                    error += major
+                    if dx >= dy:
+                        y += sy
+                    else:
+                        x += sx
+        patch += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
+                  v.poke_at(a('DRAW_HARNESS')+2, entry),
+                  v.poke_at(a('BENCH_RAM'), 0), v.poke_at(a('HARN_GO'), 1)]
+        bmp = out / f'walk-octants-{batch}.bmp'
+        log = v.run_emu(list(v.BOOT) + ['run 20'] + patch + [
+            'run 200', f"peekcpu {t['BENCH_RAM']}", f'screenshot {bmp}', 'quit'],
+            v.fresh_disk('walk-octants'))
+        im = Image.open(bmp).convert('RGB').crop((0, 0, 640, 200))
+        im.save(bmp.with_suffix('.png'))
+        expected = Image.new('RGB', (640, 200))
+        for point in pixels:
+            expected.putpixel(point, (255, 255, 255))
+        v.check(f'packed walks match exact XOR pixels in all octants, batch {batch//200}',
+                im.tobytes() == expected.tobytes() and
+                [int(n, 8) for n in v.PEEK.findall(log)] == [1])
 
 
 def geometry_frames(v, t, out, name, frames):

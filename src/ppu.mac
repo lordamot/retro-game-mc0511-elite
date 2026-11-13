@@ -612,7 +612,21 @@ PP_DRAIN:	MOV	PP_TAIL,R0
 		INC	@#PADDR
 		MOV	@#PDATA,R2	; dy and its sign
 		INC	@#PADDR
-		MOV	@#PDATA,PP_LADDR
+		MOV	@#PDATA,R0	; starting plane byte
+		TST	R2
+		BNE	15$
+		TST	R1
+		BMI	15$
+		MOV	R1,R4		; rightward horizontal walks need only
+		BIC	#176000,R4	; address, dx and mask, all in registers
+		SWAB	R1
+		ASR	R1
+		BIC	#177761,R1	; bits 10..12 become a word-table offset
+		ADD	PPBT,R1
+		MOV	@R1,R1
+		CALL	PP_FLAT_R
+		BR	4$
+15$:		MOV	R0,PP_LADDR
 		MOV	#1,R3		; the x step
 		TST	R1
 		BPL	2$
@@ -621,24 +635,13 @@ PP_DRAIN:	MOV	PP_TAIL,R0
 		MOV	R1,R0
 		BIC	#176000,R1
 		MOV	R1,PP_LADX
-		SWAB	R0		; the bit, bits 10-12 down to 0-2,
-		ASR	R0		;   and the mask out of PP_BITS
-		ASR	R0
-		BIC	#177770,R0
+		SWAB	R0		; bits 10..12 become bits 1..3: a word
+		ASR	R0		; offset avoids MOVB sign extension
+		BIC	#177761,R0
 		ADD	PPBT,R0
-		MOVB	@R0,R0
-		BIC	#177400,R0	; MOVB sign-extends the top bit
+		MOV	@R0,R0
 		MOV	R0,PP_LMASK
-		TST	R2
-		BNE	35$
-		TST	PP_LSX
-		BMI	35$
-		MOV	R0,R1		; flat rightward spans need no Bresenham state
-		MOV	PP_LADDR,R0
-		MOV	PP_LADX,R4
-		CALL	PP_FLAT_R
-		BR	4$
-35$:		MOV	#SCRWB,R3	; the y step
+		MOV	#SCRWB,R3	; the y step
 		TST	R2
 		BPL	3$
 		MOV	#-SCRWB,R3
@@ -671,7 +674,7 @@ PP_BUSYT:	.WORD	0		;   of all of them, in ticks
 PPAV_R:		.WORD	0		; where the two tables below landed
 PPAV_L:		.WORD	0
 PPBT:		.WORD	0		; ... and PP_BITS
-PP_BITS:	.BYTE	1,2,4,10,20,40,100,200	; a bit's mask, by its number
+PP_BITS:	.WORD	1,2,4,10,20,40,100,200	; a bit's mask, by doubled index
 PP_LADX:	.WORD	0		; the walk, in record order
 PP_LADY:	.WORD	0
 PP_LSX:		.WORD	0

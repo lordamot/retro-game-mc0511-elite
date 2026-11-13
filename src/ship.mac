@@ -381,14 +381,9 @@ FACE_VIS:	MOV	#177777,SD_VIS		; no normals: nothing is culled
 		MOV	SD_NF,SD_FI		; faces left
 		MOV	SD_NP,R4
 		MOV	#1,R5			; this face's bit
-10$:		CLR	R0			; the total, in R0:R1 rather than
-		CLR	R1			; in memory - see MATVEC
-		MOV	(R4)+,R2		; nx * Px
-		MOV	VOUT,R3
-		MUL	R3,R2
-		ADD	R3,R1
-		ADC	R0
-		ADD	R2,R0
+10$:		MOV	(R4)+,R0		; nx * Px starts the 32-bit total
+		MOV	VOUT,R1			; directly, as in MATVEC
+		MUL	R1,R0
 
 		MOV	(R4)+,R2		; ny * Py
 		MOV	VOUT+2,R3

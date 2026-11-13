@@ -49,15 +49,18 @@ implemented. These limitations must remain visible in player documentation.
 
 ## Evidence limits
 
-The v0.8.2 station/tunnel renderer fixes passed their build, 173 rule/renderer
-assertions and 4 docking assertions on 2026-11-13. The full run was
-terminated before completion. The preceding v0.8.1 build passed all 713
+The v0.8.2 renderer optimizations passed their build, 180 rule/renderer,
+11 hull and 9 PPU assertions on 2026-11-13. Before/after comparisons found
+287 identical segments across eleven frozen scenes; one scene was skipped
+because it did not freeze. This is focused verification, not a full-suite
+pass. The preceding v0.8.1 build passed all 713
 assertions in one complete `make verify` run on 2026-11-11, including palette,
 native RT-11, gameplay, presentation and exact renderer checks.
 [Testing](testing.md) records build identities and coverage limits.
 
-The latest whole-game benchmark measures the RT-11 renderer at 9.38 fps
-still and 5.42 turning with the sixteen-slot fixture and 50 Hz emulator.
+The latest whole-game benchmark measures the RT-11 renderer at 9.68 fps
+still, 7.60 moving and 5.57 turning with the sixteen-slot fixture and 50 Hz
+emulator. Sparse turning reaches 6.85 fps with five occupied slots.
 See [rendering](rendering.md) for the workload, comparison and limits.
 Memory figures are a build snapshot, not a promise that later edits fit
 unchanged.

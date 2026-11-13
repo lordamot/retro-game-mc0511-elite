@@ -213,29 +213,41 @@ HULL_FETCH:
  BLO 9$
  CMP R0,HULL_CACHED
  BEQ 8$
- MOV R1,-(SP)
  MOV R2,-(SP)
  MOV R3,-(SP)
  MOV R0,HULL_CACHED
- MOV R0,R1
+ MOV R0,@#VADDR
  MOV #HULL_BASE,R2
  MOV #4,R3
-1$: MOV R1,@#VADDR
- MOV @#VDATA,(R2)+
- INC R1
+1$: MOV @#VDATA,(R2)+
+ INC @#VADDR
  SOB R3,1$
  MOV HULL_BASE,R3
  ADD HULL_BASE+6,R3
  MUL #3,R3
  ADD HULL_BASE+2,R3
  ADD HULL_BASE+2,R3
-2$: MOV R1,@#VADDR
+ ; Amortize the loop branch over eight words, then copy the exact tail.
+ ; R0 is scratch here; the public result is HULL_BASE below.
+ MOV R3,R0
+ BIC #177770,R0
+ ASR R3
+ ASR R3
+ ASR R3
+ BEQ 4$
+2$:
+ .REPT 8.
  MOV @#VDATA,(R2)+
- INC R1
+ INC @#VADDR
+ .ENDR
  SOB R3,2$
- MOV (SP)+,R3
+4$: MOV R0,R3
+ BEQ 6$
+5$: MOV @#VDATA,(R2)+
+ INC @#VADDR
+ SOB R3,5$
+6$: MOV (SP)+,R3
  MOV (SP)+,R2
- MOV (SP)+,R1
 8$: MOV #HULL_BASE,R0
 9$: RETURN
 

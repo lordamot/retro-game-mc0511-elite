@@ -46,6 +46,10 @@ all sixteen tunnel rotations against closed polygons and exact XOR pixels,
 both station models from front, rear and oblique views, and clipped slot
 and tunnel outlines against independently submitted edges. Those proofs
 complement screenshots; none alone establishes all rendering behavior.
+Hull-copy probes check all 55 bank records, all eight remainder lengths,
+unused destination bytes, cached repeats, preserved registers and stack
+balance. Face probes compare signed, wrapped dot products with an integer
+model; packed-line probes check every octant and start bit against XOR pixels.
 
 ## Isolation and sequencing
 
@@ -125,16 +129,19 @@ reruns and host-only checks. Do not combine earlier passing groups into a
 claim that one complete run passed. Disposable logs in `tmp/` are evidence
 for a local session, not enduring dependencies of the project documentation.
 
-The v0.8.2 build with station/tunnel renderer fixes passed `make build` on
+The v0.8.2 build with renderer speed optimizations passed `make build` on
 2026-11-13. Completed focused runs of `python3 -u tools/verify_build.py`
-passed with `--only rules` (173 assertions, including 28 new station/tunnel
-checks) and `--only docking` (4 assertions), both exit 0. Local logs are
-`tmp/verify-renderer-rules.log` and `tmp/verify-renderer-docking.log`.
-The attempted full run was terminated with exit 143 before completion;
-it is not a full-suite pass. Build identities:
+passed with `--only rules` (180 assertions, including the station/tunnel
+checks and seven hull-copy, face-sign and packed-line checks), `--only hulls`
+(11 assertions) and `--only ppu` (9 assertions), all exit 0. Local logs are
+`tmp/render-speed/verify-{rules,hulls,ppu}.log`. Before/after
+`seg_snapshot.py --scenes 12` captures matched all 287 segments across the
+eleven scenes frozen in both builds; scene 0 was skipped because it did not
+freeze. Exact pixel checks passed separately in the rules group. The full
+suite was not rerun for this build. Build identities:
 
-- `ELITE.SAV` SHA-256: `45233780123b89d151e20b1995a42f0fd0f65cfee74e8bf24a8cb163ec971922`
-- `ELITE.DAT` SHA-256: `ac8bb3b09f70847405f63121b8ca1d223b859b9c90cafec3b968a87cb103d4ca`
+- `ELITE.SAV` SHA-256: `f1a3f741786a77a291d83bd3786cedb298f1605fdc5308e65165880d427fb99e`
+- `ELITE.DAT` SHA-256: `06377cb0de783dd1b782dd59eded83a862660358b5441d884e9c93ae4f8bb6ba`
 
 The preceding v0.8.1 build passed one complete `make verify` run on 2026-11-11:
 **713 assertions passed, zero failed, exit status 0**. Build identities:
