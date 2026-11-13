@@ -294,7 +294,7 @@ VIEW_NAME:	MOV	VIEW_DIR,R0
 ; =========================================================================
 ; UNIV_STEP - advance the whole universe one frame.
 ; =========================================================================
-US_RS:		.WORD	0		; sin and tan/2 of the commander's
+US_RS:		.WORD	0		; Q16 sin and tan/2 of the commander's
 US_RT:		.WORD	0		;   roll this frame, and of his
 US_PS:		.WORD	0		;   pitch: worked out once, used for
 US_PT:		.WORD	0		;   every slot

@@ -346,57 +346,44 @@ MAT_IDENT:	MOV	R5,R0
 		MOV	#Q1,20(R5)		; offset 16. = element m8
 		RETURN
 
-; SHEAR - one shear of ROT2's three: DST -= or += (COEF * SRC) >> 14,
-; with SRC and DST registers holding the addresses and COEF the Q14
-; coefficient in memory.  Touches R2 and R3 only.
+; SHEAR - one rounded shear of ROT2's three. SRC and DST hold addresses;
+; COEF is the original Q14 coefficient multiplied by four, stored as Q16.
+; The high product word is the result: (4*c*x + 32768) >> 16 equals
+; (c*x + 8192) >> 14, including negative rounding. Touches R2/R3 only.
 .MACRO	SHEAR	SRC, COEF, DST, OP
 		MOV	@SRC,R2
 		MOV	COEF,R3
 		MUL	R3,R2			; R2:R3 = the product
-		ADD	#20000,R3		; round: half a unit of Q14 ...
+		ADD	#100000,R3		; round the Q16 product
 		ADC	R2
-		ASL	R3			; ... then Q28 -> Q14 on the pair
-		ROL	R2
-		ASL	R3
-		ROL	R2
 		OP	R2,@DST
 .ENDM
 
-; SHEAR32 - the same on a 32-bit pair: DST(32) OP= (COEF * SRC(32)) >> 14,
+; SHEAR32 - the same on a 32-bit pair: DST(32) OP= (COEF * SRC(32)) >> 16,
 ; rounded.  SRC and DST are registers holding the address of the LOW
 ; word; the high word is U.HI bytes on, which is how a slot keeps its
 ; position (defs.mac).  CARRY is ADC for an ADD and SBC for a SUB.
 ;
 ; c*b for a 32-bit b = bh:bl is (c*bh) << 16 + c*bl with bl UNSIGNED, and
 ; MUL is signed: so the low product gets c << 16 added back when bl had
-; its top bit set.  Then (c*b) >> 14 = (c*bl) >> 14 + (c*bh) << 2: the
-; first fits sixteen bits because the coefficients are small (sin and
-; tan/2 of the stick's angle, under 2^11 in Q14), the second is exact
-; in thirty-two.  Twelve instructions more than SHEAR; only positions
-; pay it, and only for the commander's turn.
+; its top bit set. Then (c*b) >> 16 = (c*bl) >> 16 + c*bh, with c in
+; Q16. The rounded low contribution fits signed sixteen bits; the high
+; contribution and destination keep all thirty-two bits. Only positions
+; pay for the high word, and only for the commander's turn.
 .MACRO	SHEAR32	SRC, COEF, DST, OP, CARRY, ?L
 		MOV	U.HI(SRC),R2		; bh
 		MOV	COEF,R3
 		MUL	R3,R2			; R2:R3 = c*bh
-		ASL	R3			; << 2
-		ROL	R2
-		ASL	R3
-		ROL	R2
 		MOV	R2,-(SP)		; the high part's contribution
 		MOV	R3,-(SP)
 		MOV	@SRC,R2			; bl, as MUL sees it: signed
 		MOV	COEF,R3
 		MUL	R3,R2
 		TST	@SRC
-		BPL	L			; (a generated label: `.+4` skipped
-		ADD	COEF,R2			;   into the middle of this two-word
-L:		ADD	#20000,R3		;   ADD, and a turn crashed the game)
-					; bl was unsigned: + c << 16; round
+		BPL	L
+		ADD	COEF,R2			; bl was unsigned: + c << 16
+L:		ADD	#100000,R3		; round the Q16 low product
 		ADC	R2
-		ASL	R3			; (c*bl) >> 14, in R2
-		ROL	R2
-		ASL	R3
-		ROL	R2
 		MOV	R2,R3			; the delta, sign-extended ...
 		SXT	R2
 		ADD	(SP)+,R3		; ... plus the high contribution
@@ -440,7 +427,7 @@ L:		ADD	#20000,R3		;   ADD, and a turn crashed the game)
 ; how docking kept working.
 
 ; Both entries take R0 = k and work sin k and tan k/2 out once, for the
-; three pairs; the _P entries take them ready-made in RT_S and RT_T,
+; three pairs; the _P entries take them ready-made in Q16 in RT_S/RT_T,
 ; which is what UNIV_STEP does, once a frame for the whole sky, rather
 ; than once a ship.
 MAT_TURN:	CALL	TURN_SET
@@ -494,8 +481,8 @@ MT_GO:		MOV	R5,R4
 ; a Q14 matrix is nine percent in a hundred seconds of turning.
 ; Clobbers R0..R5.
 ; =========================================================================
-RT_S:		.WORD	0		; sin k, Q14
-RT_T:		.WORD	0		; tan k/2, Q14
+RT_S:		.WORD	0		; Q14 sin k scaled by four (Q16)
+RT_T:		.WORD	0		; Q14 tan k/2 scaled by four (Q16)
 
 
 ROT2:		MOV	R0,R4			; &a
@@ -516,9 +503,11 @@ ROT2L:		MOV	R0,R4
 		RETURN
 
 ; =========================================================================
-; TURN_SET - R0 = k, an angle in Q14: leave sin k in RT_S and tan k/2 in
-; RT_T for ROT2.  The series are good to a radian; the game's largest k
-; is 2000, an eighth of that.  Preserves R1 and R5.
+; TURN_SET - R0 = k in Q14, -2000..2000: leave sin k and tan k/2 in
+; RT_S/RT_T as Q16. Compute the original Q14 series first, then scale its
+; rounded coefficients by four; extra precision would change rotations.
+; All game angles fit this range and the scaled coefficients fit signed
+; words. Preserves R1 and R5.
 ; =========================================================================
 TURN_SET:	MOV	R0,R2
 		MOV	R0,R3
@@ -539,13 +528,17 @@ TURN_SET:	MOV	R0,R2
 		DIV	#6,R2			; k^3 / 6
 		MOV	R0,RT_S
 		SUB	R2,RT_S			; s = k - k^3/6
+		ASL	RT_S			; retain the Q14 result, scaled by four
+		ASL	RT_S
 		MOV	R4,R3
 		SXT	R2
 		DIV	#24.,R2			; k^3 / 24
 		MOV	R0,R3
 		ASR	R3			; k/2
 		ADD	R2,R3
-		MOV	R3,RT_T			; t = k/2 + k^3/24
+		ASL	R3			; t = k/2 + k^3/24, then Q16
+		ASL	R3
+		MOV	R3,RT_T
 		RETURN
 
 ; =========================================================================

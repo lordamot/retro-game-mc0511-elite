@@ -2295,11 +2295,20 @@ def check_missions6():
               v[0] == 3 and w[0] == 0, f"lock {v[0]} held, {w[0]} ours")
 
     # 2. the troops: in the occupied zone, the craft lands; the war falls
-    #    back until this system is out of it; the station is gone
+    #    back until this system is out of it; the station is gone.
+    # Keep the planet beyond the barrier's range and the bay unmanned.
+    # Clearing existing traffic alone lets PLANET_BARRIER spawn Targons
+    # which can destroy the craft before it reaches the station.
+    landing_only = [poke_at(int(slot_field(t, 0, 'U.Z'), 8), 0),
+                    poke_at(int(slot_field(t, 0, 'U.ZH'), 8), 1),
+                    poke_at(int(slot_field(t, 2, 'U.FLAGS'), 8),
+                            int(t['UF_STATION'], 8) | int(t['UF_HOSTILE'], 8) |
+                            int(t['UF_DERELICT'], 8))]
     L = taken[0]
-    v = run(fly + ahead + at(L) + [poke_byte(t, "P_M3", 4), poke_byte(t, "P_M1", 3, 1),
+    v = run(fly + ahead + landing_only + at(L) + [poke_byte(t, "P_M3", 4), poke_byte(t, "P_M1", 3, 1),
                                    poke_byte(t, "P_WAR", 0, 2), poke_at(a["MISS_KIND"], a["MF_DESCENT"]),
-                                   poke_at(a["MISS_LOCK"], 3), "press 113", "run 200",
+                                   poke_at(a["MISS_LOCK"], 3), "press 113",
+                                   f"runpc {t['MS_LANDING']} 600", ui_ready(t, frames=2),
                                    peek_byte(t, "P_WAR"), peek_byte(t, "P_WAR", 2), peek_byte(t, "P_M3"),
                                    peek_byte(t, "P_M1", 1), f"peekcpu {slot_field(t, 2, 'U.TYPE')}",
                                    f"peekcpu {slot_field(t, 2, 'U.FLAGS')}"])

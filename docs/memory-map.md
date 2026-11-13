@@ -12,8 +12,8 @@ generated hull tables and `tools/build_elite.py`.
 | Region | Start | End (exclusive) | Bytes |
 |---|---|---|---:|
 | RT-11 low memory, vectors and job header | 000000 | 001000 | 512 |
-| Resident code/data | 001000 | 132012 | 45578 |
-| Resident reserve | 132012 | 132400 | **246** |
+| Resident code/data | 001000 | 131662 | 45490 |
+| Resident reserve | 131662 | 132400 | **334** |
 | Downward game stack | 132400 | 133400 | 512 |
 | One CPU working hull | 133400 | 134400 | 512 |
 | Overlay window | 134400 | 146400 | 5120 |
@@ -43,8 +43,8 @@ to stage the 772-byte commander plus zero padding. Loading validates file
 length and record signature/version before replacing the live commander.
 No save transfer buffer occupies the active overlay or USR swap region.
 
-After `PP_MAIN_LOAD`, live buffers overwrite 113756..122346.
-Published PPU words start at 122466: **80 bytes remain**.
+After `PP_MAIN_LOAD`, live buffers overwrite 113626..122216.
+Published PPU words start at 122336: **80 bytes remain**.
 Nothing may read these buffers before initialization; the SAV initially
 contains PPU instructions there. The reused buffers are `UNIV`, `NPSHOT`,
 `SVX`, `SVY`, `SVOK`/`SVNEED`/`CO_R`, `SVLIST`, `SLIST`, `EXPTAB`,

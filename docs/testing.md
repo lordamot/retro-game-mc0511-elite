@@ -53,6 +53,11 @@ model; packed-line probes check every octant and start bit against XOR pixels.
 Horizontal spans get separate rows for lengths around byte boundaries and
 long runs in both directions. Line and queue probes compare all 288 screen
 rows, including the untouched dashboard band.
+Rotation probes check 47 coefficient-generation cases, 109 signed 16-bit
+and 172 signed 32-bit three-shear cases against the original Q14 integer
+model. They include sign/word boundaries, wrapping, untouched coordinates,
+preserved `TURN_SET` registers and stack balance. A separate ship probe
+checks seven visible, empty and rejected paths for cursor cleanup.
 
 ## Isolation and sequencing
 
@@ -112,6 +117,9 @@ counters and correct byte halves. Recharge batches are compared at
 automatic repair inputs are seeded at `PILOT_JUMP`, after tunnel random
 draws. The fleeing probe waits for eight actual `SHIP_HURT` entries and
 verifies each fourteen-point drop in faith before checking escape motion.
+The troop-landing probe keeps the planet beyond barrier range, leaves the
+bay unmanned and waits for `MS_LANDING`; clearing existing traffic alone
+does not prevent fresh patrols from destroying the craft.
 Keep a portal outside docking range when testing its appearance;
 wait for a completed jump when testing entry. The [caveats](caveats.md)
 reference lists common errors.
@@ -134,15 +142,16 @@ reruns and host-only checks. Do not combine earlier passing groups into a
 claim that one complete run passed. Disposable logs in `tmp/` are evidence
 for a local session, not enduring dependencies of the project documentation.
 
-The v0.8.2 build with PPU line and queue optimizations passed `make build`
+The v0.8.2 build with rotation and edge-cursor optimizations passed `make build`
 and one complete `python3 -u tools/verify_build.py` run on 2026-11-13:
-**753 assertions passed, zero failed, exit status 0**. This includes native
+**766 assertions passed, zero failed, exit status 0**. This includes native
 RT-11, palette, gameplay, presentation and exact renderer checks, with the
-fleeing fixture observing eight actual hits. The local full-run log is
-`tmp/render-speed2/verify-full-final.log`. Build identities:
+fleeing fixture observing eight actual hits and the troop-landing fixture
+isolated from patrol and bay spawns. The local full-run log is
+`tmp/render-speed3/verify-full-final.log`. Build identities:
 
-- `ELITE.SAV` SHA-256: `1e0dbdaa4e9d33ac81c1a0aafb839270d6c1b09d823cf4daf29d807c69750851`
-- `ELITE.DAT` SHA-256: `94814c555d0c15081748898a23652a484bd4fe0c4b1e131d6dad5168c6b648b9`
+- `ELITE.SAV` SHA-256: `3e81da8ef34afd1baf9ae6af6de873f9e499a4ccf781d1d2b051f09dd5028156`
+- `ELITE.DAT` SHA-256: `09eb93152bfb4f27ff054cbfb16d6a943902dbbf409a90e679e2bd69b6946ed8`
 
 The retired 1985 commodity-table comparison was skipped because that table
 is no longer a maintained resource; Legend resource round trips passed.

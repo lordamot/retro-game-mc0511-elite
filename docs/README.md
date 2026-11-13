@@ -49,16 +49,16 @@ implemented. These limitations must remain visible in player documentation.
 
 ## Evidence limits
 
-The v0.8.2 PPU line and queue optimizations passed their build and all 753
+The v0.8.2 rotation and edge-cursor optimizations passed their build and all 766
 assertions in one complete `tools/verify_build.py` run on 2026-11-13,
 including palette, native RT-11, gameplay, presentation and exact renderer
 checks. Before/after comparisons found 287 identical segments across eleven
 frozen scenes; one scene was skipped because it did not freeze.
 [Testing](testing.md) records build identities and coverage limits.
 
-The latest whole-game benchmark measures the RT-11 renderer at 9.68 fps
-still, 7.60 moving and 5.78 turning with the sixteen-slot fixture and 50 Hz
-emulator. Sparse turning reaches 7.23 fps with five occupied slots.
+The latest whole-game benchmark measures the RT-11 renderer at 9.69 fps
+still, 7.60 moving and 5.95 turning with the sixteen-slot fixture and 50 Hz
+emulator. Sparse turning reaches 7.40 fps with five occupied slots.
 See [rendering](rendering.md) for the workload, comparison and limits.
 Memory figures are a build snapshot, not a promise that later edits fit
 unchanged.

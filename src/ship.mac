@@ -635,14 +635,15 @@ SHIP_DRAW:	MOV	SD_MODEL,R0
 
 ; ---- and now the edges --------------------------------------------------
 ; Only the ones VERT_MARK kept, as pairs of vertex offsets.  The cursor
-; is kept in memory because SEG_LINE spends every register.
+; lives on the stack across SEG_LINE, avoiding a PC-relative address word
+; on each load/store; SEG_LINE spends every register.
 		MOV	SD_NL,SD_I
 		BEQ	29$
-		MOV	#SLIST,SD_EP
-20$:		MOV	SD_EP,R0
+		MOV	#SLIST,-(SP)
+20$:		MOV	@SP,R0
 		MOVB	(R0)+,R1		; the two ends, word offsets
 		MOVB	(R0)+,R2
-		MOV	R0,SD_EP
+		MOV	R0,@SP
 		TST	SVOK(R1)
 		BEQ	28$
 		TST	SVOK(R2)
@@ -654,6 +655,7 @@ SHIP_DRAW:	MOV	SD_MODEL,R0
 		CALL	SEG_LINE
 28$:		DEC	SD_I
 		BGT	20$
+		TST	(SP)+			; discard the edge cursor
 29$:
 		CLR	NOCLIP			; nothing outside this routine may
 		RETURN				;   ever find it set

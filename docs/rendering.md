@@ -37,6 +37,9 @@ zero-face geometry remains visible. A blueprint radius is not a strict
 bounding sphere; `SHIP_CONE` allows twice the recorded radius.
 Each face's first signed product initializes the 32-bit dot-product sum;
 the other two products retain the same carry and wrapping arithmetic.
+The edge pass retains its list cursor on the stack across `SEG_LINE`,
+avoiding a PC-relative address word on each cursor load/store. It releases
+that word after the last edge; an empty list never pushes it.
 
 The station's added docking rectangle lies on the negative-z face, opposite
 the entrance in the Legend blueprint. `STATION_SLOT` transforms the camera
@@ -55,6 +58,14 @@ stack balance are part of its contract.
 `ROT2` uses three shears. Replacing it with the two simultaneous small-angle
 updates introduces scale growth. Matrix optimizations must retain the
 exact integer results, not merely visually similar positions.
+`TURN_SET` accepts the game's Q14 angles in -2000..2000. It computes the
+original rounded Q14 sine and half-angle tangent, then multiplies those
+coefficients by four for Q16 storage in `RT_S`/`RT_T` and the per-frame
+`US_*` caches. The rounded multiply's high word then supplies each shear
+without four shifts for a 16-bit value or eight for a 32-bit position.
+The coefficients retain their original precision; matrices remain Q14,
+positions remain signed 32-bit, and every shear retains its own rounding
+and wrapping before the next one.
 
 ## Queue and pixels
 
@@ -115,36 +126,38 @@ not the shipped scene. The harness does not run at boot.
 
 ## Applicable baseline
 
-The PPU decoder, line-loop and queue optimizations were measured on
-2026-11-13 against the preceding renderer optimizations (`a47e45a`). Both builds
+The rotation-coefficient and edge-cursor optimizations were measured on
+2026-11-13 against the PPU line and queue build (`9933f5e`). Both builds
 used identical `bench.py --ticks 6000` fixtures and the same 50 Hz emulator:
 120 emulated seconds per run. The first three rows use `--fixed`; the last
 uses `--sparse --turning`, with only five occupied slots.
 
 | Workload | Before: frames / FPS | Optimized: frames / FPS | Gain |
 |---|---:|---:|---:|
-| Still | 1161 / 9.675 | 1161 / 9.675 | 0.0% |
+| Still | 1161 / 9.675 | 1163 / 9.692 | 0.2% |
 | Moving | 912 / 7.600 | 912 / 7.600 | 0.0% |
-| Turning | 668 / 5.567 | 693 / 5.775 | 3.7% |
-| Sparse turning | 822 / 6.850 | 868 / 7.233 | 5.6% |
+| Turning | 693 / 5.775 | 714 / 5.950 | 3.0% |
+| Sparse turning | 868 / 7.233 | 888 / 7.400 | 2.3% |
 
 Roster checks passed and ending screenshots were inspected. Local logs and
-images are `tmp/render-speed/long-final-{still,moving,turning,sparse}` for the
-baseline and `tmp/render-speed2/long-final-{still,moving,turning,sparse}` for
+images are `tmp/render-speed2/long-final-{still,moving,turning,sparse}` for the
+baseline and `tmp/render-speed3/long-edge-{still,moving,turning,sparse}` for
 the optimized build, with `.log`/`.png` suffixes. The drawing-only harness's
-100-frame workloads remain at 337 interrupts still (67.4 ms/frame) and drop
-from 633 to 605 turning (126.6 → 121.0 ms/frame, 4.4% less time).
-Harness rates exclude gameplay and are not flight FPS.
+100-frame workloads change from 337 to 336 interrupts still (67.4 → 67.2
+ms/frame) and from 605 to 582 turning (121.0 → 116.4 ms/frame, 3.8% less
+time). The still-flight difference is too small to claim a meaningful
+speedup. Harness rates exclude gameplay and are not flight FPS.
 
 Before/after segment captures match all 287 segments across eleven frozen
 scenes. One of the twelve requested scenes did not freeze and was skipped.
-The rules group independently verifies exact pixels, face signs, hull-copy
-contents, register preservation and the station/tunnel regressions; see
+The rules group independently verifies exact rotation arithmetic, pixels,
+face signs, hull-copy contents, stack/register preservation and the
+station/tunnel regressions; see
 [testing](testing.md) for the completed groups and build identities.
 
-The changes save 86 resident bytes, leaving 246 bytes free. Overlays are
-unchanged (the largest is 4959 bytes, leaving 161). The PPU program shrinks by
-84 bytes to 3416; 80 bytes remain between reused buffers and published words.
+The changes save 88 resident bytes, leaving 334 bytes free. Overlays are
+unchanged (the largest is 4959 bytes, leaving 161). The PPU program remains
+3416 bytes; 80 bytes remain between reused buffers and published words.
 These are emulator measurements, with frame-count boundary and fixture limits;
 they are not physical-hardware timing or a uniform speed guarantee.
 
@@ -184,17 +197,19 @@ Elite's immutable hull copy. Its other major gains have different prerequisites:
   vertices change with depth and orientation. Reusing per-object geometry
   would require explicit invalidation and a memory budget for retained state.
 
-At the earlier `7e5c359` baseline, 1200-tick fixed-scene PC samples placed
-about 15% of still-flight CPU time in vertex projection and 10% in hull
-fetching, while the PPU was mostly idle. Turning kept the drawing drain
-active for about 94% of the interval; roughly 25% of PPU samples were in
-record decoding and 47% in the three ordinary line-walk kernels. These
-coarse samples identified candidates, not speed gains.
+At the `9933f5e` baseline, 1200-tick fixed-scene PC samples placed about
+15% of still-flight CPU time in vertex projection, 7% in hull fetching and
+26% in ship/edge setup and bookkeeping, while the PPU was mostly idle.
+Turning kept the drawing drain active for about 84% of the interval;
+roughly 19% of PPU samples were in record decoding and 51% in ordinary
+line-walk kernels. Rotation routines took about 14.5% of CPU samples in
+the filled turning fixture and 6.5% in sparse turning. These samples
+precede the Q16 coefficient change and identify costs, not speed gains.
 Further turning improvements should target measured raster/queue costs or
 reduce the records submitted while preserving pixels and buffer ownership.
 
-Keep the eight-pixel-per-scanline span threshold. With the current kernels,
-four- and sixteen-pixel trials take 607 and 612 interrupts respectively in
+Keep the eight-pixel-per-scanline span threshold. On the `9933f5e` build,
+four- and sixteen-pixel trials took 607 and 612 interrupts respectively in
 the 100-frame turning harness, compared with 605 at eight pixels.
 Removing stars or bodies is useful only as an ablation: on the earlier
 `7e5c359` harness they cost about 8 and 44 ms/frame respectively; their

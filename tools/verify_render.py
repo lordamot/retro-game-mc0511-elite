@@ -45,8 +45,8 @@ def check_render(v):
                 axis = case % 3
                 sin = (512, -1536, 0, 2047)[case % 4]
                 tan = (256, -769, 0, 1024)[case % 4]
-                mov(a('RT_S'), sin)
-                mov(a('RT_T'), tan)
+                mov(a('RT_S'), sin * 4)
+                mov(a('RT_T'), tan * 4)
                 reg(1, 2 * axis)
                 code.extend([0o004737, a(routine)])
                 pair = ((0, 1), (1, 2), (0, 2))[axis]
@@ -120,6 +120,8 @@ def check_render(v):
                     px[x, y] = (255, 255, 255)
         v.check(f'filled sun pixels after transition {ix}', im.tobytes() == expected.tobytes(), str(seq))
 
+    check_turn_arithmetic(v, t, out)
+    check_ship_stack(v, t, out)
     check_vertex_projection(v, t, out)
     check_walk_pairs(v, t, out)
     check_system_font(v, t, out)
@@ -128,6 +130,183 @@ def check_render(v):
     check_face_visibility(v, t, out)
     check_walk_pixels(v, t, out)
     check_span_pixels(v, t, out)
+
+
+def check_turn_arithmetic(v, t, out):
+    """Rounded three-shear rotations, including full signed-32 positions."""
+    a = lambda key: int(t[key], 8)
+    signed = lambda n, bits: (n + (1 << (bits - 1))) % (1 << bits) - (1 << (bits - 1))
+    truncdiv = lambda n, d: (abs(n) // d) * (-1 if n < 0 else 1)
+    rng = random.Random(516)
+    entry, dest = a('OVL_BASE'), a('OVL_BASE') + 4096
+
+    def run_batch(name, cases, emit):
+        code, expected = [], []
+        stack_pairs = []
+
+        def mov(addr, value):
+            code.extend([0o012737, value & 65535, addr])
+
+        def reg(r, value):
+            code.extend([0o012700 + r, value & 65535])
+
+        def copy(addr, value):
+            code.extend([0o013737, addr, dest + 2 * len(expected)])
+            expected.append(value & 65535)
+
+        def save_reg(r, value):
+            code.extend([0o010037 + (r << 6), dest + 2 * len(expected)])
+            expected.append(value & 65535)
+
+        for case in cases:
+            before = len(expected)
+            save_reg(6, 0)
+            emit(case, code, mov, reg, copy, save_reg)
+            after = len(expected)
+            save_reg(6, 0)
+            stack_pairs.append((before, after))
+        mov(a('BENCH_RAM'), 1)
+        code.append(0o000777)
+        assert len(code) * 2 < 4096 and len(expected) * 2 <= a('OVL_END') - dest
+        patch = [v.poke_at(entry + 2 * i, word) for i, word in enumerate(code)]
+        patch += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
+                  v.poke_at(a('DRAW_HARNESS') + 2, entry),
+                  v.poke_at(a('BENCH_RAM'), 0), v.poke_at(a('HARN_GO'), 1)]
+        dump = out / (name + '.bin')
+        dump.unlink(missing_ok=True)
+        result = v.run_emu(list(v.BOOT) + ['run 20'] + patch +
+                           ['run 100', f"peekcpu {t['BENCH_RAM']}",
+                            f'dumpcpu {dest:o} {2 * len(expected)} {dump}', 'quit'],
+                           v.fresh_disk('rotation'))
+        got = list(struct.unpack('<' + 'H' * len(expected), dump.read_bytes()))
+        stack_ok = all(got[i] == got[j] for i, j in stack_pairs)
+        for i, j in stack_pairs:
+            got[i] = got[j] = 0
+        completed = [int(n, 8) for n in v.PEEK.findall(result)] == [1]
+        errors = [(i, x, y) for i, (x, y) in enumerate(zip(got, expected)) if x != y]
+        v.check(f'{name}: {len(cases)} exact cases and balanced stack',
+                completed and stack_ok and got == expected,
+                f'completed={completed}, stack={stack_ok}, differences={errors[:5]}')
+
+    # TURN_SET still accepts Q14 angles. Scale only its finished, rounded
+    # coefficients; recomputing the series at Q16 would change the result.
+    angles = sorted(set([250 * k for k in range(-8, 9)] +
+                        [-2000, -1999, -1536, -1024, -91, -90, -89, -1,
+                         0, 1, 89, 90, 91, 1024, 1536, 1999, 2000] +
+                        [rng.randint(-2000, 2000) for _ in range(16)]))
+
+    def emit_set(k, code, mov, reg, copy, save_reg):
+        reg(0, k)
+        reg(1, 0x1234)
+        reg(5, 0x5678)
+        code.extend([0o004737, a('TURN_SET')])
+        cube = (((k * k) >> 14) * k) >> 14
+        copy(a('RT_S'), 4 * (k - truncdiv(cube, 6)))
+        copy(a('RT_T'), 4 * ((k >> 1) + truncdiv(cube, 24)))
+        save_reg(1, 0x1234)
+        save_reg(5, 0x5678)
+
+    for batch in range(0, len(angles), 32):
+        run_batch(f'TURN_SET-{batch // 32}', angles[batch:batch + 32], emit_set)
+
+    fields = [a('UNIV') + a(key) for key in
+              ('U.X', 'U.Y', 'U.Z', 'U.XH', 'U.YH', 'U.ZH')]
+    coefs = [(0, 0), (512, 256), (-1536, -769), (2047, 1024),
+             (-2048, -1024), (8191, 4096), (-8192, -4096)]
+    for bits, routine in ((16, 'ROT2'), (32, 'ROT2L')):
+        limit = 1 << (bits - 1)
+        bounds = sorted(set([-limit, -limit + 1, -32768, -16385, -8193,
+                             -1, 0, 1, 8191, 16383, 32767, limit - 2, limit - 1]))
+        if bits == 32:
+            bounds += [-65537, -65536, -65535, 32768, 65535, 65536, 65537]
+        cases = [(x, bounds[-i - 1], *coefs[j])
+                 for j in range(len(coefs)) for i, x in enumerate(bounds)]
+        cases += [(rng.randrange(-limit, limit), rng.randrange(-limit, limit),
+                   rng.randint(-2048, 2048), rng.randint(-1024, 1024))
+                  for _ in range(32)]
+
+        def emit_pair(case, code, mov, reg, copy, save_reg):
+            x, y, sin, tan = case
+            words = [x, y, 0x1357, x >> 16 if bits == 32 else 0x5AA5,
+                     y >> 16 if bits == 32 else 0xA55A, 0x2468]
+            for addr, word in zip(fields, words):
+                mov(addr, word)
+            mov(a('RT_S'), sin * 4)
+            mov(a('RT_T'), tan * 4)
+            reg(0, fields[0])
+            reg(1, fields[1])
+            code.extend([0o004737, a(routine)])
+            x = signed(x - ((tan * y + 8192) >> 14), bits)
+            y = signed(y + ((sin * x + 8192) >> 14), bits)
+            x = signed(x - ((tan * y + 8192) >> 14), bits)
+            words[0:2] = [x, y]
+            if bits == 32:
+                words[3:5] = [x >> 16, y >> 16]
+            for addr, word in zip(fields, words):
+                copy(addr, word)
+
+        for batch in range(0, len(cases), 32):
+            run_batch(f'{routine}-{batch // 32}', cases[batch:batch + 32], emit_pair)
+
+
+def check_ship_stack(v, t, out):
+    """SHIP_DRAW releases its cursors on empty, rejected and visible paths."""
+    a = lambda key: int(t[key], 8)
+    entry, model = a('OVL_BASE'), a('OVL_BASE') + 4608
+    # Two vertices at (-8,0,-8)/(8,0,8), bank-scaled by four; one edge.
+    hull = [2, 1, 12, 0, -32, 0, -32, 32, 0, 32, 31, 2]
+    code = []
+    def mov(addr, value):
+        code.extend([0o012737, value & 65535, addr])
+    def call(name):
+        code.extend([0o004737, a(name)])
+    for i, word in enumerate(hull):
+        mov(model + 2*i, word)
+    for i in range(9):
+        mov(a('PMAT') + 2*i, 16384 if i in (0, 4, 8) else 0)
+    mov(a('SD_MODEL'), model)
+    mov(a('SD_MAT'), a('PMAT'))
+    mov(a('SD_Y'), 0)
+    mov(a('SD_SH'), 0)
+    cases = [('visible', 0, 100, 1, 1), ('no edges', 0, 100, 0, 0),
+             ('behind', 0, -100, 1, 0), ('one near vertex', 0, a('ZNEAR'), 1, 0),
+             ('projection overflow', 32767, 100, 1, 0),
+             ('clipped away', 1000, 100, 1, 0), ('visible again', 0, 100, 1, 1)]
+    dest = entry + 4096
+    for i, (_, x, z, edges, _) in enumerate(cases):
+        call('SEG_RESET')
+        call('CLS_SCREEN')
+        call('CLIP_VIEW')
+        mov(model + 2, edges)
+        mov(a('SD_X'), x)
+        mov(a('SD_Z'), z)
+        code.extend([0o010637, dest + 8*i])  # SP before SHIP_DRAW
+        call('SHIP_DRAW')
+        code.extend([0o010637, dest + 8*i + 2,
+                     0o013737, a('SEGCNT'), dest + 8*i + 4,
+                     0o013737, a('NOCLIP'), dest + 8*i + 6])
+    call('RING_WAIT')
+    mov(a('BENCH_RAM'), 1)
+    code.append(0o000777)
+    assert len(code)*2 < 4096
+    patch = [v.poke_at(entry + 2*i, word) for i, word in enumerate(code)]
+    patch += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
+              v.poke_at(a('DRAW_HARNESS') + 2, entry),
+              v.poke_at(a('BENCH_RAM'), 0), v.poke_at(a('HARN_GO'), 1)]
+    dump = out / 'ship-stack.bin'
+    dump.unlink(missing_ok=True)
+    log = v.run_emu(list(v.BOOT) + ['run 20'] + patch +
+                    [f"waitcpu {t['BENCH_RAM']} 1 500", f"peekcpu {t['BENCH_RAM']}",
+                     f'dumpcpu {dest:o} {8*len(cases)} {dump}', 'quit'],
+                    v.fresh_disk('ship-stack'))
+    words = struct.unpack('<' + 'H' * (4*len(cases)), dump.read_bytes())
+    errors = []
+    for i, (name, _, _, _, count) in enumerate(cases):
+        before, after, got_count, noclip = words[4*i:4*i+4]
+        if before != after or got_count != count or noclip:
+            errors.append((name, before, after, got_count, count, noclip))
+    v.check('ship drawing balances cursors on seven visible/empty/rejected paths',
+            not errors and [int(n, 8) for n in v.PEEK.findall(log)] == [1], str(errors))
 
 
 def check_hull_fetch(v, t, out):
