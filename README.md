@@ -12,7 +12,7 @@
 ![Карта](readme/03.png)
 
 A Russian-language Elite Legend port for the УКНЦ, written in MACRO-11
-with hardware MUL/DIV and a 640×288 display. Version **0.8.2** builds as a
+with hardware MUL/DIV and a 640×288 display. Version **0.8.3** builds as a
 bootable RT-11 disk containing `ELITE.SAV`, `ELITE.DAT` and normal commander
 files. Original game files and third-party binaries are supplied locally, not
 tracked in this repository.
@@ -111,8 +111,8 @@ save failures, disk refresh and exit constraints.
 Start with [AGENTS.md](AGENTS.md) and the [documentation index](docs/README.md).
 The references describe current architecture, final decisions, caveats and
 reproducible checks. [Testing](docs/testing.md) distinguishes full-suite
-results from focused checks and records the v0.8.2 title checks and the
-preceding clean v0.8.1 full-suite run.
+results from focused checks and records the verified build identities and
+coverage limits.
 [Rendering](docs/rendering.md) records the applicable
 benchmark workload and evidence limits.
 

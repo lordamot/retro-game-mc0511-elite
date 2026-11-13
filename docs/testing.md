@@ -156,22 +156,23 @@ reruns and host-only checks. Do not combine earlier passing groups into a
 claim that one complete run passed. Disposable logs in `tmp/` are evidence
 for a local session, not enduring dependencies of the project documentation.
 
-The v0.8.2 build with renderer arithmetic optimizations passed `make build`
+The v0.8.3 release build passed `make build`
 and one complete `python3 -u tools/verify_build.py` run on 2026-11-13:
 **783 assertions passed, zero failed, exit status 0**. This includes native
 RT-11, palette, gameplay, presentation and exact renderer checks, including
 the 96 position-narrowing cases, isolated line pixels and station/tunnel
 regressions. The local full-run log is
-`tmp/render-speed5/verify-full-verified.log`. Build identities:
+`tmp/verify-0.8.3.log`. Build identities:
 
-- `ELITE.SAV` SHA-256: `d47502e76dbcd006e79eef2f12ff8ce694b23443b7cc2439b758b781af216a40`
-- `ELITE.DAT` SHA-256: `a740236a421a0f978f402e79528759f06d2f4279eb4dad0965b82555a3fc74f1`
+- `ELITE.SAV` SHA-256: `1aedd13b97d96649c5984d8721de0e38ba2e5a6dbcda218d951a2079c93878e7`
+- `ELITE.DAT` SHA-256: `afd67ea7d68565e4f923eac23a253001c3b8e39e32e6a7b7fb748624d1a57334`
 
 The retired 1985 commodity-table comparison was skipped because that table
 is no longer a maintained resource; Legend resource round trips passed.
-Before/after `seg_snapshot.py --scenes 12` captures matched all 287 segments
-across the eleven scenes frozen in both builds; scene 0 was skipped because
-it did not freeze. Exact pixel checks passed separately in the rules group,
+For the v0.8.2 renderer optimizations, before/after
+`seg_snapshot.py --scenes 12` captures matched all 287 segments across the
+eleven scenes frozen in both builds; scene 0 was skipped because it did not
+freeze. Exact pixel checks also passed in the v0.8.3 rules group,
 including 480 packed lines, 512 isolated sloped/vertical lines and 432
 isolated horizontal spans.
 

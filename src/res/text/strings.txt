@@ -566,7 +566,7 @@ SP_M15|ДОП. ВВОД - НА ЦИФРОВОЙ КЛАВИАТУРЕ
 SP_PLAY|ВВОД: К ИГРЕ
 
 @overlay cmdr title
-SP_VERSION|0.8.2
+SP_VERSION|0.8.3
 
 @overlay title
 T_PALETTE|ПАЛИТРА  1: <GRB>   2: <RGB>

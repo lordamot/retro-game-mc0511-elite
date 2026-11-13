@@ -95,7 +95,7 @@ def check_palette(v):
             mark = [x for x in range(37*8, 52*8) if im.getpixel((x, 249)) == (255,)*3]
             v.check(f'{name}/{layout}: selected choice is underlined',
                     mark == list(range(start, start + 48)))
-            for text, col, row, glyphs in (('0.8.2', 74, 272, font),
+            for text, col, row, glyphs in (('0.8.3', 74, 272, font),
                                           ('GRB', 40, 236, latin),
                                           ('RGB', 49, 236, latin)):
                 codes = list(text.encode('ascii')) if glyphs is latin else to_koi7(text, name)

@@ -1,6 +1,6 @@
 # Project documentation
 
-These references describe the v0.8.2 source tree. The game code and
+These references describe the v0.8.3 source tree. The game code and
 generated listings are authoritative for behavior and addresses. Documents
 record current decisions and constraints; they are not a development log.
 
@@ -49,11 +49,12 @@ implemented. These limitations must remain visible in player documentation.
 
 ## Evidence limits
 
-The v0.8.2 renderer arithmetic optimizations passed their build and all 783
+The v0.8.3 release passed its build and all 783
 assertions in one complete `tools/verify_build.py` run on 2026-11-13,
 including palette, native RT-11, gameplay, presentation and exact renderer
-checks. Before/after comparisons found 287 identical segments across eleven
-frozen scenes; one scene was skipped because it did not freeze.
+checks. The v0.8.2 renderer optimization comparisons found 287 identical
+segments across eleven frozen scenes; one scene was skipped because it did
+not freeze.
 [Testing](testing.md) records build identities and coverage limits.
 
 The latest whole-game benchmark measures the RT-11 renderer at 9.725 fps
