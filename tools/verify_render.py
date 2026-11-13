@@ -129,6 +129,7 @@ def check_render(v):
     check_hull_fetch(v, t, out)
     check_face_visibility(v, t, out)
     check_walk_pixels(v, t, out)
+    check_walk_isolated(v, t, out)
     check_span_pixels(v, t, out)
 
 
@@ -427,10 +428,34 @@ def check_walk_pixels(v, t, out):
             for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1)):
                 lines.append(((320+bit, 100), (320+bit+sx*dx, 100+sy*dy)))
     lines += [((0, 0), (639, 0)), ((639, 199), (0, 199)),
-              ((0, 0), (639, 199)), ((639, 199), (0, 0))]
+              ((0, 0), (639, 199)), ((639, 199), (0, 0)),
+              ((0, 0), (0, 199)), ((1, 199), (1, 0)),
+              ((638, 0), (638, 199)), ((639, 199), (639, 0))]
     lines = list(dict.fromkeys(lines))  # duplicate XOR walks would hide errors
     check_walk_image(v, t, out, lines, 'walk-octants',
                      'packed walks match exact XOR pixels in all octants')
+
+
+def check_walk_isolated(v, t, out):
+    """Separate lines so overlapping XOR walks cannot mask an incorrect pixel."""
+    slopes = ((1, 1), (2, 1), (7, 3), (8, 4), (9, 4),
+              (15, 7), (16, 8), (17, 9), (31, 30), (31, 31),
+              (63, 13), (63, 31), (0, 31), (1, 31), (15, 31), (30, 31))
+    lines = []
+    for bit in range(8):
+        for dx, dy in slopes:
+            for sx, sy in ((1, 1), (-1, 1), (-1, -1), (1, -1)):
+                # Forty disjoint 80x40 tiles per image, entirely in the view.
+                tile = len(lines) % 40
+                left, top = 80 * (tile % 8), 40 * (tile // 8)
+                x = left + (8 if sx > 0 else 72) + bit
+                y = top + (4 if sy > 0 else 35)
+                end = (x + sx * dx, y + sy * dy)
+                assert left <= min(x, end[0]) <= max(x, end[0]) < left + 80
+                assert top <= min(y, end[1]) <= max(y, end[1]) < top + 40
+                lines.append(((x, y), end))
+    check_walk_image(v, t, out, lines, 'walk-isolated',
+                     'isolated walks preserve row and byte crossings', batch_size=40)
 
 
 def check_span_pixels(v, t, out):
@@ -449,11 +474,12 @@ def check_span_pixels(v, t, out):
                      'horizontal spans preserve every byte boundary and tail')
 
 
-def check_walk_image(v, t, out, lines, name, description):
+def check_walk_image(v, t, out, lines, name, description, *, batch_size=200):
     """Compare queued records with an independent per-pixel Bresenham model."""
     a = lambda key: int(t[key], 8)
-    for batch in range(0, len(lines), 200):
-        subset = lines[batch:batch+200]
+    assert 1 <= batch_size <= 200  # packed records must fit the probe's window
+    for batch in range(0, len(lines), batch_size):
+        subset = lines[batch:batch+batch_size]
         entry, records = a('OVL_BASE'), a('OVL_BASE')+1024
         code = [0o004737, a('SEG_RESET'), 0o004737, a('CLS_SCREEN'),
                 0o012704, records, 0o012705, len(subset),
@@ -496,7 +522,7 @@ def check_walk_image(v, t, out, lines, name, description):
         expected = Image.new('RGB', (640, 288))  # dashboard must remain clear
         for point in pixels:
             expected.putpixel(point, (255, 255, 255))
-        v.check(f'{description}, batch {batch//200}',
+        v.check(f'{description}, batch {batch//batch_size}',
                 im.tobytes() == expected.tobytes() and
                 [int(n, 8) for n in v.PEEK.findall(log)] == [1])
 

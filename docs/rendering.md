@@ -80,9 +80,15 @@ in registers, writing only the state needed by the selected walker. An
 eight-word mask table avoids byte sign extension, including start bit 7.
 Rightward horizontal lines bypass the general walker. Both major-axis
 walkers select the x direction once per line; x-major loops start with the
-first pixel pending and count the remaining steps with `SOB`. Long spans
-split whole bytes from the tail once, then advance the video-address port
-directly for each full-byte XOR.
+first pixel pending and count the remaining steps with `SOB`. They test
+the row change before shifting x, so the old byte always has pending
+pixels when flushed. The next pixel replaces that mask without a separate
+clear, including simultaneous row and byte crossings.
+Both ordinary walkers advance the video-address port directly, with R0
+pointing at the port instead of copying a software cursor before each XOR.
+Port writes refresh the data latch; timer and command interrupts preserve
+the selected address. Long spans split whole bytes from the tail once,
+then advance the same port directly for each full-byte XOR.
 
 Every segment draws both endpoints: a point segment draws one pixel, and
 shared XOR endpoints can cancel. `CLIP_LINE` mutates its input endpoints;
@@ -126,27 +132,28 @@ not the shipped scene. The harness does not run at boot.
 
 ## Applicable baseline
 
-The rotation-coefficient and edge-cursor optimizations were measured on
-2026-11-13 against the PPU line and queue build (`9933f5e`). Both builds
-used identical `bench.py --ticks 6000` fixtures and the same 50 Hz emulator:
-120 emulated seconds per run. The first three rows use `--fixed`; the last
-uses `--sparse --turning`, with only five occupied slots.
+The row-first x-major walkers and direct video-address updates were measured
+on 2026-11-13 against the rotation and edge-cursor build (`f449be6`). Both
+builds used identical `bench.py --ticks 6000` fixtures and the same 50 Hz
+emulator: 120 emulated seconds per run. The first three rows use `--fixed`;
+the last uses `--sparse --turning`, with only five occupied slots.
 
-| Workload | Before: frames / FPS | Optimized: frames / FPS | Gain |
+| Workload | Before: frames / FPS | Optimized: frames / FPS | Change |
 |---|---:|---:|---:|
-| Still | 1161 / 9.675 | 1163 / 9.692 | 0.2% |
+| Still | 1163 / 9.692 | 1163 / 9.692 | 0.0% |
 | Moving | 912 / 7.600 | 912 / 7.600 | 0.0% |
-| Turning | 693 / 5.775 | 714 / 5.950 | 3.0% |
-| Sparse turning | 868 / 7.233 | 888 / 7.400 | 2.3% |
+| Turning | 714 / 5.950 | 713 / 5.942 | -0.1% |
+| Sparse turning | 888 / 7.400 | 904 / 7.533 | 1.8% |
 
 Roster checks passed and ending screenshots were inspected. Local logs and
-images are `tmp/render-speed2/long-final-{still,moving,turning,sparse}` for the
-baseline and `tmp/render-speed3/long-edge-{still,moving,turning,sparse}` for
+images are `tmp/render-speed3/long-edge-{still,moving,turning,sparse}` for the
+baseline and `tmp/render-speed4/long-port-{still,moving,turning,sparse}` for
 the optimized build, with `.log`/`.png` suffixes. The drawing-only harness's
-100-frame workloads change from 337 to 336 interrupts still (67.4 → 67.2
-ms/frame) and from 605 to 582 turning (121.0 → 116.4 ms/frame, 3.8% less
-time). The still-flight difference is too small to claim a meaningful
-speedup. Harness rates exclude gameplay and are not flight FPS.
+100-frame workloads remain at 336 interrupts still (67.2 ms/frame) and
+change from 582 to 564 turning (116.4 → 112.8 ms/frame, 3.1% less time).
+Filled turning differs by only one completed frame over 120 seconds;
+there is no demonstrated whole-game gain in that workload. Harness rates
+exclude gameplay and are not flight FPS.
 
 Before/after segment captures match all 287 segments across eleven frozen
 scenes. One of the twelve requested scenes did not freeze and was skipped.
@@ -155,9 +162,9 @@ face signs, hull-copy contents, stack/register preservation and the
 station/tunnel regressions; see
 [testing](testing.md) for the completed groups and build identities.
 
-The changes save 88 resident bytes, leaving 334 bytes free. Overlays are
-unchanged (the largest is 4959 bytes, leaving 161). The PPU program remains
-3416 bytes; 80 bytes remain between reused buffers and published words.
+The changes add four resident bytes, leaving 330 bytes free. Overlay sizes
+are unchanged (the largest is 4959 bytes, leaving 161). The PPU program occupies
+3420 bytes; 84 bytes remain between reused buffers and published words.
 These are emulator measurements, with frame-count boundary and fixture limits;
 they are not physical-hardware timing or a uniform speed guarantee.
 
@@ -197,16 +204,16 @@ Elite's immutable hull copy. Its other major gains have different prerequisites:
   vertices change with depth and orientation. Reusing per-object geometry
   would require explicit invalidation and a memory budget for retained state.
 
-At the `9933f5e` baseline, 1200-tick fixed-scene PC samples placed about
-15% of still-flight CPU time in vertex projection, 7% in hull fetching and
-26% in ship/edge setup and bookkeeping, while the PPU was mostly idle.
-Turning kept the drawing drain active for about 84% of the interval;
-roughly 19% of PPU samples were in record decoding and 51% in ordinary
-line-walk kernels. Rotation routines took about 14.5% of CPU samples in
-the filled turning fixture and 6.5% in sparse turning. These samples
-precede the Q16 coefficient change and identify costs, not speed gains.
-Further turning improvements should target measured raster/queue costs or
-reduce the records submitted while preserving pixels and buffer ownership.
+At the `f449be6` baseline, 1200-tick turning samples placed 31–34% of
+PPU time in the x-major walkers and 19–21% in queue decoding/draining.
+The drawing drain was active for about 82% of the filled workload and 90%
+of sparse turning. These samples precede the walker changes and identify
+costs, not speed gains. Further improvements should target measured raster
+costs or reduce submitted records while preserving pixels and buffer ownership.
+
+Keep per-record tail publication. Trials publishing every four or eight
+records, with an immediate publication at the cached head, did not produce
+a consistent whole-game gain.
 
 Keep the eight-pixel-per-scanline span threshold. On the `9933f5e` build,
 four- and sixteen-pixel trials took 607 and 612 interrupts respectively in

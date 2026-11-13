@@ -51,8 +51,11 @@ unused destination bytes, cached repeats, preserved registers and stack
 balance. Face probes compare signed, wrapped dot products with an integer
 model; packed-line probes check every octant and start bit against XOR pixels.
 Horizontal spans get separate rows for lengths around byte boundaries and
-long runs in both directions. Line and queue probes compare all 288 screen
-rows, including the untouched dashboard band.
+long runs in both directions. A further 512 sloped and vertical walks occupy
+disjoint tiles, covering every start bit and both axis directions without
+overlaps that could conceal XOR errors at row and byte crossings. Vertical
+walks also span all 200 view rows at both screen edges. Line and queue probes compare
+all 288 screen rows, including the untouched dashboard band.
 Rotation probes check 47 coefficient-generation cases, 109 signed 16-bit
 and 172 signed 32-bit three-shear cases against the original Q14 integer
 model. They include sign/word boundaries, wrapping, untouched coordinates,
@@ -142,23 +145,23 @@ reruns and host-only checks. Do not combine earlier passing groups into a
 claim that one complete run passed. Disposable logs in `tmp/` are evidence
 for a local session, not enduring dependencies of the project documentation.
 
-The v0.8.2 build with rotation and edge-cursor optimizations passed `make build`
+The v0.8.2 build with PPU walker optimizations passed `make build`
 and one complete `python3 -u tools/verify_build.py` run on 2026-11-13:
-**766 assertions passed, zero failed, exit status 0**. This includes native
-RT-11, palette, gameplay, presentation and exact renderer checks, with the
-fleeing fixture observing eight actual hits and the troop-landing fixture
-isolated from patrol and bay spawns. The local full-run log is
-`tmp/render-speed3/verify-full-final.log`. Build identities:
+**779 assertions passed, zero failed, exit status 0**. This includes native
+RT-11, palette, gameplay, presentation and exact renderer checks, including
+the isolated line pixels and the station/tunnel regressions. The local
+full-run log is `tmp/render-speed4/verify-full-final.log`. Build identities:
 
-- `ELITE.SAV` SHA-256: `3e81da8ef34afd1baf9ae6af6de873f9e499a4ccf781d1d2b051f09dd5028156`
-- `ELITE.DAT` SHA-256: `09eb93152bfb4f27ff054cbfb16d6a943902dbbf409a90e679e2bd69b6946ed8`
+- `ELITE.SAV` SHA-256: `4fd73825c5f1d3b65a1f51cb76eae801bf0e37076f137f480659b5ff3b13b718`
+- `ELITE.DAT` SHA-256: `01e66765ebf0928aa86b16c54290b932bc94ad1fe91537554e73208a9f984692`
 
 The retired 1985 commodity-table comparison was skipped because that table
 is no longer a maintained resource; Legend resource round trips passed.
 Before/after `seg_snapshot.py --scenes 12` captures matched all 287 segments
 across the eleven scenes frozen in both builds; scene 0 was skipped because
 it did not freeze. Exact pixel checks passed separately in the rules group,
-including 476 packed lines and 432 isolated horizontal spans.
+including 480 packed lines, 512 isolated sloped/vertical lines and 432
+isolated horizontal spans.
 
 A documentation-only change does not require another long gameplay run;
 validate its paths, commands and generated outputs. A runtime release

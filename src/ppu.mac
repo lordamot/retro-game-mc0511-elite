@@ -708,7 +708,11 @@ PP_LINE_RUN:	MOV	R2,R5
 ; ---- x is the major axis: accumulate whole bytes ------------------------
 ; Choose the direction once. The first pixel is pending before the loop;
 ; SOB counts the remaining steps and the final flush includes the endpoint.
-1$:		MOV	R4,R3		; steps after the first pixel
+; R0 points at PADDR while walking. Its writes refresh the data latch;
+; timer and command interrupts preserve the selected address.
+1$:		MOV	R0,@#PADDR	; advance the video address in its port
+		MOV	#PADDR,R0
+		MOV	R4,R3		; steps after the first pixel
 		MOV	R2,R5		; the hot minor-axis step
 		MOV	R3,R2
 		ASR	R2		; error accumulator
@@ -719,91 +723,88 @@ PP_LINE_RUN:	MOV	R2,R5
 		BLT	PP_LINE_XN
 
 ; ---- walking right ------------------------------------------------------
-PP_LINE_XP:	ASLB	R1		; next pixel, one bit further left.  A
-		BCC	13$		; BYTE shift carries the bit out of the
-				; mask when it leaves the plane byte,
-				; which is the same test the compare
-				; against 400 was making and one 2-word
-				; instruction cheaper - on the hottest
-				; path in the program.  It also keeps
-				; the mask inside its byte, where a word
-				; shift walked it into the high half and
-				; so into plane 2.
-		MOV	R0,@#PADDR	; that byte is finished
-		XOR	R4,@#PDATA
-		CLR	R4
-		MOV	#1,R1
-		INC	R0
-13$:		SUB	R5,R2		; step y when the error runs out
-		BGE	15$
+; Change rows before shifting x: the old byte always has pending pixels,
+; and the first pixel at the new address replaces its mask without a clear.
+PP_LINE_XP:	SUB	R5,R2
+		BGE	13$
 		ADD	PP_LADX,R2
-		TST	R4		; a new line means a new address
-		BEQ	14$
-		MOV	R0,@#PADDR
 		XOR	R4,@#PDATA
-		CLR	R4
-14$:		ADD	PP_LSY,R0
-15$:		BIS	R1,R4
+		ADD	PP_LSY,@R0
+		ASLB	R1		; byte carry detects crossing and keeps
+		BCC	12$		; the mask out of plane 2
+		MOV	#1,R1
+		INC	@R0
+12$:		MOV	R1,R4
+		SOB	R3,PP_LINE_XP
+		BR	PP_LINE_LAST
+13$:		ASLB	R1		; same row: retain the pending byte
+		BCC	14$
+		XOR	R4,@#PDATA
+		MOV	#1,R1
+		INC	@R0
+		BR	12$
+14$:		BIS	R1,R4
 		SOB	R3,PP_LINE_XP
 		BR	PP_LINE_LAST
 
 ; ---- walking left -------------------------------------------------------
-PP_LINE_XN:	ASR	R1
-		BNE	23$
-		MOV	R0,@#PADDR
-		XOR	R4,@#PDATA
-		CLR	R4
-		MOV	#200,R1
-		DEC	R0
-23$:		SUB	R5,R2
-		BGE	25$
+PP_LINE_XN:	SUB	R5,R2
+		BGE	23$
 		ADD	PP_LADX,R2
-		TST	R4
-		BEQ	24$
-		MOV	R0,@#PADDR
 		XOR	R4,@#PDATA
-		CLR	R4
-24$:		ADD	PP_LSY,R0
-25$:		BIS	R1,R4
+		ADD	PP_LSY,@R0
+		ASR	R1
+		BNE	22$
+		MOV	#200,R1
+		DEC	@R0
+22$:		MOV	R1,R4
 		SOB	R3,PP_LINE_XN
-PP_LINE_LAST:	MOV	R0,@#PADDR
+		BR	PP_LINE_LAST
+23$:		ASR	R1
+		BNE	24$
 		XOR	R4,@#PDATA
+		MOV	#200,R1
+		DEC	@R0
+		BR	22$
+24$:		BIS	R1,R4
+		SOB	R3,PP_LINE_XN
+PP_LINE_LAST:	XOR	R4,@#PDATA
 		RETURN
 
 ; ---- y is the major axis: every pixel is on its own line ---------------
-PP_LINE_Y:	MOV	R2,PP_LADY
+PP_LINE_Y:	MOV	R0,@#PADDR
+		MOV	#PADDR,R0
+		MOV	R2,PP_LADY
 		MOV	R4,R5		; minor-axis step
 		MOV	R3,R4		; signed row stride
 		MOV	R2,R3		; dy steps after the first pixel; dy > dx
 		ASR	R2		; error accumulator
 		TST	PP_LSX		; choose the x direction once per line
 		BMI	PP_LINE_YN
-PP_LINE_YP:	MOV	R0,@#PADDR
-		XOR	R1,@#PDATA
-		ADD	R4,R0		; step y
+PP_LINE_YP:	XOR	R1,@#PDATA
+		ADD	R4,@R0		; step y
 		SUB	R5,R2		; and step x when the error runs out
 		BGE	28$
 		ADD	PP_LADY,R2
 		ASLB	R1		; as in PP_LINE_XP: the carry says the mask
 		BCC	28$		; has left the byte
 		MOV	#1,R1
-		INC	R0
+		INC	@R0
 28$:		SOB	R3,PP_LINE_YP
 		BR	PP_LINE_YLAST
 
-PP_LINE_YN:	MOV	R0,@#PADDR
-		XOR	R1,@#PDATA
-		ADD	R4,R0
+PP_LINE_YN:	XOR	R1,@#PDATA
+		ADD	R4,@R0
 		SUB	R5,R2
 		BGE	28$
 		ADD	PP_LADY,R2
 		ASR	R1
 		BNE	28$
 		MOV	#200,R1
-		DEC	R0
+		DEC	@R0
 28$:		SOB	R3,PP_LINE_YN
-PP_LINE_YLAST:	MOV	R0,@#PADDR	; the last pixel, which the loop above
-		XOR	R1,@#PDATA	; steps up to but does not draw
+PP_LINE_YLAST:	XOR	R1,@#PDATA	; the last pixel, which the loop above
+					; steps up to but does not draw
 		RETURN
 
 
