@@ -49,14 +49,15 @@ implemented. These limitations must remain visible in player documentation.
 
 ## Evidence limits
 
-The v0.8.2 version-text update passed its build and all 87 palette/title
-assertions. The preceding v0.8.1 build passed all 713 assertions in one complete `make verify`
-run on 2026-11-11, including palette, native RT-11, gameplay, presentation
-and exact renderer checks. [Testing](testing.md) records the build identity,
-coverage and the retired resource-comparison exclusion.
+The v0.8.2 station/tunnel renderer fixes passed their build, 173 rule/renderer
+assertions and 4 docking assertions on 2026-11-13. The full run was
+terminated before completion. The preceding v0.8.1 build passed all 713
+assertions in one complete `make verify` run on 2026-11-11, including palette,
+native RT-11, gameplay, presentation and exact renderer checks.
+[Testing](testing.md) records build identities and coverage limits.
 
-The latest applicable whole-game benchmark measures the RT-11 renderer at
-9.40 fps still, 7.40 moving and 6.42 turning with the sixteen-slot fixture.
-It predates the startup-only splash addition; see [rendering](rendering.md)
-for the exact workload, date and limits. Memory figures are a build snapshot,
-not a promise that later edits fit unchanged.
+The latest whole-game benchmark measures the RT-11 renderer at 9.38 fps
+still and 5.42 turning with the sixteen-slot fixture and 50 Hz emulator.
+See [rendering](rendering.md) for the workload, comparison and limits.
+Memory figures are a build snapshot, not a promise that later edits fit
+unchanged.

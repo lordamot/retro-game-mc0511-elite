@@ -41,7 +41,10 @@ python3 -u tools/verify_build.py --skip-emu
 
 The rules group calls `verify_render.py` for exact matrix cases, fused
 projection (including signed overflow and near-plane rejection), filled-sun
-pixels, font/layout and queue wraparound/full-ring stress. Those proofs
+pixels, font/layout and queue wraparound/full-ring stress. It also checks
+all sixteen tunnel rotations against closed polygons and exact XOR pixels,
+both station models from front, rear and oblique views, and clipped slot
+and tunnel outlines against independently submitted edges. Those proofs
 complement screenshots; none alone establishes all rendering behavior.
 
 ## Isolation and sequencing
@@ -122,14 +125,16 @@ reruns and host-only checks. Do not combine earlier passing groups into a
 claim that one complete run passed. Disposable logs in `tmp/` are evidence
 for a local session, not enduring dependencies of the project documentation.
 
-The current v0.8.2 build changes the displayed version text. `make build`
-and `python3 -u tools/verify_build.py --only palette` passed on 2026-11-11:
-all 87 assertions, including exact 0.8.2 glyphs, passed (exit 0). The local
-log is `tmp/verify-palette-0.8.2.log`. The full suite was not repeated for
-this text-only change. Build identities:
+The v0.8.2 build with station/tunnel renderer fixes passed `make build` on
+2026-11-13. Completed focused runs of `python3 -u tools/verify_build.py`
+passed with `--only rules` (173 assertions, including 28 new station/tunnel
+checks) and `--only docking` (4 assertions), both exit 0. Local logs are
+`tmp/verify-renderer-rules.log` and `tmp/verify-renderer-docking.log`.
+The attempted full run was terminated with exit 143 before completion;
+it is not a full-suite pass. Build identities:
 
-- `ELITE.SAV` SHA-256: `593916ae5027e0e7b5fe3d81db0bc340c53bba24b45e700dae7f7ad29999989a`
-- `ELITE.DAT` SHA-256: `40511bd0a0436d8ad03d7d1c0895c64c893edf3392615cfe9f0d6a68913b315d`
+- `ELITE.SAV` SHA-256: `45233780123b89d151e20b1995a42f0fd0f65cfee74e8bf24a8cb163ec971922`
+- `ELITE.DAT` SHA-256: `ac8bb3b09f70847405f63121b8ca1d223b859b9c90cafec3b968a87cb103d4ca`
 
 The preceding v0.8.1 build passed one complete `make verify` run on 2026-11-11:
 **713 assertions passed, zero failed, exit status 0**. Build identities:

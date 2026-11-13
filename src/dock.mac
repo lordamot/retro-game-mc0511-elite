@@ -359,6 +359,9 @@ DC_ALIGN:	CALL	SLOT_OFF
 ; commander - the hull is drawn from a matrix that starts as the
 ; identity - so the face to draw on is the one at model z = -160.  The
 ; rectangle is long in x, which is the axis DOCK_CHECK measures.
+; The Legend hull also has its own opening at positive z. Cull this
+; added rectangle against its negative-z plane so it cannot show through
+; the hull beside that opening when the station turns away.
 ; =========================================================================
 SLOT_HW	= 60.			; the opening: half its width and half its
 SLOT_HH	= 18.			; height, in the station's own units
@@ -380,6 +383,11 @@ STATION_SLOT:	TST	SD_SH			; beyond sixteen bits: no slot
 		BNE	9$
 		CMP	SD_Z,#SLOT_RANGE
 		BGT	9$
+		MOV	#SD_X,R4		; centre in model space: the eye is
+		MOV	SD_MAT,R5		; its negative, relative to the hull
+		CALL	MATVEC_T
+		CMP	VOUT+4,#-SLOT_Z		; eye must be outside the slot face
+		BLE	9$
 		CLR	SL_OK
 		MOV	#SLOT_V,SL_P
 		MOV	#4,SL_I
@@ -393,7 +401,7 @@ STATION_SLOT:	TST	SD_SH			; beyond sixteen bits: no slot
 		MOV	VOUT+4,R2
 		ADD	SD_Z,R2
 		CALL	PROJECT
-		BCS	80$			; off the screen: skip the corner
+		BCS	9$			; no polygon across a rejected corner
 		TST	SL_OK
 		BNE	20$
 		MOV	PX,SL_X0		; the first corner starts the run
@@ -405,8 +413,8 @@ STATION_SLOT:	TST	SD_SH			; beyond sixteen bits: no slot
 20$:		MOV	PX,LX1
 		MOV	PY,LY1
 		CALL	SEG_LINE
-		MOV	LX1,LX0
-		MOV	LY1,LY0
+		MOV	PX,LX0			; keep the original vertex: clipping
+		MOV	PY,LY0			; may have changed LX1/LY1
 80$:		ADD	#6,SL_P
 		DEC	SL_I
 		BGT	10$
@@ -470,8 +478,8 @@ DT_SQUARE:	MOV	DT_ANG,R0		; the first corner
 		CALL	DT_CORNER
 		MOV	DT_X,LX0
 		MOV	DT_Y,LY0
-		MOV	#4,DT_R2
-1$:		MOV	DT_ANG,R0		; and round the other three
+		MOV	#3,DT_R2
+1$:		MOV	DT_ANG,R0		; other three corners, then corner 0
 		ADD	DT_R2,R0
 		ADD	DT_R2,R0
 		ADD	DT_R2,R0
@@ -480,13 +488,11 @@ DT_SQUARE:	MOV	DT_ANG,R0		; the first corner
 		CALL	DT_CORNER
 		MOV	DT_X,LX1
 		MOV	DT_Y,LY1
-		MOV	DT_R2,-(SP)
 		CALL	SEG_LINE
-		MOV	(SP)+,DT_R2
-		MOV	LX1,LX0
-		MOV	LY1,LY0
+		MOV	DT_X,LX0		; original corner, before clipping
+		MOV	DT_Y,LY0
 		DEC	DT_R2
-		BGT	1$
+		BGE	1$
 		RETURN
 
 DT_R2:		.WORD	0

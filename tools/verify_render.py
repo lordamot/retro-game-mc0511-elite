@@ -122,6 +122,161 @@ def check_render(v):
     check_vertex_projection(v, t, out)
     check_walk_pairs(v, t, out)
     check_system_font(v, t, out)
+    check_docking_geometry(v, t, out)
+
+
+def geometry_frames(v, t, out, name, frames):
+    """Run docked RAM probes in sequence, stopping after each queue drain."""
+    a = lambda key: int(t[key], 8)
+    entry = a('OVL_BASE')
+    code, stops = [], []
+    for setup in frames:
+        # Use a known current buffer so each completed frame has one dump.
+        code += [0o004737, a('SEG_RESET'), 0o004737, a('CLS_SCREEN')]
+        for key, value in [('SEGNEW', a('SEGBUF')), ('SEGOLD', a('SEGBUFB')),
+                           ('NOCLIP', 0), ('CLIPX1', 639)]:
+            code += [0o012737, value, a(key)]
+        code += [0o004737, a('SEG_RESET'), 0o004737, a('CLIP_VIEW')]
+        code += setup
+        code += [0o004737, a('SEG_FLUSH'), 0o004737, a('RING_WAIT')]
+        stops.append(entry + 2*len(code))
+        code.append(0o000777)  # BR .; patched to NOP after inspection
+    assert len(code)*2 <= a('OVL_END') - entry
+    patch = [v.poke_at(entry + 2*i, word) for i, word in enumerate(code)]
+    patch += [v.poke_at(a('DRAW_HARNESS'), 0o000137),
+              v.poke_at(a('DRAW_HARNESS')+2, entry), v.poke_at(a('HARN_GO'), 1)]
+    script = list(v.BOOT) + ['run 20'] + patch
+    for i, stop in enumerate(stops):
+        script += [f'runpc {stop:o} 300', f"peekcpu {t['SEGPREV']}",
+                   f"peekcpu {t['SD_VIS']}", f"peekcpu {t['HARN_TICKS']}",
+                   f"dumpcpu {t['SEGBUF']} {a('MAXSEG')*6} {out / f'{name}-{i}.bin'}",
+                   f"screenshot {out / f'{name}-{i}.bmp'}"]
+        if i + 1 < len(stops):
+            script += [v.poke_at(stop, 0o000240)]  # NOP
+    log = v.run_emu(script + ['quit'], v.fresh_disk(name))
+    values = [int(n, 8) for n in v.PEEK.findall(log)]
+    results = []
+    for i in range(len(frames)):
+        count, visible, hull_count = values[3*i:3*i+3]
+        raw = (out / f'{name}-{i}.bin').read_bytes()
+        segments = []
+        for j in range(count):
+            dx, dy, addr = struct.unpack_from('<3H', raw, 6*j)
+            y, byte = divmod(addr - a('VRAM'), 80)
+            x = byte*8 + ((dx >> 10) & 7)
+            segments.append(((x, y), (x + (dx & 1023)*(-1 if dx & 32768 else 1),
+                                      y + (dy & 511)*(-1 if dy & 32768 else 1))))
+        im = Image.open(out / f'{name}-{i}.bmp').convert('RGB').crop((0, 0, 640, 200))
+        im.save(out / f'{name}-{i}.png')
+        results.append((segments, visible, hull_count, im))
+    return results
+
+
+def check_docking_geometry(v, t, out):
+    """Closed tunnel polygons and station slots hidden by their own hull."""
+    a = lambda key: int(t[key], 8)
+    def mov(key, value):
+        return [0o012737, value & 65535, a(key)]
+    def call(key):
+        return [0o004737, a(key)]
+    def quotient(n, d):
+        return abs(n)//abs(d) * (-1 if (n < 0) != (d < 0) else 1)
+
+    # Independent cyclic polygon: four distinct edges, including closure.
+    trig = [(round(256*math.cos((i+1)*math.pi/8)),
+             round(256*math.sin((i+1)*math.pi/8))) for i in range(16)]
+    frames, expected = [], []
+    for angle in range(16):
+        radius = (22, 60, 96)[angle % 3]
+        frames.append(mov('DT_RAD', radius) + mov('DT_ANG', angle) + call('DT_SQUARE'))
+        corners = [(320 + quotient((trig[i % 16][0]*radius >> 8)*5, 3),
+                    100 + (trig[i % 16][1]*radius >> 8))
+                   for i in (angle, angle+12, angle+8, angle+4)]
+        expected.append(list(zip(corners, corners[1:] + corners[:1])))
+    for i, ((segments, _, _, im), edges) in enumerate(zip(
+            geometry_frames(v, t, out, 'tunnel', frames), expected)):
+        # Independent XOR Bresenham image, including shared endpoint parity.
+        pixels = set()
+        for (x, y), (ex, ey) in edges:
+            dx, dy = abs(ex-x), abs(ey-y)
+            sx, sy = (1 if ex >= x else -1), (1 if ey >= y else -1)
+            major, minor = max(dx, dy), min(dx, dy)
+            error = major//2
+            for step in range(major+1):
+                pixels.symmetric_difference_update([(x, y)])
+                if step == major:
+                    break
+                if dx >= dy:
+                    x += sx
+                else:
+                    y += sy
+                error -= minor
+                if error < 0:
+                    error += major
+                    if dx >= dy:
+                        y += sy
+                    else:
+                        x += sx
+        actual = {(x, y) for y in range(200) for x in range(640)
+                  if im.getpixel((x, y)) != (0, 0, 0)}
+        v.check(f'tunnel rotation {i}: four closed edges and exact pixels',
+                segments == edges and actual == pixels, str(segments) if segments != edges else '')
+
+    import shiplib
+    from ships_gen import bank_layout
+    ships = shiplib.read_dir(v.ROOT / 'src/res/legend/ships')
+    _, offsets = bank_layout(ships)
+    frames, wants = [], []
+    # Each station is checked from both faces and at oblique/edge-on angles.
+    for ship in ('SH_CORIOLIS', 'SH_DODOH'):
+        for angle in (0, 45, 90, 135, 180):
+            c, s = round(16384*math.cos(math.radians(angle))), round(16384*math.sin(math.radians(angle)))
+            matrix = [c, 0, s, 0, 16384, 0, -s, 0, c]
+            setup = mov('SD_MODEL', a('HBANK_ADDR') + offsets[a(ship)-1])
+            setup += mov('SD_MAT', a('PMAT'))
+            for j, value in enumerate(matrix):
+                setup += [0o012737, value & 65535, a('PMAT')+2*j]
+            for key, value in [('SD_X', 0), ('SD_Y', 0), ('SD_Z', 1600), ('SD_SH', 0)]:
+                setup += mov(key, value)
+            setup += call('SHIP_DRAW') + [0o013737, a('SEGCNT'), a('HARN_TICKS')]
+            setup += call('STATION_SLOT')
+            frames.append(setup)
+            wants.append((ship, angle, 4 if angle < 90 else 0, angle > 90))
+    for (segments, visible, hull_count, _), (ship, angle, extra, native) in zip(
+            geometry_frames(v, t, out, 'station', frames), wants):
+        v.check(f'{ship} at {angle} degrees: only the facing entrance is visible',
+                len(segments)-hull_count == extra and bool(visible & 1) == native and
+                not (native and len(segments) > hull_count),
+                f'{hull_count} hull edges, {len(segments)-hull_count} added slot edges')
+
+    # Compare clipped outlines with four separately submitted original edges.
+    # This catches a clipped endpoint being reused as the next polygon corner.
+    frames = []
+    slot_setup = mov('SD_MAT', a('PMAT'))
+    for j in range(9):
+        slot_setup += [0o012737, 16384 if j in (0, 4, 8) else 0, a('PMAT')+2*j]
+    for key, value in [('SD_X', 0), ('SD_Y', 40), ('SD_Z', 300), ('SD_SH', 0)]:
+        slot_setup += mov(key, value)
+    slot_corners = [(320 + quotient(x*640, 140), 100 - quotient((40+y)*384, 140))
+                    for x, y in [(-60, -18), (60, -18), (60, 18), (-60, 18)]]
+    tunnel_corners = [(320 + quotient((trig[i][0]*96 >> 8)*5, 3),
+                       100 + (trig[i][1]*96 >> 8)) for i in (0, 12, 8, 4)]
+    for setup, corners in [(slot_setup + call('STATION_SLOT'), slot_corners),
+                           (mov('DT_RAD', 96) + mov('DT_ANG', 0) + call('DT_SQUARE'),
+                            tunnel_corners)]:
+        clip = mov('CLIPY1', 120) + mov('CLIPYD', 120)
+        frames.append(clip + setup)
+        reference = list(clip)
+        for (x0, y0), (x1, y1) in zip(corners, corners[1:] + corners[:1]):
+            for key, value in [('LX0', x0), ('LY0', y0), ('LX1', x1), ('LY1', y1)]:
+                reference += mov(key, value)
+            reference += call('SEG_LINE')
+        frames.append(reference)
+    results = geometry_frames(v, t, out, 'clipped-outline', frames)
+    for i, name in enumerate(('station slot', 'tunnel square')):
+        actual, reference = results[2*i:2*i+2]
+        v.check(f'clipped {name} preserves each original polygon edge',
+                actual[0] == reference[0] and actual[3].tobytes() == reference[3].tobytes())
 
 
 def check_vertex_projection(v, t, out):

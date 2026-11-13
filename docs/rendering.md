@@ -33,6 +33,14 @@ face testing transforms the eye/centre once through the transpose matrix;
 zero-face geometry remains visible. A blueprint radius is not a strict
 bounding sphere; `SHIP_CONE` allows twice the recorded radius.
 
+The station's added docking rectangle lies on the negative-z face, opposite
+the entrance in the Legend blueprint. `STATION_SLOT` transforms the camera
+position into model space and draws the added rectangle only when the eye
+is outside its face. It cannot show through the hull beside the blueprint
+entrance. Chained slot edges retain their original projected corners after
+clipping. The docking/hyperspace tunnel draws four distinct edges per square,
+including the closing edge, at each of its sixteen rotation steps.
+
 `VERT_PROJECT` combines the scaled transform and projection. It computes
 depth first, rejecting near-plane failures before the other row products,
 and returns projected coordinates in registers. NPC beam muzzles use the
@@ -93,28 +101,29 @@ not the shipped scene. The harness does not run at boot.
 
 ## Applicable baseline
 
-The latest measured RT-11 runtime baseline is from 2026-11-08, before the
-startup-only splash addition. It is retained as a workload reference,
-not a claim that the current tree was rebenchmarked during documentation.
-The recorded rates below used the older 25 Hz tick conversion; do not
-apply them to the updated core or reinterpret them as new measurements.
+The station/tunnel renderer fixes were measured on 2026-11-13 with identical
+`bench.py --fixed --ticks 1200` fixtures, with and without `--turning`.
+The installed core reports 50 Hz, so each run covers 24 emulated seconds.
 
-| Sixteen-slot workload | Completed frames in 1200 ticks | FPS |
+| Sixteen-slot workload | Before: frames / FPS | Fixed: frames / FPS |
 |---|---:|---:|
-| Still | 451 | 9.40 |
-| Moving | 355 | 7.40 |
-| Turning | 308 | 6.42 |
+| Still | 226 / 9.42 | 225 / 9.38 |
+| Turning | 132 / 5.50 | 130 / 5.42 |
 
-Roster checks passed and ending screenshots were inspected. Local evidence
-is under `tmp/rt11-port/` (`*-final.log`, `*-final.png`). These are disposable
-artifacts, not required repository inputs. Seven frozen comparison scenes
-contained 196 identical wireframe segments; one unfrozen scene was excluded.
-That comparison says nothing about filled pixels, fonts or effects.
+Roster checks passed and ending screenshots were inspected. Local logs and
+images are `tmp/renderer-{still,turning}-{before,after}.{log,png}`. These
+short runs differ by only one or two completed frames; they establish no
+speed improvement. Geometry intentionally changes for hidden station slots
+and tunnel closure; the rules group's explicit polygon/pixel checks verify
+those changes.
 
-There is no retained current sparse or drawing-only baseline for this
-RT-11 layout. Run those workloads when needed rather than importing rates
-from a different memory layout or fixture. One-frame differences in a
-48-second window are too small to support a strong speed claim.
+The fix adds 12 resident bytes, leaving 240 bytes free. Overlays are
+unchanged (the largest is 4959 bytes, leaving 161); the PPU program remains
+3488 bytes, with 152 bytes between reused buffers and published words.
+
+There is no current moving-only, sparse or drawing-only baseline for this
+build. Run those workloads when needed rather than importing rates from a
+different core, memory layout or fixture.
 
 ## Acceptance criteria for renderer changes
 
